@@ -304,19 +304,20 @@ async function npmPackFiles(cwd, label) {
       },
     );
     const report = JSON.parse(stdout);
-    assert.equal(report.length, 1, `${label} npm pack must describe exactly one package`);
-    assert.ok(Array.isArray(report[0]?.files), `${label} npm pack did not return a file manifest`);
-    assert.equal(typeof report[0]?.filename, "string", `${label} npm pack did not return an archive name`);
+    const entries = Array.isArray(report) ? report : Object.values(report);
+    assert.equal(entries.length, 1, `${label} npm pack must describe exactly one package`);
+    assert.ok(Array.isArray(entries[0]?.files), `${label} npm pack did not return a file manifest`);
+    assert.equal(typeof entries[0]?.filename, "string", `${label} npm pack did not return an archive name`);
     assert.equal(
-      basename(report[0].filename),
-      report[0].filename,
+      basename(entries[0].filename),
+      entries[0].filename,
       `${label} npm pack returned an unsafe archive name`,
     );
     const archived = await npmArchiveFiles(
-      join(destination, report[0].filename),
+      join(destination, entries[0].filename),
       label,
     );
-    const reported = report[0].files.map((entry) => entry.path);
+    const reported = entries[0].files.map((entry) => entry.path);
     assert.deepEqual(
       archived.toSorted(),
       reported.toSorted(),
