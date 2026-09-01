@@ -1,9 +1,5 @@
 {
   "version": 2,
-  "rename": {
-    "from": "codex_security",
-    "to": "pi_security"
-  },
   "schemaArtifacts": [
     "schemas/definitions/artifact-common.schema.json",
     "schemas/definitions/discovery-candidate.schema.json",
@@ -72,7 +68,6 @@
   "tools": [
     {
       "name": "attach_pi_security_scan_continuation_thread",
-      "originalName": "attach_codex_security_scan_continuation_thread",
       "surfaces": [
         "standalone"
       ],
@@ -120,7 +115,6 @@
     },
     {
       "name": "cancel_pi_security_finding_remediation_request",
-      "originalName": "cancel_codex_security_finding_remediation_request",
       "surfaces": [
         "standalone"
       ],
@@ -160,7 +154,6 @@
     },
     {
       "name": "cancel_pi_security_scan",
-      "originalName": "cancel_codex_security_scan",
       "surfaces": [
         "standalone"
       ],
@@ -188,7 +181,6 @@
     },
     {
       "name": "cancel_pi_security_scan_from_app",
-      "originalName": "cancel_codex_security_scan_from_app",
       "surfaces": [
         "standalone"
       ],
@@ -216,7 +208,6 @@
     },
     {
       "name": "claim_pi_security_finding_remediation_resend",
-      "originalName": "claim_codex_security_finding_remediation_resend",
       "surfaces": [
         "standalone"
       ],
@@ -256,7 +247,6 @@
     },
     {
       "name": "claim_pi_security_scan_handoff_delivery",
-      "originalName": "claim_codex_security_scan_handoff_delivery",
       "surfaces": [
         "standalone"
       ],
@@ -301,7 +291,6 @@
     },
     {
       "name": "complete_pi_security_scan",
-      "originalName": "complete_codex_security_scan",
       "surfaces": [
         "standalone"
       ],
@@ -343,7 +332,6 @@
     },
     {
       "name": "export_pi_security_findings",
-      "originalName": "export_codex_security_findings",
       "surfaces": [
         "standalone"
       ],
@@ -380,7 +368,6 @@
     },
     {
       "name": "fail_pi_security_scan",
-      "originalName": "fail_codex_security_scan",
       "surfaces": [
         "standalone"
       ],
@@ -428,7 +415,6 @@
     },
     {
       "name": "get_pi_security_completed_scan",
-      "originalName": "get_codex_security_completed_scan",
       "surfaces": [
         "standalone"
       ],
@@ -461,7 +447,6 @@
     },
     {
       "name": "get_pi_security_deep_reducer_inputs",
-      "originalName": "get_codex_security_deep_reducer_inputs",
       "surfaces": [
         "reducer"
       ],
@@ -481,7 +466,6 @@
     },
     {
       "name": "get_pi_security_scan",
-      "originalName": "get_codex_security_scan",
       "surfaces": [
         "standalone"
       ],
@@ -515,7 +499,6 @@
     },
     {
       "name": "get_pi_security_scan_context",
-      "originalName": "get_codex_security_scan_context",
       "surfaces": [
         "standalone"
       ],
@@ -563,7 +546,6 @@
     },
     {
       "name": "inspect_pi_security_setup",
-      "originalName": "inspect_codex_security_setup",
       "surfaces": [
         "standalone"
       ],
@@ -687,7 +669,6 @@
     },
     {
       "name": "inspect_pi_security_target",
-      "originalName": "inspect_codex_security_target",
       "surfaces": [
         "standalone"
       ],
@@ -715,7 +696,6 @@
     },
     {
       "name": "list_pi_security_candidates",
-      "originalName": "list_codex_security_candidates",
       "surfaces": [
         "standalone"
       ],
@@ -752,7 +732,6 @@
     },
     {
       "name": "list_pi_security_findings",
-      "originalName": "list_codex_security_findings",
       "surfaces": [
         "standalone"
       ],
@@ -811,7 +790,6 @@
     },
     {
       "name": "list_pi_security_global_findings",
-      "originalName": "list_codex_security_global_findings",
       "surfaces": [
         "standalone"
       ],
@@ -867,7 +845,6 @@
     },
     {
       "name": "list_pi_security_repositories",
-      "originalName": "list_codex_security_repositories",
       "surfaces": [
         "standalone"
       ],
@@ -914,7 +891,6 @@
     },
     {
       "name": "list_pi_security_review_items",
-      "originalName": "list_codex_security_review_items",
       "surfaces": [
         "standalone"
       ],
@@ -957,7 +933,6 @@
     },
     {
       "name": "list_pi_security_scans",
-      "originalName": "list_codex_security_scans",
       "surfaces": [
         "standalone"
       ],
@@ -1013,7 +988,6 @@
     },
     {
       "name": "mark_pi_security_finding_remediation_delivered",
-      "originalName": "mark_codex_security_finding_remediation_delivered",
       "surfaces": [
         "standalone"
       ],
@@ -1053,7 +1027,6 @@
     },
     {
       "name": "mark_pi_security_scan_handoff_delivered",
-      "originalName": "mark_codex_security_scan_handoff_delivered",
       "surfaces": [
         "standalone"
       ],
@@ -1095,7 +1068,6 @@
     },
     {
       "name": "open_pi_security_workspace",
-      "originalName": "open_codex_security_workspace",
       "surfaces": [
         "standalone"
       ],
@@ -1241,7 +1213,6 @@
     },
     {
       "name": "prepare_pi_security_review_items",
-      "originalName": "prepare_codex_security_review_items",
       "surfaces": [
         "standalone"
       ],
@@ -1275,7 +1246,6 @@
     },
     {
       "name": "record_candidate_attack_paths",
-      "originalName": "record_candidate_attack_paths",
       "surfaces": [
         "standalone"
       ],
@@ -1555,7 +1525,6 @@
     },
     {
       "name": "record_pi_security_candidate_validations",
-      "originalName": "record_codex_security_candidate_validations",
       "surfaces": [
         "standalone"
       ],
@@ -1744,7 +1713,6 @@
     },
     {
       "name": "record_pi_security_deep_reduction",
-      "originalName": "record_codex_security_deep_reduction",
       "surfaces": [
         "reducer"
       ],
@@ -3044,7 +3012,6 @@
     },
     {
       "name": "record_pi_security_discovery_candidates",
-      "originalName": "record_codex_security_discovery_candidates",
       "surfaces": [
         "standalone"
       ],
@@ -3152,7 +3119,6 @@
     },
     {
       "name": "record_pi_security_scan_draft",
-      "originalName": "record_codex_security_scan_draft",
       "surfaces": [
         "standalone",
         "worker"
@@ -4453,7 +4419,6 @@
     },
     {
       "name": "recover_pi_security_scan_results",
-      "originalName": "recover_codex_security_scan_results",
       "surfaces": [
         "standalone"
       ],
@@ -4481,7 +4446,6 @@
     },
     {
       "name": "release_pi_security_finding_remediation_claim",
-      "originalName": "release_codex_security_finding_remediation_claim",
       "surfaces": [
         "standalone"
       ],
@@ -4521,7 +4485,6 @@
     },
     {
       "name": "release_pi_security_scan_handoff_delivery",
-      "originalName": "release_codex_security_scan_handoff_delivery",
       "surfaces": [
         "standalone"
       ],
@@ -4563,7 +4526,6 @@
     },
     {
       "name": "request_pi_security_finding_remediation",
-      "originalName": "request_codex_security_finding_remediation",
       "surfaces": [
         "standalone"
       ],
@@ -4603,7 +4565,6 @@
     },
     {
       "name": "request_pi_security_finding_remediation_action",
-      "originalName": "request_codex_security_finding_remediation_action",
       "surfaces": [
         "standalone"
       ],
@@ -4657,7 +4618,6 @@
     },
     {
       "name": "request_pi_security_user_input",
-      "originalName": "request_codex_security_user_input",
       "surfaces": [
         "standalone"
       ],
@@ -4737,7 +4697,6 @@
     },
     {
       "name": "set_pi_security_finding_remediation",
-      "originalName": "set_codex_security_finding_remediation",
       "surfaces": [
         "standalone"
       ],
@@ -4816,7 +4775,6 @@
     },
     {
       "name": "set_pi_security_finding_triage",
-      "originalName": "set_codex_security_finding_triage",
       "surfaces": [
         "standalone"
       ],
@@ -4864,7 +4822,6 @@
     },
     {
       "name": "start_pi_security_deep_scan",
-      "originalName": "start_codex_security_deep_scan",
       "surfaces": [
         "standalone"
       ],
@@ -4920,7 +4877,6 @@
     },
     {
       "name": "start_pi_security_prompt_only_scan",
-      "originalName": "start_codex_security_prompt_only_scan",
       "surfaces": [
         "standalone"
       ],
@@ -5058,7 +5014,6 @@
     },
     {
       "name": "start_pi_security_scan",
-      "originalName": "start_codex_security_scan",
       "surfaces": [
         "standalone"
       ],
@@ -5096,7 +5051,6 @@
     },
     {
       "name": "start_pi_security_standard_scan",
-      "originalName": "start_codex_security_standard_scan",
       "surfaces": [
         "standalone"
       ],
@@ -5140,7 +5094,6 @@
     },
     {
       "name": "submit_pi_security_setup",
-      "originalName": "submit_codex_security_setup",
       "surfaces": [
         "standalone"
       ],
@@ -5277,7 +5230,6 @@
     },
     {
       "name": "update_pi_security_scan_context",
-      "originalName": "update_codex_security_scan_context",
       "surfaces": [
         "standalone"
       ],
@@ -5324,7 +5276,6 @@
     },
     {
       "name": "update_pi_security_scan_context_from_app",
-      "originalName": "update_codex_security_scan_context_from_app",
       "surfaces": [
         "standalone"
       ],
@@ -5356,7 +5307,6 @@
     },
     {
       "name": "update_pi_security_scan_progress",
-      "originalName": "update_codex_security_scan_progress",
       "surfaces": [
         "standalone"
       ],

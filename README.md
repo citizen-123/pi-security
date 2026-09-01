@@ -1,84 +1,139 @@
 # Pi Security
 
-Pi-native security scanning with an optional stdio MCP transport. The package contains the local workbench, schemas, skills, report generation, findings database, triage/remediation workflows, and MCP server. It does not require a model-provider CLI or SDK, provider account or API key, or hosted security service.
+Pi Security is a local, agent-driven security scanner for [Pi](https://pi.dev) and MCP-compatible clients. It helps an AI coding agent inspect a repository, validate potential vulnerabilities, and produce durable security artifacts without requiring a provider-specific security service, CLI, SDK, account, or API key.
 
-## Install in Pi
+It includes:
+
+- Standard whole-repository security scans
+- Git diff security reviews
+- Tool-enabled, multi-worker Deep Scans over MCP
+- Bundled read-only security subagents
+- Threat modeling and evidence-based finding validation
+- Local scan history and finding storage
+- Markdown reports and SARIF output
+- Triage, feedback, export, and remediation workflows
+- Target-bound permission profiles and fail-closed recovery
+
+Analysis runs in the connected agent harness. Scan state, artifact validation, reports, and lifecycle operations remain deterministic local processes.
+
+## Quick start with Pi
+
+### 1. Install the package
+
+Install directly from this repository:
 
 ```sh
-pi install git:github.com/<owner>/<repository>
+pi install git:github.com/citizen-123/pi-security
 ```
 
-After npm publication:
+After the package is published to npm, it can also be installed with:
 
 ```sh
 pi install npm:pi-security
 ```
 
-Pi loads the bundled `pi-subagents` extension first and then Pi Security. Standard and diff scans work through the native extension immediately after package load:
+Pi loads the bundled subagent runtime and Pi Security extension automatically. You do not need to configure the MCP server for Standard or Diff scans.
 
-```text
-/security-scan [optional focus]
-/security-diff-scan [optional focus]
+### 2. Open Pi in the repository you want to review
+
+```sh
+cd /path/to/your/repository
+pi
 ```
 
-No separate MCP server entry is needed for this Pi lifecycle. The stdio server is an optional transport for other MCP hosts and for Deep Scan hosts that implement tool-enabled sampling.
+### 3. Start a scan
 
-## Capability matrix
+Review the repository:
 
-| Capability | Native Pi package | Generic MCP client |
-| --- | --- | --- |
-| Standard scan | Yes. The skill uses Pi's local source tools, bundled read-only subagents, and local lifecycle/artifact tools. | Lifecycle tools are available, but the client must drive the audit and provide local source access. No MCP sampling is required. |
-| Diff scan | Yes. Same native lifecycle, scoped to an exact local Git change set. | Lifecycle tools are available; the client must provide local source and Git access. No MCP sampling is required. |
-| Deep Scan | Not through the native extension alone. Run the optional MCP server from a compatible host. | Yes only when the client advertises MCP 2025-11-25 `sampling.tools`. Basic sampling is insufficient. |
-| Local state, validation, reports, SARIF, triage, and remediation | Included | Included over stdio |
-| Pi subagent fleet | Bundled and configured | Not supplied by MCP transport; Deep Scan has its own bounded sampling delegation when enabled. |
+```text
+/security-scan
+```
 
-An MCP connector that can call server tools is not necessarily equivalent to an MCP client with `sampling.tools`. If it cannot accept server-initiated, tool-enabled sampling requests, Standard and diff lifecycle operations remain available but Deep Scan is not.
+Add an optional focus when you want the audit to prioritize a subsystem or threat:
 
-## Permission profiles and enforcement
+```text
+/security-scan authentication, session handling, and authorization boundaries
+```
 
-Every policy context is issued by Pi Security, bound to one target root, scan ID, and artifact root, and checked for module provenance. A tool argument, serialized continuation, cloned object, or repository file cannot select or manufacture a profile.
+Review the current Git change set:
 
-| Capability | `security-readonly` | `security-delegating-readonly` | `security-artifact-writer` |
-| --- | ---: | ---: | ---: |
-| `target.read` | Yes | Yes | No |
-| `target.search` | Yes | Yes | No |
-| `target.git` | Yes | Yes | No |
-| `scan-artifacts.write` | No | No | Yes |
-| `workbench.execute` | No | No | Yes |
-| `delegation.create` | No | Yes, with a host-issued budget and one-level depth | No |
-| `network.access` | No | No | No |
-| `target.execute` | No | No | No |
-| `target.write` | No | No | No |
+```text
+/security-diff-scan
+```
 
-The Pi adapter fixes lifecycle, workbench, and artifact operations to `security-artifact-writer`; packaged audit agents receive `security-readonly`; and the coordinator alone receives bounded `security-delegating-readonly` authority whose children are forced back to `security-readonly`. Pi run control is restricted to run IDs created by the same Pi Security session and canonical target. The MCP adapter similarly chooses the source profile from host configuration, issues a separate fixed artifact writer, and uses the same capability requirements for both advertised tools and direct dispatch.
+Or focus the diff review:
 
-This is a **capability sandbox**, not a claim of a cross-platform OS process sandbox. Scan profiles expose no general target command execution, target writes, or network tools. `workbench.execute` authorizes only fixed bundled-workbench dispatch, and artifact writes are limited to trusted workbench and scan artifacts under the bound artifact root outside the target. Git-aware reads use fixed metadata operations with repository-configured helper sinks disabled.
+```text
+/security-diff-scan untrusted input reaching command execution
+```
 
-Target paths must be repository-relative and remain inside the bound target and scope. Existing paths are opened without following symlinks and consumed through verified handles; directory identity is checked during enumeration. Linux uses no-follow opens plus `/proc/self/fd`, other supported POSIX hosts use `/dev/fd`, and Windows rejects reparse-point changes and rechecks file identity. If the host cannot enforce its required handle or root mechanism, Pi Security returns `PI_SECURITY_ENFORCEMENT_UNSUPPORTED` before the guarded state commit. There is no fallback to pathname-only enforcement.
+Pi Security maps the target, builds a threat model, delegates non-overlapping read-only investigations, validates candidates independently, deduplicates findings, and produces the final local artifacts.
 
-Deep Scan continuation v2 stores application-owned policy state. Recovery reissues the exact profile, target/scan bindings, capabilities, and remaining delegation state from fresh host authority before sampling or artifact writes. Legacy v1 state, mismatched continuation IDs or kinds, altered profiles or budgets, stale delegation predecessors, and forged child markers/results fail closed with `PI_SECURITY_POLICY_RECOVERY_REJECTED`.
+## Scan modes
 
-The policy layer uses these stable codes:
+### Standard Scan
 
-- `PI_SECURITY_POLICY_DENIED` (`policy_denied`) for a capability denial;
-- `PI_SECURITY_ENFORCEMENT_UNSUPPORTED` (`unsupported_enforcement`) when the host cannot apply a required mechanism;
-- `PI_SECURITY_POLICY_RECOVERY_REJECTED` (`policy_recovery_rejected`) for rejected recovery, with reason `legacy_continuation`, `profile_mismatch`, `invalid_policy`, `delegation_mismatch`, or `binding_mismatch`.
+A repository-wide audit driven by the current Pi session. Use it for a new codebase, a broad security review, or investigation of a specific attack surface.
 
-Public `enforcementCapabilities` diagnostics contain `schemaVersion`, `kind` (`availability` or `effective`), `supported`, `mechanisms`, and `unsupportedReason`. Successful worker diagnostics may also contain `effectivePolicy` with `schemaVersion`, public `source` and `artifactWriter` projections (`profile`, `capabilities`, and `delegation`), and the effective enforcement report. These projections intentionally omit target paths, artifact paths, scan IDs, claims, credentials, and continuation tokens.
+### Diff Scan
 
-## Bundled subagents
+Reviews an exact Git change set and the supporting code needed to understand it. Use it before merging a branch or when reviewing a security-sensitive patch.
 
-The package publishes four read-only profiles:
+### Deep Scan
 
-- `pi-security-scout` — attack-surface and repository mapping
-- `pi-security-auditor` — focused vulnerability investigation
-- `pi-security-validator` — independent validation and attack-path review
-- `pi-security-reviewer` — final false-positive and consistency review
+Runs server-owned sampling workers with constrained source tools, durable continuations, bounded nested delegation, and schema-validated results. Deep Scan requires an MCP client that advertises MCP 2025-11-25 `sampling.tools`; basic MCP sampling is not sufficient.
 
-Standard and diff scan skills start these agents concurrently through `pi_security_spawn_agents`. `pi_security_control_agents` provides fleet or targeted status, transcript tails, steering, interruption, stopping, and resumption. Project or user profiles with the same names retain normal `pi-subagents` discovery precedence.
+Deep Scan is available through the optional stdio MCP server described below. Standard and Diff scans do not require MCP sampling.
+
+## What gets written
+
+Pi Security keeps its operational data local.
+
+Default locations:
+
+- Workbench database: `$PI_HOME/security/workbench.sqlite3`
+- Deep Scan configuration: `$PI_HOME/pi-security/config.toml`
+- MCP scan output: a private temporary directory unless `PI_SECURITY_SCAN_ROOT` is set
+
+`PI_HOME` defaults to `~/.pi`.
+
+A completed managed scan can contain:
+
+- `scan-manifest.json` — sealed scan identity and artifact hashes
+- `findings.json` — validated findings
+- `coverage.json` — reviewed and deferred scope
+- `report.md` — human-readable report
+- SARIF output for compatible code-scanning tools
+
+## Bundled security agents
+
+The package includes four read-only agents:
+
+- `pi-security-scout` — maps architecture, entry points, and trust boundaries
+- `pi-security-auditor` — investigates assigned attack surfaces
+- `pi-security-validator` — validates candidates and attack paths independently
+- `pi-security-reviewer` — checks severity, coverage, consistency, and false positives
+
+Standard and Diff scans can run these agents concurrently. The parent agent retains responsibility for source verification, synthesis, deduplication, and the final report.
+
+## Permission model
+
+Pi Security uses a capability sandbox rather than relying on prompt instructions alone:
+
+- Scan agents may read and search only inside the bound target.
+- Scan agents cannot write to the target, execute target code, or use network tools.
+- Artifact writers can write only to the bound private scan directory and invoke fixed bundled workbench operations.
+- Delegation is host-issued, bounded, and limited to read-only children.
+- Paths are consumed through verified handles with traversal, symlink, reparse-point, and replacement checks.
+- Continuations are revalidated before state changes, artifact writes, ownership claims, or model requests.
+
+This is not a general-purpose OS process sandbox. Pi Security avoids running untrusted target commands altogether. If the host cannot apply a required enforcement mechanism, the operation fails instead of silently using weaker behavior.
 
 ## Optional MCP server
+
+Use the stdio server with a generic MCP host or for Deep Scan.
+
+### Build and run
 
 ```sh
 npm install
@@ -86,7 +141,7 @@ npm run build
 pi-security-mcp
 ```
 
-Example stdio configuration:
+Example client configuration:
 
 ```json
 {
@@ -102,18 +157,64 @@ Example stdio configuration:
 }
 ```
 
-Deep Scan supplies target-bound list, read, literal-search, repository-metadata, scan-context, and schema-bound record tools to each sampling request. The server persists its own continuation transcript and can run a configured, bounded layer of nested sampling tasks; it does not depend on provider thread identifiers.
+The server exposes target inspection, Standard/Diff/Deep scan lifecycle operations, progress, artifact recording, completion and recovery, finding queries, exports, triage, remediation, feedback, and compact worker/reducer operations.
 
-Model and reasoning settings are requests, not proof that a sampling client applied them. Pi Security reports applied reasoning only when the client acknowledges it, and reports only client- or host-supplied token usage as complete, partial, or unavailable. It never estimates missing usage.
+An MCP host that can call server tools does not necessarily support Deep Scan. It must also accept server-initiated, tool-enabled sampling requests.
 
-Legacy provider-specific executors and provider-configuration discovery are intentionally absent. There is no hidden provider fallback when native tools or MCP sampling capabilities are unavailable.
+## Configuration
+
+Supported environment variables:
+
+- `PI_HOME`
+- `PI_SECURITY_STATE_DIR`
+- `PI_SECURITY_SCAN_ROOT`
+- `PI_SECURITY_DEEP_SCAN_CONFIG_PATH`
+- `PI_SECURITY_PYTHON_COMMAND`
+- `PI_SECURITY_SESSION_DB` for optional host-supplied token-usage attribution
+
+Python resolution order:
+
+1. `PI_SECURITY_PYTHON_COMMAND`
+2. `PYTHON`
+3. Pi's cached primary runtime, when executable
+4. `python3` on Unix-like systems or `python` on Windows
+
+Optional Deep Scan configuration:
+
+```toml
+[deep_scan]
+workers = 4
+subagents = 0
+stop_after_no_new = 2
+stop_after_consecutive_errors = 3
+max_discovery_runs = 12
+max_time_hours = 4
+```
 
 ## Requirements
 
 - Node.js 20 or newer
-- Python 3.11 or newer for the local workbench
-- Git for Git-aware targets and diff scans
+- Python 3.11 or newer
+- Git for Git-aware targets and Diff scans
+- A Pi installation for the native commands, or an MCP-compatible host for the stdio server
 
-All native lifecycle and low-level workbench calls resolve Python consistently: `PI_SECURITY_PYTHON_COMMAND`, then `PYTHON`, then Pi's cached primary runtime when executable, then the platform default.
+## Development
 
-See [`packages/pi-security/README.md`](packages/pi-security/README.md) for the detailed transport behavior, state/configuration, direct workbench use, and development setup.
+The package implementation lives in [`packages/pi-security`](packages/pi-security). See its [detailed README](packages/pi-security/README.md) for development environment setup, test commands, direct workbench usage, transport behavior, schemas, packaging checks, and advanced configuration.
+
+The short development flow is:
+
+```sh
+npm install
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r packages/pi-security/requirements-test.txt
+npm run typecheck
+npm test
+```
+
+Windows PowerShell setup is documented in the package README.
+
+## License
+
+Apache License 2.0. See [`packages/pi-security/LICENSE`](packages/pi-security/LICENSE).

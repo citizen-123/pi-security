@@ -1,25 +1,21 @@
-<!-- Use a Conventional Commit title: <type>[optional scope][!]: <description>. See RELEASING.md. -->
-
 ## Summary
 
-<!-- Describe the technical problem and outcome without identifying customers or private systems. -->
+<!-- Describe the technical problem and outcome without identifying private systems. -->
 
 ## Changes
 
-<!-- Summarize the specific changes that reviewers should understand. -->
+<!-- List the implementation and public API changes reviewers should understand. -->
 
-## Testing
+## Verification
 
-<!-- List the checks you actually ran and their results, or explain why testing was unnecessary. -->
+<!-- List the exact checks or scenarios you ran and their results. -->
 
-## Risk and rollout
+## Risk
 
 <!-- Describe compatibility, security, operational, or release considerations. -->
 
 ## Public disclosure review
 
-<!-- Review every public artifact before checking all three attestations. -->
-
-- [ ] No customer, partner, prospect, or user identities, data, or identifying details are included.
-- [ ] No credentials, personal data, private source, scan findings, or nonpublic links or tickets are included.
-- [ ] I reviewed the branch name, title, description, commits, changes, comments, logs, screenshots, attachments, and links for public disclosure.
+- [ ] No credentials, personal data, private source, scan findings, or nonpublic links are included.
+- [ ] Examples and fixtures use synthetic repositories, identities, logs, and credentials.
+- [ ] I reviewed the branch name, title, description, commits, changes, comments, logs, screenshots, attachments, and links before publication.

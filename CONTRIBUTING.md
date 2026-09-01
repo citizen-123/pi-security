@@ -1,60 +1,42 @@
 # Contributing
 
-Thanks for helping improve Codex Security. We welcome bug reports, feature
-requests, documentation corrections, and feedback from open-source
-maintainers.
+Thanks for helping improve Pi Security. Bug reports, feature requests,
+documentation corrections, and pull requests are welcome.
 
-## How this repository works
+## Development
 
-`plugins/codex-security/` is the canonical source for the Codex Security
-plugin. Make plugin changes there.
+Pi Security is implemented in `packages/pi-security/`. The package contains the
+Pi extension, MCP server, scan workbench, schemas, skills, and tests.
 
-The npm runtime under `sdk/typescript/_bundled_plugin/` is generated from the
-plugin source by `pnpm run build:plugin` and automatically during `prepack` for
-packages and releases. Do not edit or commit files in that directory. See the
-[SDK testing guide](sdk/typescript/TESTING.md) for the generation and validation
-commands.
+Install dependencies and run the project checks from the repository root:
 
-Search [existing issues](https://github.com/openai/codex-security/issues)
-before opening a new one.
+```bash
+npm install
+npm run typecheck
+npm test
+npm run test:pack
+```
 
-## Support for open-source projects
+Use Node.js 20 or newer, npm 10 or newer, and Python 3.11 or newer. Keep changes
+focused, follow the existing implementation patterns, and add tests for new or
+changed observable behavior.
 
-If you maintain an open-source project,
-[open an issue](https://github.com/openai/codex-security/issues/new) with the
-repository, your role, and what you need. Support is best effort. Scan only
-repositories you trust and either own or have permission to assess.
+## Reporting bugs and proposing changes
 
-## Report a bug
+Search the existing issues before opening a new one. For a bug, include the Pi
+Security version, operating system, reproduction steps, and expected and actual
+behavior. Remove credentials, private source, repository identities, and scan
+findings before posting.
 
-Include your CLI or SDK version, operating system, reproduction steps, and
-the expected and observed behavior. Remove credentials, private code,
-customer data, and security findings before posting.
+For a feature request, describe the user problem and desired workflow. Commands,
+arguments, environment variables, accepted values, and defaults are public API;
+changes to them must update help, documentation, schemas, and tests together.
 
-## Suggest a feature or improve the documentation
+## Security issues
 
-Open an issue describing the problem and the workflow you want to support.
-Documentation corrections and safe examples are welcome.
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+Do not publish exploits, credentials, private source, or sensitive scan results
+in an issue or pull request.
 
-## Report a security issue
-
-Report Codex Security vulnerabilities privately as described in
-[SECURITY.md](SECURITY.md). Do not post vulnerabilities, exploit details,
-credentials, or sensitive scan results publicly.
-
-If a scan finds a vulnerability in another project, report it to that
-project's maintainers through their security policy.
-
-## Dependency and release maintenance
-
-Maintainers update package dependencies and committed lockfiles with the
-affected source. The public release workflow installs those locked graphs,
-tests the package, and publishes a verified artifact with npm provenance.
-GitHub Actions dependencies are maintained separately in this repository.
-
-[GitHub Releases](https://github.com/openai/codex-security/releases) is the
-canonical changelog. Maintainers should follow [RELEASING.md](RELEASING.md) to
-prepare, publish, verify, or repair a release.
-
-See the [SDK testing guide](sdk/typescript/TESTING.md) for local checks,
-test conventions, and the required and experimental CI jobs.
+If Pi Security finds a vulnerability in another project, follow that project's
+security policy and disclose it only to authorized maintainers.
