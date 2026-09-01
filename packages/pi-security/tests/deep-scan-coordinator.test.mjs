@@ -102,6 +102,63 @@ async function testCappedQueueAndSerialDedup() {
   assert.equal(terminal.manifestPath, path.join(fixture.run.scanDir, "scan-manifest.json"));
 }
 
+async function testCoordinatorSnapshotsOwnNestedRunState() {
+  const fixture = await fixtureRun({
+    workers: 1,
+    subagents: 0,
+    stopAfterNoNew: 1,
+    maxDiscoveryRuns: 1
+  });
+  const worker = {
+    id: randomUUID(),
+    kind: "discovery",
+    status: "canceled",
+    promptPath: path.join(fixture.run.scanDir, "worker", "prompt.md"),
+    artifactDir: path.join(fixture.run.scanDir, "worker", "output"),
+    attempt: 1,
+    mergeState: "none"
+  };
+  fixture.run.canonicalArtifacts = {
+    inScopeFilesPath: path.join(fixture.run.scanDir, "in-scope.txt"),
+    candidateLedgerPath: path.join(fixture.run.scanDir, "candidate-ledger.jsonl")
+  };
+  fixture.run.persistedWorkers = [worker];
+  fixture.run.persistedDedupInputs = [{
+    dedupWorkerId: randomUUID(),
+    discoveryWorkerId: worker.id,
+    inputOrder: 0
+  }];
+  const coordinator = new DeepScanCoordinator({
+    run: fixture.run,
+    store: new FakeStore(fixture.run),
+    executor: new FakeExecutor(),
+    packageRoot: fixture.packageRoot,
+    clock: immediateClock
+  });
+
+  fixture.run.canonicalArtifacts.candidateLedgerPath = "mutated-input";
+  fixture.run.persistedWorkers[0].attempt = 99;
+  fixture.run.persistedDedupInputs[0].inputOrder = 99;
+  const snapshot = coordinator.snapshot();
+  assert.equal(
+    snapshot.canonicalArtifacts.candidateLedgerPath,
+    path.join(fixture.run.scanDir, "candidate-ledger.jsonl")
+  );
+  assert.equal(snapshot.persistedWorkers[0].attempt, 1);
+  assert.equal(snapshot.persistedDedupInputs[0].inputOrder, 0);
+
+  snapshot.canonicalArtifacts.candidateLedgerPath = "mutated-snapshot";
+  snapshot.persistedWorkers[0].attempt = 77;
+  snapshot.persistedDedupInputs[0].inputOrder = 77;
+  const laterSnapshot = coordinator.snapshot();
+  assert.equal(
+    laterSnapshot.canonicalArtifacts.candidateLedgerPath,
+    path.join(fixture.run.scanDir, "candidate-ledger.jsonl")
+  );
+  assert.equal(laterSnapshot.persistedWorkers[0].attempt, 1);
+  assert.equal(laterSnapshot.persistedDedupInputs[0].inputOrder, 0);
+}
+
 async function testStandardWorkersReceiveExistingFalsePositiveFeedback() {
   const fixture = await fixtureRun({
     workers: 1,
@@ -1271,6 +1328,64 @@ async function testFinishPersistenceFailureRewritesManifestAsFailure() {
   await assertFailureManifest(terminal, "terminal");
 }
 
+async function testPostPublicationFinishExhaustionStaysRecoverable() {
+  const fixture = await fixtureRun({
+    workers: 1,
+    subagents: 0,
+    stopAfterNoNew: 1,
+    maxDiscoveryRuns: 1
+  });
+  const store = new FakeStore(fixture.run);
+  store.failFinish = true;
+  const published = [];
+  const onComplete = async (draft) => {
+    published.push(structuredClone(draft));
+  };
+  const coordinator = new DeepScanCoordinator({
+    run: fixture.run,
+    store,
+    executor: new FakeExecutor({ dedupNewFindings: [0] }),
+    packageRoot: fixture.packageRoot,
+    clock: immediateClock,
+    threadId: "fixture-owning-thread",
+    onComplete
+  });
+  coordinator.start();
+
+  const pending = await coordinator.wait(undefined, 5_000);
+  assert.equal(pending?.status, "running");
+  assert.equal(store.failCalls, 0, "published results must not be overwritten as failed");
+  assert.equal(store.finishCalls.length, 2, "terminal persistence must replay once");
+  assert.equal(published.length, 1);
+
+  const recoveryRun = await store.get();
+  const discovery = recoveryRun.persistedWorkers.find((worker) => worker.kind === "discovery");
+  const reducer = recoveryRun.persistedWorkers.find((worker) => worker.kind === "dedup");
+  assert.ok(discovery);
+  assert.ok(reducer);
+  recoveryRun.persistedDedupInputs = [{
+    dedupWorkerId: reducer.id,
+    discoveryWorkerId: discovery.id,
+    inputOrder: 0
+  }];
+  store.failFinish = false;
+  const recoveringCoordinator = new DeepScanCoordinator({
+    run: recoveryRun,
+    store,
+    executor: new FakeExecutor(),
+    packageRoot: fixture.packageRoot,
+    clock: immediateClock,
+    threadId: "fixture-owning-thread",
+    onComplete
+  });
+  recoveringCoordinator.start();
+
+  const recovered = await recoveringCoordinator.wait(undefined, 5_000);
+  assert.equal(recovered?.status, "succeeded");
+  assert.equal(store.failCalls, 0);
+  assert.equal(published.length, 2, "recovery must re-publish the same durable draft");
+}
+
 async function testLostFinishResponseReplaysWithoutOverwritingSuccessManifest() {
   const fixture = await fixtureRun({ workers: 1, subagents: 0, stopAfterNoNew: 1, maxDiscoveryRuns: 1 });
   const store = new FakeStore(fixture.run);
@@ -2141,6 +2256,40 @@ async function testWaiterDetachAndCancellation() {
   assert.equal(canceled?.status, "canceled");
   await eventually(() => executor.runningDiscovery === 0);
   await eventually(() => [...store.workers.values()].every((worker) => worker.status === "canceled"));
+}
+
+async function testConcurrentPersistedCancellationOnlyWritesOnce() {
+  const fixture = await fixtureRun({
+    workers: 1,
+    subagents: 0,
+    stopAfterNoNew: 1,
+    maxDiscoveryRuns: 1
+  });
+  const store = new FakeStore(fixture.run);
+  const executor = new FakeExecutor({ blockDiscovery: true });
+  const coordinator = new DeepScanCoordinator({
+    run: fixture.run,
+    store,
+    executor,
+    packageRoot: fixture.packageRoot,
+    clock: immediateClock
+  });
+  coordinator.start();
+  await executor.discoveryStarted;
+
+  let persistenceCalls = 0;
+  const persistCancellation = async () => {
+    persistenceCalls += 1;
+    store.run.status = "canceled";
+  };
+  const [first, second] = await Promise.all([
+    coordinator.cancelAfterPersistence("first cancellation request", persistCancellation),
+    coordinator.cancelAfterPersistence("second cancellation request", persistCancellation)
+  ]);
+
+  assert.equal(first.status, "canceled");
+  assert.equal(second.status, "canceled");
+  assert.equal(persistenceCalls, 1);
 }
 
 async function testCancellationDropsUnvalidatedDiscoveryResult() {
@@ -4147,6 +4296,7 @@ function boundedFixtureErrorText(message, maximum) {
 
 try {
   await testCappedQueueAndSerialDedup();
+  await testCoordinatorSnapshotsOwnNestedRunState();
   await testStandardWorkersReceiveExistingFalsePositiveFeedback();
   await testDiscoveryWorkersKeepOneContextAfterPersistedUpdate();
   await testPersistedContextDoesNotChangeAnotherProcessDiscoverySnapshot();
@@ -4179,6 +4329,7 @@ try {
   await testConfigurationFailureDoesNotRetry();
   await testFailureManifestWriteDoesNotMaskOriginalError();
   await testFinishPersistenceFailureRewritesManifestAsFailure();
+  await testPostPublicationFinishExhaustionStaysRecoverable();
   await testLostFinishResponseReplaysWithoutOverwritingSuccessManifest();
   await testLostWorkerCommitResponsesReplayIdempotently();
   await testCommittedReducerIsReconciledBeforeDiscoveryFailureManifest();
@@ -4205,6 +4356,7 @@ try {
   await testReducerTraceabilityRetryNamesExactMissingSource();
   await testThreeValidationAttemptsKeepPriorPromptsImmutable();
   await testWaiterDetachAndCancellation();
+  await testConcurrentPersistedCancellationOnlyWritesOnce();
   await testCancellationDropsUnvalidatedDiscoveryResult();
   await testCancellationDuringDiscoveryAcceptanceRejectsLateSuccess();
   await testRegistryEvictionAndExternalFailure();

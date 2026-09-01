@@ -76,6 +76,18 @@ interface SchedulerAudit {
   executions: WorkerExecutionAudit[];
 }
 
+class DeepScanTerminalPersistenceReplayError extends Error {
+  constructor(firstError: unknown, replayError: unknown) {
+    super(
+      `Deep Scan terminal persistence replay failed: ${errorMessage(replayError)}`
+      + ` (initial attempt: ${errorMessage(firstError)})`,
+      { cause: replayError }
+    );
+    this.name = "DeepScanTerminalPersistenceReplayError";
+  }
+}
+
+
 export interface CoordinatorOptions {
   run: DeepScanRunState;
   store: DeepScanStore;
@@ -126,6 +138,7 @@ export class DeepScanCoordinator {
   private terminal = false;
   private canceled = false;
   private externallyFailed = false;
+  private publicationCompleted = false;
   private phase: CoordinatorPhase = "setup";
   private discoveryDeadlineReached = false;
   private readonly audit: SchedulerAudit = {
@@ -257,7 +270,8 @@ export class DeepScanCoordinator {
     persistCancellation: () => Promise<void>
   ): Promise<DeepScanRunState> {
     if (this.terminal) return await this.settled();
-    if (!this.cancellationPersistence) {
+    const shouldPersistCancellation = this.cancellationPersistence === undefined;
+    if (shouldPersistCancellation) {
       let resolve!: () => void;
       let reject!: (error: unknown) => void;
       const promise = new Promise<void>((resolvePromise, rejectPromise) => {
@@ -266,14 +280,22 @@ export class DeepScanCoordinator {
       });
       this.cancellationPersistence = { promise, resolve, reject };
     }
+    const cancellationPersistence = this.cancellationPersistence;
+    if (!cancellationPersistence) {
+      throw new Error("Deep Scan cancellation persistence was not initialized.");
+    }
     this.cancel(reason);
     await this.cancellationReady;
-    try {
-      await persistCancellation();
-      this.cancellationPersistence.resolve();
-    } catch (error) {
-      this.cancellationPersistence.reject(error);
-      throw error;
+    if (shouldPersistCancellation) {
+      try {
+        await persistCancellation();
+        cancellationPersistence.resolve();
+      } catch (error) {
+        cancellationPersistence.reject(error);
+        throw error;
+      }
+    } else {
+      await cancellationPersistence.promise;
     }
     return await this.settled();
   }
@@ -320,6 +342,7 @@ export class DeepScanCoordinator {
         throw new Error("Deep Scan aggregate does not match its authoritative scan identity.");
       }
       await this.options.onComplete?.(draft, this.publicationAbortController.signal);
+      this.publicationCompleted = this.options.onComplete !== undefined;
       if (this.canceled || this.externallyFailed) return;
       this.state = await this.finishWithReplay(schedulerResult);
       if (this.canceled || this.externallyFailed) return;
@@ -339,6 +362,17 @@ export class DeepScanCoordinator {
         isStaleCoordinatorGenerationError(error)
       )) {
         await this.settleSchedulerWork();
+        return;
+      }
+      if (
+        this.publicationCompleted
+        && error instanceof DeepScanTerminalPersistenceReplayError
+      ) {
+        this.log({
+          event: "coordinator_finalization_deferred",
+          scanId: this.state.scanId,
+          reason: errorKind(error)
+        });
         return;
       }
       const message = errorMessage(error);
@@ -1146,8 +1180,8 @@ export class DeepScanCoordinator {
 
   /**
    * A workbench process can commit SQLite and still lose its stdout response.
-   * Replay the exact idempotent finish once before treating the run as failed;
-   * otherwise we could overwrite a successful terminal state after durable success.
+   * Replay the exact idempotent finish once, then reconcile durable success.
+   * A published draft stays recoverable rather than being overwritten as failed.
    */
   private async finishWithReplay(result: SchedulerResult): Promise<DeepScanRunState> {
     const input = {
@@ -1167,10 +1201,28 @@ export class DeepScanCoordinator {
       try {
         return await this.options.store.finish(input);
       } catch (replayError) {
-        throw new Error(
-          `Deep Scan terminal persistence replay failed: ${errorMessage(replayError)}`,
-          { cause: firstError }
-        );
+        if (this.options.threadId) {
+          try {
+            const reconciled = await this.options.store.get(
+              this.state.scanId,
+              this.options.threadId
+            );
+            if (
+              reconciled.status === "succeeded"
+              && reconciled.terminalReason === input.reason
+              && reconciled.manifestPath === input.manifestPath
+            ) {
+              return reconciled;
+            }
+          } catch (readError) {
+            this.log({
+              event: "coordinator_finish_reconciliation_failed",
+              scanId: this.state.scanId,
+              reason: errorKind(readError)
+            });
+          }
+        }
+        throw new DeepScanTerminalPersistenceReplayError(firstError, replayError);
       }
     }
   }
@@ -1218,7 +1270,7 @@ function removeValue(values: string[], value: string): void {
 }
 
 function cloneState(state: DeepScanRunState): DeepScanRunState {
-  return { ...state, config: { ...state.config } };
+  return structuredClone(state);
 }
 
 function errorMessage(error: unknown): string {

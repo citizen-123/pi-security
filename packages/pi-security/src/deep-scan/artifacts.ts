@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { constants as fsConstants, promises as fs } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import {
   assertPathInside,
   canonicalBoundDirectory,
 } from "../execution-boundary.js";
+
 export interface DeepScanArtifacts {
   scanDir: string;
   deepRoot: string;
@@ -14,6 +16,12 @@ export interface DeepScanArtifacts {
 
 export interface DiscoveryArtifacts {
   resultPath: string;
+}
+
+interface SecureParent {
+  handle: FileHandle;
+  path: string;
+  expectedParentPath: string;
 }
 
 export function createDeepScanArtifacts(scanDir: string): DeepScanArtifacts {
@@ -33,34 +41,113 @@ export function discoveryArtifacts(artifactDir: string): DiscoveryArtifacts {
 }
 
 export async function ensureDeepScanDirectories(artifacts: DeepScanArtifacts): Promise<void> {
-  for (const path of [
-    artifacts.deepRoot,
-    artifacts.workersRoot,
-    artifacts.dedupRoot
-  ]) {
-    await fs.mkdir(path, { recursive: true });
+  const scanDir = await canonicalBoundDirectory(artifacts.scanDir, "Deep Scan artifact root");
+  const expected = createDeepScanArtifacts(scanDir);
+  if (
+    resolve(artifacts.deepRoot) !== expected.deepRoot
+    || resolve(artifacts.workersRoot) !== expected.workersRoot
+    || resolve(artifacts.dedupRoot) !== expected.dedupRoot
+  ) {
+    throw new Error("Deep Scan artifact directories do not match their authoritative scan root.");
+  }
+  for (const path of [expected.deepRoot, expected.workersRoot, expected.dedupRoot]) {
+    assertPathInside(scanDir, path, "Deep Scan artifact directory");
+    const parent = await openSecureParent(
+      join(path, ".deep-scan-directory-probe"),
+      true,
+      "Deep Scan artifact directory"
+    );
+    try {
+      await assertSecureParentStillBound(parent, "Deep Scan artifact directory");
+    } finally {
+      await parent.handle.close();
+    }
   }
 }
 
 export async function writePrivateFile(path: string, content: string): Promise<void> {
-  await fs.mkdir(dirname(path), { recursive: true });
-  await fs.writeFile(path, content, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  const parent = await openSecureParent(path, true, "Deep Scan private file");
+  try {
+    await assertSecureParentStillBound(parent, "Deep Scan private file");
+    const file = await fs.open(
+      parent.path,
+      secureOpenFlags(
+        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,
+        false,
+        "Deep Scan private file"
+      ),
+      0o600
+    );
+    try {
+      await assertSecureParentStillBound(parent, "Deep Scan private file");
+      await file.writeFile(content, { encoding: "utf8" });
+    } finally {
+      await file.close();
+    }
+  } finally {
+    await parent.handle.close();
+  }
 }
 
 export async function writeJsonAtomic(path: string, payload: unknown): Promise<void> {
-  await fs.mkdir(dirname(path), { recursive: true });
-  const temporaryPath = `${path}.${randomUUID()}.tmp`;
-  await fs.writeFile(temporaryPath, `${JSON.stringify(payload, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600
-  });
-  await fs.rename(temporaryPath, path);
+  const parent = await openSecureParent(path, true, "Deep Scan JSON artifact");
+  const temporaryPath = join(
+    dirname(parent.path),
+    `.${randomUUID()}.tmp`
+  );
+  let temporaryCreated = false;
+  try {
+    await assertSecureParentStillBound(parent, "Deep Scan JSON artifact");
+    const temporary = await fs.open(
+      temporaryPath,
+      secureOpenFlags(
+        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,
+        false,
+        "Deep Scan JSON artifact"
+      ),
+      0o600
+    );
+    temporaryCreated = true;
+    try {
+      await assertSecureParentStillBound(parent, "Deep Scan JSON artifact");
+      await temporary.writeFile(`${JSON.stringify(payload, null, 2)}\n`, {
+        encoding: "utf8"
+      });
+    } finally {
+      await temporary.close();
+    }
+    await assertSecureParentStillBound(parent, "Deep Scan JSON artifact");
+    await fs.rename(temporaryPath, parent.path);
+  } catch (error) {
+    if (temporaryCreated) await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+    throw error;
+  } finally {
+    await parent.handle.close();
+  }
 }
 
 export async function readJsonObject(path: string): Promise<Record<string, unknown>> {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await fs.readFile(path, "utf8"));
+    const parent = await openSecureParent(path, false, "Deep Scan JSON artifact");
+    try {
+      await assertSecureParentStillBound(parent, "Deep Scan JSON artifact");
+      const file = await fs.open(
+        parent.path,
+        secureOpenFlags(fsConstants.O_RDONLY, false, "Deep Scan JSON artifact")
+      );
+      try {
+        await assertSecureParentStillBound(parent, "Deep Scan JSON artifact");
+        if (!(await file.stat()).isFile()) {
+          throw new Error("Deep Scan JSON artifact is not a regular file.");
+        }
+        parsed = JSON.parse(await file.readFile({ encoding: "utf8" }));
+      } finally {
+        await file.close();
+      }
+    } finally {
+      await parent.handle.close();
+    }
   } catch (error) {
     throw new Error(`Invalid Deep Scan JSON artifact ${path}: ${errorMessage(error)}`);
   }
@@ -76,31 +163,202 @@ export async function requireRegularFile(
   requireContent = true
 ): Promise<void> {
   const rootPath = await canonicalBoundDirectory(root, "Deep Scan artifact root");
-  const resolvedPath = await fs.realpath(path);
+  const requestedPath = absolutePath(path, "Deep Scan artifact");
   assertPathInside(
     rootPath,
-    resolvedPath,
+    requestedPath,
     `Deep Scan artifact escaped its scan directory: ${path}`,
     true,
   );
-  assertCanonicalPath(path, resolvedPath);
-  const [linkStat, fileStat] = await Promise.all([fs.lstat(path), fs.stat(path)]);
-  if (linkStat.isSymbolicLink() || !fileStat.isFile() || (requireContent && fileStat.size === 0)) {
-    throw new Error(`Deep Scan artifact is not a valid regular file: ${path}`);
+  const parent = await openSecureParent(requestedPath, false, "Deep Scan artifact");
+  try {
+    await assertSecureParentStillBound(parent, "Deep Scan artifact");
+    const file = await fs.open(
+      parent.path,
+      secureOpenFlags(fsConstants.O_RDONLY, false, "Deep Scan artifact")
+    );
+    try {
+      await assertSecureParentStillBound(parent, "Deep Scan artifact");
+      const fileStat = await file.stat();
+      if (!fileStat.isFile() || (requireContent && fileStat.size === 0)) {
+        throw new Error(`Deep Scan artifact is not a valid regular file: ${path}`);
+      }
+      const resolvedPath = await fs.realpath(parent.path);
+      assertPathInside(
+        rootPath,
+        resolvedPath,
+        `Deep Scan artifact escaped its scan directory: ${path}`,
+        true,
+      );
+      assertCanonicalPath(path, resolvedPath);
+    } finally {
+      await file.close();
+    }
+  } finally {
+    await parent.handle.close();
   }
 }
 
 export async function archiveDirectory(source: string, destination: string): Promise<void> {
-  await fs.mkdir(dirname(destination), { recursive: true });
-  await fs.rm(destination, { recursive: true, force: true });
-  try {
-    await fs.rename(source, destination);
-  } catch (error) {
-    if (!isMissing(error)) throw error;
+  const sourcePath = absolutePath(source, "Deep Scan archive source");
+  const destinationPath = absolutePath(destination, "Deep Scan archive destination");
+  if (sourcePath === destinationPath) {
+    throw new Error("Deep Scan archive source and destination must differ.");
   }
-  await fs.mkdir(source, { recursive: true });
+  const sourceParent = await openSecureParent(sourcePath, false, "Deep Scan archive source");
+  try {
+    const destinationParent = await openSecureParent(
+      destinationPath,
+      true,
+      "Deep Scan archive destination"
+    );
+    try {
+      await assertSecureParentStillBound(sourceParent, "Deep Scan archive source");
+      await assertSecureParentStillBound(destinationParent, "Deep Scan archive destination");
+      const sourceMetadata = await fs.lstat(sourceParent.path).catch((error: unknown) => {
+        if (isMissing(error)) return undefined;
+        throw error;
+      });
+      if (sourceMetadata && (sourceMetadata.isSymbolicLink() || !sourceMetadata.isDirectory())) {
+        throw new Error(`Deep Scan archive source is not a regular directory: ${source}`);
+      }
+      await assertSecureParentStillBound(sourceParent, "Deep Scan archive source");
+      await assertSecureParentStillBound(destinationParent, "Deep Scan archive destination");
+      await fs.rm(destinationParent.path, { recursive: true, force: true });
+      if (sourceMetadata) {
+        try {
+          await assertSecureParentStillBound(sourceParent, "Deep Scan archive source");
+          await assertSecureParentStillBound(destinationParent, "Deep Scan archive destination");
+          await fs.rename(sourceParent.path, destinationParent.path);
+        } catch (error) {
+          if (!isMissing(error)) throw error;
+        }
+      }
+      await assertSecureParentStillBound(sourceParent, "Deep Scan archive source");
+      await createSecureDirectory(sourceParent.path, "Deep Scan archive source");
+      const restored = await openSecureDirectory(sourceParent.path, "Deep Scan archive source");
+      await restored.close();
+    } finally {
+      await destinationParent.handle.close();
+    }
+  } finally {
+    await sourceParent.handle.close();
+  }
 }
 
+async function openSecureParent(
+  path: string,
+  createParents: boolean,
+  label: string
+): Promise<SecureParent> {
+  const absolute = absolutePath(path, label);
+  const root = parse(absolute).root;
+  const components = relative(root, absolute).split(sep).filter(Boolean);
+  const name = components.pop();
+  if (!name) throw new Error(`${label} must not be a filesystem root.`);
+
+  let directory = await openSecureDirectory(root, label);
+  try {
+    for (const component of components) {
+      const childPath = join(descriptorDirectoryPath(directory, label), component);
+      if (createParents) await createSecureDirectory(childPath, label);
+      const child = await openSecureDirectory(childPath, label);
+      await directory.close();
+      directory = child;
+    }
+    return {
+      handle: directory,
+      path: join(descriptorDirectoryPath(directory, label), name),
+      expectedParentPath: dirname(absolute)
+    };
+  } catch (error) {
+    await directory.close();
+    throw error;
+  }
+}
+
+async function assertSecureParentStillBound(parent: SecureParent, label: string): Promise<void> {
+  const current = await openSecureParent(
+    join(parent.expectedParentPath, ".deep-scan-parent-probe"),
+    false,
+    label
+  );
+  try {
+    const [expectedMetadata, currentMetadata] = await Promise.all([
+      parent.handle.stat(),
+      current.handle.stat()
+    ]);
+    if (
+      expectedMetadata.dev !== currentMetadata.dev
+      || expectedMetadata.ino !== currentMetadata.ino
+    ) {
+      throw new Error(`${label} changed while its directory handle was open.`);
+    }
+  } finally {
+    await current.handle.close();
+  }
+}
+
+async function openSecureDirectory(path: string, label: string): Promise<FileHandle> {
+  let directory: FileHandle;
+  try {
+    directory = await fs.open(
+      path,
+      secureOpenFlags(fsConstants.O_RDONLY, true, label)
+    );
+  } catch (error) {
+    throw new Error(`${label} cannot be opened safely.`, { cause: error });
+  }
+  try {
+    if (!(await directory.stat()).isDirectory()) {
+      throw new Error(`${label} is not a regular directory.`);
+    }
+    return directory;
+  } catch (error) {
+    await directory.close();
+    throw error;
+  }
+}
+
+async function createSecureDirectory(path: string, label: string): Promise<void> {
+  try {
+    await fs.mkdir(path, { mode: 0o700 });
+  } catch (error) {
+    if (isAlreadyExists(error)) return;
+    throw new Error(`${label} cannot create a directory safely.`, { cause: error });
+  }
+}
+
+function secureOpenFlags(base: number, directory: boolean, label: string): number {
+  const noFollow = fsConstants.O_NOFOLLOW;
+  const directoryOnly = fsConstants.O_DIRECTORY;
+  if (
+    process.platform === "win32"
+    || !Number.isInteger(noFollow)
+    || noFollow === 0
+    || (directory && (!Number.isInteger(directoryOnly) || directoryOnly === 0))
+  ) {
+    throw new Error(`${label} requires no-follow directory-handle support.`);
+  }
+  return base | noFollow | (directory ? directoryOnly : 0);
+}
+
+function descriptorDirectoryPath(handle: FileHandle, label: string): string {
+  const root = process.platform === "linux"
+    ? "/proc/self/fd"
+    : process.platform === "win32"
+      ? undefined
+      : "/dev/fd";
+  if (!root) throw new Error(`${label} requires descriptor-backed directory paths.`);
+  return join(root, String(handle.fd));
+}
+
+function absolutePath(path: string, label: string): string {
+  if (typeof path !== "string" || !path || !isAbsolute(path)) {
+    throw new Error(`${label} must be an absolute path.`);
+  }
+  return resolve(path);
+}
 
 function assertCanonicalPath(path: string, resolvedPath: string): void {
   if (relative(resolve(path), resolvedPath) === "") return;
@@ -109,6 +367,10 @@ function assertCanonicalPath(path: string, resolvedPath: string): void {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isAlreadyExists(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "EEXIST");
 }
 
 function isMissing(error: unknown): boolean {

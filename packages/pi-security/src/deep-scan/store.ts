@@ -194,6 +194,7 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       WORKFLOW_VERSION
     ], false, userContext);
     const run = parseDeepScan(result);
+    if (input.scanId) this.assertScanIdentity(input.scanId, run.scanId);
     await this.assertRunArtifactPaths(run);
     const startDisposition = result.startDisposition;
     if (startDisposition !== "created" && startDisposition !== "joined") {
@@ -230,6 +231,7 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       "--thread-id",
       threadId
     ]));
+    this.assertScanIdentity(scanId, run.scanId);
     await this.assertRunArtifactPaths(run);
     const generation = this.coordinatorLeases.get(scanId)?.run.coordinatorGeneration;
     if (
@@ -254,6 +256,7 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       ...(input.handoffClaimToken ? ["--claim-token", input.handoffClaimToken] : [])
     ]);
     const run = parseDeepScan(result);
+    this.assertScanIdentity(input.scanId, run.scanId);
     await this.assertRunArtifactPaths(run);
     const disposition = result.coordinatorDisposition;
     if (disposition !== "claimed" && disposition !== "adopted" && disposition !== "observing") {
@@ -339,8 +342,17 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
         : []),
       ...policyFailureArgs(update.policyFailure)
     ], true);
-    const worker = parseWorker(result, update.id);
     const state = objectValue(result.deepScan, "deepScan");
+    this.assertScanIdentity(
+      update.scanId,
+      requiredString(state.scanId, "deepScan.scanId")
+    );
+    const worker = parseWorker(result, update.id);
+    await this.assertArtifactPaths(update.scanId, [
+      worker.promptPath,
+      worker.artifactDir,
+      worker.resultManifestPath,
+    ]);
     return state.consecutiveErrors === undefined
       ? worker
       : {
@@ -383,7 +395,7 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       commit.resultManifestPath,
       commit.candidateLedgerPath,
     ]);
-    return parseDeepScan(await this.enqueueWrite([
+    const run = parseDeepScan(await this.enqueueWrite([
       "commit-deep-scan-dedup",
       "--scan-id",
       commit.scanId,
@@ -398,6 +410,9 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       "--new-findings-count",
       String(commit.newFindings)
     ], true));
+    this.assertScanIdentity(commit.scanId, run.scanId);
+    await this.assertRunArtifactPaths(run);
+    return run;
   }
 
   async finish(input: {
@@ -411,7 +426,7 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       input.manifestPath,
       input.stagedManifestPath,
     ]);
-    return parseDeepScan(await this.enqueueWrite([
+    const run = parseDeepScan(await this.enqueueWrite([
       "finish-deep-scan",
       "--scan-id",
       input.scanId,
@@ -425,6 +440,9 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
         : []),
       ...input.omittedWorkerIds.flatMap((workerId) => ["--omitted-worker-id", workerId])
     ], true));
+    this.assertScanIdentity(input.scanId, run.scanId);
+    await this.assertRunArtifactPaths(run);
+    return run;
   }
 
   async fail(
@@ -436,7 +454,7 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
     policyFailure?: DeepScanRunState["policyFailure"],
   ): Promise<DeepScanRunState> {
     await this.assertArtifactPaths(scanId, [manifestPath, stagedManifestPath]);
-    return parseDeepScan(await this.enqueueWrite([
+    const run = parseDeepScan(await this.enqueueWrite([
       "fail-deep-scan",
       "--scan-id",
       scanId,
@@ -448,6 +466,9 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       ...(status === "interrupted" ? ["--deep-status", "interrupted"] : []),
       ...policyFailureArgs(policyFailure)
     ]));
+    this.assertScanIdentity(scanId, run.scanId);
+    await this.assertRunArtifactPaths(run);
+    return run;
   }
 
   async recordStoppedPublicationFailure(
@@ -455,7 +476,7 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
     message: string,
     coordinatorGeneration?: number
   ): Promise<DeepScanRunState> {
-    return parseDeepScan(await this.enqueueWrite([
+    const run = parseDeepScan(await this.enqueueWrite([
       "record-deep-scan-publication-failure",
       "--scan-id",
       scanId,
@@ -465,6 +486,9 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       "--message",
       message
     ], true));
+    this.assertScanIdentity(scanId, run.scanId);
+    await this.assertRunArtifactPaths(run);
+    return run;
   }
 
   async updateProgress(input: {
@@ -624,6 +648,12 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
         worker.resultManifestPath,
       ]),
     ]);
+  }
+
+  private assertScanIdentity(expectedScanId: string, actualScanId: string): void {
+    if (actualScanId !== expectedScanId) {
+      throw new Error("Pi Security workbench returned a different Deep Scan identity.");
+    }
   }
 }
 
