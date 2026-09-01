@@ -24,7 +24,7 @@
     "typecheck": "tsc --noEmit",
     "test:node": "node --test tests/*.test.mjs",
     "test:python": "node tests/run-python-tests.mjs",
-    "test:pack": "npm run build && node --test tests/package-content.test.mjs",
+    "test:pack": "npm run build && node --test tests/package-content.pack.mjs",
     "test": "npm run build && npm run test:node && npm run test:python"
   },
   "dependencies": {
