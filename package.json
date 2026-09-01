@@ -51,7 +51,7 @@
     "typescript": "^6.0.3"
   },
   "engines": {
-    "node": ">=20",
+    "node": ">=22.19.0",
     "npm": ">=10"
   },
   "keywords": ["pi", "security", "static-analysis", "pi-package"],

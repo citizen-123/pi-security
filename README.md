@@ -169,7 +169,7 @@ max_time_hours = 4
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22.19 or newer
 - Python 3.11 or newer
 - Git for Git-aware targets and Diff scans
 - A Pi installation

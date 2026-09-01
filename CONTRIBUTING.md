@@ -17,7 +17,7 @@ npm test
 npm run test:pack
 ```
 
-Use Node.js 20 or newer, npm 10 or newer, and Python 3.11 or newer. Keep changes
+Use Node.js 22.19 or newer, npm 10 or newer, and Python 3.11 or newer. Keep changes
 focused, follow the existing implementation patterns, and add tests for new or
 changed observable behavior.
 
