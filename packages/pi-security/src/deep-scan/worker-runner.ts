@@ -251,7 +251,7 @@ export class DeepScanWorkerRunner {
           : { consecutiveErrors: outcome.consecutiveErrors })
       };
     }
-    if (outcome.status === "canceled" || this.options.signal.aborted) {
+    if (outcome.status === "canceled") {
       return { type: "discovery", status: "canceled", workerId };
     }
 
@@ -532,8 +532,12 @@ export class DeepScanWorkerRunner {
         continuationId: resumableContinuationId
       };
       let attemptPersisted = false;
+      let policyReady = false;
       const persistPolicyReadyAttempt = async (): Promise<void> => {
-        if (attemptPersisted) return;
+        if (policyReady) {
+          throw new Error("Pi worker executor validated its continuation policy more than once.");
+        }
+        policyReady = true;
         await this.options.store.updateWorker(baseMutation);
         attemptPersisted = true;
         this.options.log({
@@ -544,9 +548,6 @@ export class DeepScanWorkerRunner {
           attempt
         });
       };
-      if (!resumableContinuationId) {
-        await persistPolicyReadyAttempt();
-      }
       try {
         const executionContext = issueDeepScanSourceContext({
           targetRoot: run.targetPath,
@@ -599,7 +600,7 @@ export class DeepScanWorkerRunner {
             });
           }
         });
-        if (!attemptPersisted) {
+        if (!policyReady || !attemptPersisted) {
           throw new Error(
             "Pi worker executor returned without validating its continuation policy.",
           );
