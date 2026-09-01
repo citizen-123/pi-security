@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "pi-security.synthetic-triage-results/v1",
+  "results": [
+    {
+      "caseId": "sql-search-primary",
+      "verdict": "confirmed",
+      "severity": "high",
+      "dedupKey": "CWE-89|src/server.js|search",
+      "report": "## SQL injection\nAttacker input reaches string-built SQL at `src/server.js:42-45`."
+    },
+    {
+      "caseId": "sql-search-duplicate",
+      "verdict": "confirmed",
+      "severity": "high",
+      "dedupKey": "CWE-89|src/server.js|search",
+      "report": "## SQL injection\nDuplicate alert for the same root cause at `src/server.js:42-45`."
+    },
+    {
+      "caseId": "open-redirect",
+      "verdict": "confirmed",
+      "severity": "medium",
+      "dedupKey": "CWE-601|src/server.js|redirect",
+      "report": "## Open redirect\nThe untrusted destination is passed to the response at `src/server.js:14-16`."
+    },
+    {
+      "caseId": "safe-redirect-control",
+      "verdict": "not_actionable",
+      "severity": null,
+      "dedupKey": null,
+      "report": "The destination is constrained by an allowlist, so this alert is not actionable."
+    },
+    {
+      "caseId": "download-traversal",
+      "verdict": "confirmed",
+      "severity": "high",
+      "dedupKey": "CWE-22|src/server.js|download",
+      "report": "## Path traversal\nUntrusted path segments reach `sendFile` through `src/server.js:27-30`."
+    },
+    {
+      "caseId": "orders-idor",
+      "verdict": "confirmed",
+      "severity": "high",
+      "dedupKey": "CWE-639|src/server.js|order",
+      "report": "## Missing object authorization\nThe lookup at `src/server.js:48-53` has no ownership authorization check."
+    },
+    {
+      "caseId": "partner-export-gated",
+      "verdict": "needs_review",
+      "severity": "medium",
+      "dedupKey": "SURFACE|src/server.js|partnerExport",
+      "report": "A runtime gate disables the route by default; deployment state needs review."
+    }
+  ]
+}

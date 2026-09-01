@@ -1,0 +1,57 @@
+{
+  "documentType": "pi-security.findings",
+  "schemaVersion": "1.0",
+  "scanId": "scan_example_001",
+  "findings": [
+    {
+      "findingId": "csf_63e47f0d1bc734a6d3f22eee",
+      "occurrenceId": "occ_b67c32280faa666caff5658a",
+      "ruleId": "path-traversal.archive-extraction",
+      "identity": {
+        "anchor": "archive-entry-write-without-containment"
+      },
+      "fingerprints": {
+        "algorithm": "pi-security/v1",
+        "primary": "pi-security/v1:sha256:9b291ca5d6d34ba25a31f7ba09b1ef0832cb466c9c7f073d0147d13d1d7a0311"
+      },
+      "title": "Unsafe archive extraction can escape the output directory",
+      "summary": "An attacker-controlled path reaches a filesystem write without containment validation.",
+      "severity": {
+        "level": "high",
+        "score": 8.1,
+        "scoringSystem": "CVSS:3.1"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace reaches the filesystem write without a containment check."
+      },
+      "taxonomy": {
+        "category": "path-traversal",
+        "cwe": [
+          "CWE-22"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/extract.py",
+          "startLine": 41,
+          "endLine": 44,
+          "role": "sink"
+        }
+      ],
+      "remediation": "Normalize destinations and reject entries that escape the extraction root.",
+      "validation": null,
+      "attackPath": null,
+      "remediationTests": [
+        "Assert that extracting an archive entry named `../escape.txt` fails without writing outside the extraction root."
+      ],
+      "preventiveControls": [
+        "Route all archive extraction through one helper that normalizes and validates destination paths."
+      ],
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    }
+  ]
+}

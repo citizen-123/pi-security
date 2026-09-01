@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "pi-security.synthetic-triage-cases/v1",
+  "repository": "repositories/triage-app",
+  "cases": [
+    {
+      "caseId": "sql-search-primary",
+      "source": { "path": "src/server.js", "line": 44, "contains": "SELECT id, name FROM products" },
+      "expected": { "verdict": "confirmed", "severity": "high", "dedupGroup": "sql-search", "reportIncludes": ["SQL injection", "src/server.js:42-45"] }
+    },
+    {
+      "caseId": "sql-search-duplicate",
+      "source": { "path": "src/server.js", "line": 44, "contains": "SELECT id, name FROM products" },
+      "expected": { "verdict": "confirmed", "severity": "high", "dedupGroup": "sql-search", "reportIncludes": ["SQL injection", "src/server.js:42-45"] }
+    },
+    {
+      "caseId": "open-redirect",
+      "source": { "path": "src/server.js", "line": 16, "contains": "res.redirect(next)" },
+      "expected": { "verdict": "confirmed", "severity": "medium", "dedupGroup": "open-redirect", "reportIncludes": ["Open redirect", "src/server.js:14-16"] }
+    },
+    {
+      "caseId": "safe-redirect-control",
+      "source": { "path": "src/server.js", "line": 21, "contains": "REDIRECT_ALLOWLIST.has" },
+      "expected": { "verdict": "not_actionable", "severity": null, "dedupGroup": null, "reportIncludes": ["allowlist", "not actionable"] }
+    },
+    {
+      "caseId": "download-traversal",
+      "source": { "path": "src/server.js", "line": 29, "contains": "path.join(PUBLIC_ROOT" },
+      "expected": { "verdict": "confirmed", "severity": "high", "dedupGroup": "download-traversal", "reportIncludes": ["Path traversal", "src/server.js:27-30"] }
+    },
+    {
+      "caseId": "orders-idor",
+      "source": { "path": "src/server.js", "line": 49, "contains": "orders[req.params.id]" },
+      "expected": { "verdict": "confirmed", "severity": "high", "dedupGroup": "orders-idor", "reportIncludes": ["authorization", "src/server.js:48-53"] }
+    },
+    {
+      "caseId": "partner-export-gated",
+      "source": { "path": "src/server.js", "line": 64, "contains": "ENABLE_PARTNER_EXPORT" },
+      "expected": { "verdict": "needs_review", "severity": "medium", "dedupGroup": "partner-export", "reportIncludes": ["runtime gate", "needs review"] }
+    }
+  ]
+}

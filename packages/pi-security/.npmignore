@@ -1,0 +1,53 @@
+# Python-generated artifacts
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# Local scan state and databases
+**/.pi-security/
+**/security-scans/
+**/scan-output/
+**/scan-cache/
+**/scans/
+**/state/
+**/*.db
+**/*.db-journal
+**/*.db-shm
+**/*.db-wal
+**/*.sqlite
+**/*.sqlite-journal
+**/*.sqlite-shm
+**/*.sqlite-wal
+**/*.sqlite3
+**/*.sqlite3-journal
+**/*.sqlite3-shm
+**/*.sqlite3-wal
+
+# Temporary configuration and evaluation caches
+**/.cache/
+**/.eval-cache/
+**/config-cache/
+**/eval-cache/
+**/tmp/
+**/temp/
+**/*.cache
+**/*.cache.json
+**/*.cache.toml
+**/*.tmp
+**/*.temp
+
+# Development-only inputs
+/src/
+/extensions/
+/tests/
+/evals/
+/requirements-test.txt
+/tsconfig.json
+/scripts-build.mjs
+/main.ts
+/server.ts
+/artifact-writer-main.ts

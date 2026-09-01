@@ -1,91 +1,119 @@
-# Codex Security
+# Pi Security
 
-`@openai/codex-security` is a CLI and TypeScript SDK for finding, validating, and fixing security vulnerabilities in your code.
+Pi-native security scanning with an optional stdio MCP transport. The package contains the local workbench, schemas, skills, report generation, findings database, triage/remediation workflows, and MCP server. It does not require a model-provider CLI or SDK, provider account or API key, or hosted security service.
 
-**👉👉 See the [Codex Security documentation](https://learn.chatgpt.com/docs/security/cli)** for full documentation.
+## Install in Pi
 
-Some cybersecurity requests and protected findings require approval through
-Trusted Access for Cyber. To join the program, visit
-[chatgpt.com/cyber](https://chatgpt.com/cyber).
-
-## Quick start
-
-Requires Node.js 22.13.0 or later and Python 3.10 or later.
-
-```bash
-npm install @openai/codex-security
-codex-security login
-codex-security scan /path/to/directory
+```sh
+pi install git:github.com/<owner>/<repository>
 ```
 
-For CI, set `OPENAI_API_KEY` instead of signing in.
+After npm publication:
 
-## TypeScript SDK
-
-Codex Security is a Javascript package:
-
-```ts
-import { CodexSecurity } from "@openai/codex-security";
-
-const security = new CodexSecurity();
-const result = await security.run("/path/to/directory");
-await security.run("/path/to/directory", {
-  mode: "deep",
-  workers: 2,
-  subagents: 0,
-  stopAfterNoNew: 3,
-  maxDiscoveryRuns: 10,
-  maxTimeHours: 1.5,
-});
-
-console.log(result.reportPath);
-await security.close();
+```sh
+pi install npm:pi-security
 ```
 
-## Containerized bulk scans
+Pi loads the bundled `pi-subagents` extension first and then Pi Security. Standard and diff scans work through the native extension immediately after package load:
 
-Use the included Docker Compose configuration for scans of many repositories. See the [container quick start](sdk/typescript/README.md#containerized-bulk-scans) for more detail.
-
-For individual CLI stages with durable state and access to a separately deployed
-findings service, use the same scanner image with the
-[workflow runner Compose example](docker/README.md#workflow-runner).
-
-## Findings service (preview)
-
-Run `codex-security serve` to start the service without Docker. See
-[running without Docker](sdk/typescript/README.md#running-without-docker)
-for prerequisites, credentials, and storage configuration.
-
-The [findings service](sdk/typescript/README.md#findings-service-preview) runs
-from the same `ghcr.io/openai/codex-security` image as the scanner (or a local
-source build), with a separate container and state volume configured by
-`compose.findings.yaml`. It stores findings and embeddings in SQLite and lists
-findings with pagination. Its read-only dashboard at `/dashboard` refreshes every
-five seconds and shows stored findings and duplicate groups from the service's
-database. It also returns potential duplicates by embedding similarity within a
-repository or an explicit all-repository scope. The
-`codex-security publish scan --to custom --findings-url http://localhost:3000`
-command uploads completed findings and their repository ID. The SDK and
-`codex-security dedupe` command retrieve candidates, run independent Codex
-reviews locally, and persist accepted duplicate groups; `--all-repositories`
-opts into the broader scope.
-
-## Other providers
-
-To use another inference provider, set its API key and select a model:
-
-```bash
-export AWS_BEARER_TOKEN_BEDROCK="<your-bedrock-api-key>"
-export AWS_REGION="us-east-2"
-codex-security scan . --provider amazon-bedrock --model openai.gpt-5.6-luna
-
-export OPENROUTER_API_KEY="<your-openrouter-api-key>"
-codex-security scan . --provider openrouter --model anthropic/claude-sonnet-4.5
-
-export FIREWORKS_API_KEY="<your-fireworks-api-key>"
-codex-security scan . --provider fireworks --model accounts/fireworks/models/qwen3-235b-a22b
+```text
+/security-scan [optional focus]
+/security-diff-scan [optional focus]
 ```
 
-## Documentation
+No separate MCP server entry is needed for this Pi lifecycle. The stdio server is an optional transport for other MCP hosts and for Deep Scan hosts that implement tool-enabled sampling.
 
-**👉👉 See the [Codex Security documentation](https://learn.chatgpt.com/docs/security/cli)** for full documentation.
+## Capability matrix
+
+| Capability | Native Pi package | Generic MCP client |
+| --- | --- | --- |
+| Standard scan | Yes. The skill uses Pi's local source tools, bundled read-only subagents, and local lifecycle/artifact tools. | Lifecycle tools are available, but the client must drive the audit and provide local source access. No MCP sampling is required. |
+| Diff scan | Yes. Same native lifecycle, scoped to an exact local Git change set. | Lifecycle tools are available; the client must provide local source and Git access. No MCP sampling is required. |
+| Deep Scan | Not through the native extension alone. Run the optional MCP server from a compatible host. | Yes only when the client advertises MCP 2025-11-25 `sampling.tools`. Basic sampling is insufficient. |
+| Local state, validation, reports, SARIF, triage, and remediation | Included | Included over stdio |
+| Pi subagent fleet | Bundled and configured | Not supplied by MCP transport; Deep Scan has its own bounded sampling delegation when enabled. |
+
+An MCP connector that can call server tools is not necessarily equivalent to an MCP client with `sampling.tools`. If it cannot accept server-initiated, tool-enabled sampling requests, Standard and diff lifecycle operations remain available but Deep Scan is not.
+
+## Permission profiles and enforcement
+
+Every policy context is issued by Pi Security, bound to one target root, scan ID, and artifact root, and checked for module provenance. A tool argument, serialized continuation, cloned object, or repository file cannot select or manufacture a profile.
+
+| Capability | `security-readonly` | `security-delegating-readonly` | `security-artifact-writer` |
+| --- | ---: | ---: | ---: |
+| `target.read` | Yes | Yes | No |
+| `target.search` | Yes | Yes | No |
+| `target.git` | Yes | Yes | No |
+| `scan-artifacts.write` | No | No | Yes |
+| `workbench.execute` | No | No | Yes |
+| `delegation.create` | No | Yes, with a host-issued budget and one-level depth | No |
+| `network.access` | No | No | No |
+| `target.execute` | No | No | No |
+| `target.write` | No | No | No |
+
+The Pi adapter fixes lifecycle, workbench, and artifact operations to `security-artifact-writer`; packaged audit agents receive `security-readonly`; and the coordinator alone receives bounded `security-delegating-readonly` authority whose children are forced back to `security-readonly`. Pi run control is restricted to run IDs created by the same Pi Security session and canonical target. The MCP adapter similarly chooses the source profile from host configuration, issues a separate fixed artifact writer, and uses the same capability requirements for both advertised tools and direct dispatch.
+
+This is a **capability sandbox**, not a claim of a cross-platform OS process sandbox. Scan profiles expose no general target command execution, target writes, or network tools. `workbench.execute` authorizes only fixed bundled-workbench dispatch, and artifact writes are limited to trusted workbench and scan artifacts under the bound artifact root outside the target. Git-aware reads use fixed metadata operations with repository-configured helper sinks disabled.
+
+Target paths must be repository-relative and remain inside the bound target and scope. Existing paths are opened without following symlinks and consumed through verified handles; directory identity is checked during enumeration. Linux uses no-follow opens plus `/proc/self/fd`, other supported POSIX hosts use `/dev/fd`, and Windows rejects reparse-point changes and rechecks file identity. If the host cannot enforce its required handle or root mechanism, Pi Security returns `PI_SECURITY_ENFORCEMENT_UNSUPPORTED` before the guarded state commit. There is no fallback to pathname-only enforcement.
+
+Deep Scan continuation v2 stores application-owned policy state. Recovery reissues the exact profile, target/scan bindings, capabilities, and remaining delegation state from fresh host authority before sampling or artifact writes. Legacy v1 state, mismatched continuation IDs or kinds, altered profiles or budgets, stale delegation predecessors, and forged child markers/results fail closed with `PI_SECURITY_POLICY_RECOVERY_REJECTED`.
+
+The policy layer uses these stable codes:
+
+- `PI_SECURITY_POLICY_DENIED` (`policy_denied`) for a capability denial;
+- `PI_SECURITY_ENFORCEMENT_UNSUPPORTED` (`unsupported_enforcement`) when the host cannot apply a required mechanism;
+- `PI_SECURITY_POLICY_RECOVERY_REJECTED` (`policy_recovery_rejected`) for rejected recovery, with reason `legacy_continuation`, `profile_mismatch`, `invalid_policy`, `delegation_mismatch`, or `binding_mismatch`.
+
+Public `enforcementCapabilities` diagnostics contain `schemaVersion`, `kind` (`availability` or `effective`), `supported`, `mechanisms`, and `unsupportedReason`. Successful worker diagnostics may also contain `effectivePolicy` with `schemaVersion`, public `source` and `artifactWriter` projections (`profile`, `capabilities`, and `delegation`), and the effective enforcement report. These projections intentionally omit target paths, artifact paths, scan IDs, claims, credentials, and continuation tokens.
+
+## Bundled subagents
+
+The package publishes four read-only profiles:
+
+- `pi-security-scout` — attack-surface and repository mapping
+- `pi-security-auditor` — focused vulnerability investigation
+- `pi-security-validator` — independent validation and attack-path review
+- `pi-security-reviewer` — final false-positive and consistency review
+
+Standard and diff scan skills start these agents concurrently through `pi_security_spawn_agents`. `pi_security_control_agents` provides fleet or targeted status, transcript tails, steering, interruption, stopping, and resumption. Project or user profiles with the same names retain normal `pi-subagents` discovery precedence.
+
+## Optional MCP server
+
+```sh
+npm install
+npm run build
+pi-security-mcp
+```
+
+Example stdio configuration:
+
+```json
+{
+  "mcpServers": {
+    "pi-security": {
+      "command": "pi-security-mcp",
+      "env": {
+        "PI_SECURITY_STATE_DIR": "/absolute/path/to/private/state",
+        "PI_SECURITY_SCAN_ROOT": "/absolute/path/to/private/scans"
+      }
+    }
+  }
+}
+```
+
+Deep Scan supplies target-bound list, read, literal-search, repository-metadata, scan-context, and schema-bound record tools to each sampling request. The server persists its own continuation transcript and can run a configured, bounded layer of nested sampling tasks; it does not depend on provider thread identifiers.
+
+Model and reasoning settings are requests, not proof that a sampling client applied them. Pi Security reports applied reasoning only when the client acknowledges it, and reports only client- or host-supplied token usage as complete, partial, or unavailable. It never estimates missing usage.
+
+Legacy provider-specific executors and provider-configuration discovery are intentionally absent. There is no hidden provider fallback when native tools or MCP sampling capabilities are unavailable.
+
+## Requirements
+
+- Node.js 20 or newer
+- Python 3.11 or newer for the local workbench
+- Git for Git-aware targets and diff scans
+
+All native lifecycle and low-level workbench calls resolve Python consistently: `PI_SECURITY_PYTHON_COMMAND`, then `PYTHON`, then Pi's cached primary runtime when executable, then the platform default.
+
+See [`packages/pi-security/README.md`](packages/pi-security/README.md) for the detailed transport behavior, state/configuration, direct workbench use, and development setup.

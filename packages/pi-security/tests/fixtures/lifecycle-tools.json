@@ -1,0 +1,5502 @@
+{
+  "version": 2,
+  "rename": {
+    "from": "codex_security",
+    "to": "pi_security"
+  },
+  "schemaArtifacts": [
+    "schemas/definitions/artifact-common.schema.json",
+    "schemas/definitions/discovery-candidate.schema.json",
+    "schemas/tools/review-items.schema.json",
+    "schemas/tools/discovery-candidates.schema.json",
+    "schemas/tools/candidate-validations.schema.json",
+    "schemas/tools/candidate-attack-paths.schema.json",
+    "schemas/tools/scan-draft.schema.json",
+    "schemas/tools/deep-reducer.schema.json"
+  ],
+  "surfaces": {
+    "standalone": [
+      "attach_pi_security_scan_continuation_thread",
+      "cancel_pi_security_finding_remediation_request",
+      "cancel_pi_security_scan",
+      "cancel_pi_security_scan_from_app",
+      "claim_pi_security_finding_remediation_resend",
+      "claim_pi_security_scan_handoff_delivery",
+      "complete_pi_security_scan",
+      "export_pi_security_findings",
+      "fail_pi_security_scan",
+      "get_pi_security_completed_scan",
+      "get_pi_security_scan",
+      "get_pi_security_scan_context",
+      "inspect_pi_security_setup",
+      "inspect_pi_security_target",
+      "list_pi_security_candidates",
+      "list_pi_security_findings",
+      "list_pi_security_global_findings",
+      "list_pi_security_repositories",
+      "list_pi_security_review_items",
+      "list_pi_security_scans",
+      "mark_pi_security_finding_remediation_delivered",
+      "mark_pi_security_scan_handoff_delivered",
+      "open_pi_security_workspace",
+      "prepare_pi_security_review_items",
+      "record_candidate_attack_paths",
+      "record_pi_security_candidate_validations",
+      "record_pi_security_discovery_candidates",
+      "record_pi_security_scan_draft",
+      "recover_pi_security_scan_results",
+      "release_pi_security_finding_remediation_claim",
+      "release_pi_security_scan_handoff_delivery",
+      "request_pi_security_finding_remediation",
+      "request_pi_security_finding_remediation_action",
+      "request_pi_security_user_input",
+      "set_pi_security_finding_remediation",
+      "set_pi_security_finding_triage",
+      "start_pi_security_deep_scan",
+      "start_pi_security_prompt_only_scan",
+      "start_pi_security_scan",
+      "start_pi_security_standard_scan",
+      "submit_pi_security_setup",
+      "update_pi_security_scan_context",
+      "update_pi_security_scan_context_from_app",
+      "update_pi_security_scan_progress"
+    ],
+    "worker": [
+      "record_pi_security_scan_draft"
+    ],
+    "reducer": [
+      "get_pi_security_deep_reducer_inputs",
+      "record_pi_security_deep_reduction"
+    ]
+  },
+  "tools": [
+    {
+      "name": "attach_pi_security_scan_continuation_thread",
+      "originalName": "attach_codex_security_scan_continuation_thread",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "claimToken": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              {
+                "pattern": "^recovery_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            ]
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "threadId": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimToken",
+          "scanId",
+          "threadId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "cancel_pi_security_finding_remediation_request",
+      "originalName": "cancel_codex_security_finding_remediation_request",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "actionToken": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "occurrenceId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actionToken",
+          "occurrenceId",
+          "requestId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "cancel_pi_security_scan",
+      "originalName": "cancel_codex_security_scan",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "cancel_pi_security_scan_from_app",
+      "originalName": "cancel_codex_security_scan_from_app",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "claim_pi_security_finding_remediation_resend",
+      "originalName": "claim_codex_security_finding_remediation_resend",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "actionToken": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "occurrenceId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actionToken",
+          "occurrenceId",
+          "requestId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "claim_pi_security_scan_handoff_delivery",
+      "originalName": "claim_codex_security_scan_handoff_delivery",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "claimToken": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              {
+                "pattern": "^recovery_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            ]
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "takeOverStale": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "claimToken",
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "complete_pi_security_scan",
+      "originalName": "complete_codex_security_scan",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "handoffClaimToken": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              {
+                "pattern": "^recovery_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            ],
+            "description": "Opaque continuation token returned by the native launcher. Pass it on every progress, completion, or failure update after a resume."
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "export_pi_security_findings",
+      "originalName": "export_codex_security_findings",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "format": {
+            "enum": [
+              "csv",
+              "json",
+              "sarif"
+            ],
+            "type": "string"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "format",
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "fail_pi_security_scan",
+      "originalName": "fail_codex_security_scan",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "handoffClaimToken": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              {
+                "pattern": "^recovery_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            ],
+            "description": "Opaque continuation token returned by the native launcher. Pass it on every progress, completion, or failure update after a resume."
+          },
+          "message": {
+            "maxLength": 2400,
+            "minLength": 1,
+            "type": "string"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_pi_security_completed_scan",
+      "originalName": "get_codex_security_completed_scan",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "handoffClaimToken": {
+            "pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|recovery_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_pi_security_deep_reducer_inputs",
+      "originalName": "get_codex_security_deep_reducer_inputs",
+      "surfaces": [
+        "reducer"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_pi_security_scan",
+      "originalName": "get_codex_security_scan",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "occurrenceId": {
+            "description": "Optional finding occurrence to include even when it is outside the bounded findings prefix.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_pi_security_scan_context",
+      "originalName": "get_codex_security_scan_context",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "handoffClaimToken": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              {
+                "pattern": "^recovery_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            ],
+            "description": "Opaque delivery token returned by the native scan launcher. Pass it once so Pi can acknowledge that this continuation received the scan."
+          },
+          "occurrenceId": {
+            "description": "Optional finding occurrence to include even when it is outside the bounded findings prefix.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "inspect_pi_security_setup",
+      "originalName": "inspect_codex_security_setup",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "diffTarget": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentDigest": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "working_tree",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "commit",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "headRevision",
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "range",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "baseRevision",
+                  "headRevision",
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "mode": {
+            "enum": [
+              "diff",
+              "standard",
+              "deep"
+            ],
+            "type": "string"
+          },
+          "scope": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetPath": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "scope",
+          "targetPath"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "inspect_pi_security_target",
+      "originalName": "inspect_codex_security_target",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "targetPath": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetPath"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_pi_security_candidates",
+      "originalName": "list_codex_security_candidates",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "pattern": "^(?:0|[1-9][0-9]*)$",
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "scanId": {
+            "pattern": "\\S",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_pi_security_findings",
+      "originalName": "list_codex_security_findings",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "limit": {
+            "exclusiveMinimum": 0,
+            "maximum": 50,
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "informational"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "closed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_pi_security_global_findings",
+      "originalName": "list_codex_security_global_findings",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "limit": {
+            "exclusiveMinimum": 0,
+            "maximum": 20,
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "informational"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "closed"
+            ],
+            "type": "string"
+          },
+          "targetId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_pi_security_repositories",
+      "originalName": "list_codex_security_repositories",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "limit": {
+            "exclusiveMinimum": 0,
+            "maximum": 50,
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "scanned",
+              "not_scanned",
+              "open_findings"
+            ],
+            "type": "string"
+          },
+          "targetId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_pi_security_review_items",
+      "originalName": "list_codex_security_review_items",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "pattern": "^(?:0|[1-9][0-9]*)$",
+            "type": "string"
+          },
+          "handoffClaimToken": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_pi_security_scans",
+      "originalName": "list_codex_security_scans",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "limit": {
+            "exclusiveMinimum": 0,
+            "maximum": 50,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "diff",
+              "standard",
+              "deep"
+            ],
+            "type": "string"
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "complete",
+              "failed",
+              "canceled"
+            ],
+            "type": "string"
+          },
+          "targetId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "mark_pi_security_finding_remediation_delivered",
+      "originalName": "mark_codex_security_finding_remediation_delivered",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "actionToken": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "occurrenceId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actionToken",
+          "occurrenceId",
+          "requestId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "mark_pi_security_scan_handoff_delivered",
+      "originalName": "mark_codex_security_scan_handoff_delivered",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "claimToken": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              {
+                "pattern": "^recovery_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            ]
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimToken",
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "open_pi_security_workspace",
+      "originalName": "open_codex_security_workspace",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "diffTarget": {
+            "description": "Exact local Git revisions for Review changes mode.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentDigest": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "working_tree",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "commit",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "headRevision",
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "range",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "baseRevision",
+                  "headRevision",
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "mode": {
+            "description": "Initial scan mode inferred from the user's request.",
+            "enum": [
+              "diff",
+              "standard",
+              "deep"
+            ],
+            "type": "string"
+          },
+          "scope": {
+            "description": "Optional directory inside targetPath. Use '.' or omit it for the whole target. Target-relative paths are preferred; absolute paths inside targetPath are normalized.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sessionId": {
+            "description": "Existing workspace ID to reopen without changing its setup. When provided, omit all other fields.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "targetPath": {
+            "description": "Optional resolved local target path.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetSummary": {
+            "description": "Optional bounded target/security context.",
+            "maxLength": 2400,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetTitle": {
+            "description": "Optional human-readable target name.",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "userContext": {
+            "description": "Optional security focus supplied by the user.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "prepare_pi_security_review_items",
+      "originalName": "prepare_codex_security_review_items",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "handoffClaimToken": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "record_candidate_attack_paths",
+      "originalName": "record_candidate_attack_paths",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "attackPaths": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "attackPath": {
+                  "oneOf": [
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "change_conditions": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "counterevidence": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "dataflow": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "decision": {
+                          "const": "reportable",
+                          "type": "string"
+                        },
+                        "impact": {
+                          "enum": [
+                            "high",
+                            "medium",
+                            "low",
+                            "ignore",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "likelihood": {
+                          "enum": [
+                            "high",
+                            "medium",
+                            "low",
+                            "ignore",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "reachability": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "severity": {
+                          "enum": [
+                            "critical",
+                            "high",
+                            "medium",
+                            "low"
+                          ],
+                          "type": "string"
+                        },
+                        "severity_rationale": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "change_conditions",
+                        "counterevidence",
+                        "dataflow",
+                        "decision",
+                        "impact",
+                        "likelihood",
+                        "reachability",
+                        "severity",
+                        "severity_rationale"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "change_conditions": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "counterevidence": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "dataflow": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "decision": {
+                          "const": "ignore",
+                          "type": "string"
+                        },
+                        "impact": {
+                          "enum": [
+                            "high",
+                            "medium",
+                            "low",
+                            "ignore",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "likelihood": {
+                          "enum": [
+                            "high",
+                            "medium",
+                            "low",
+                            "ignore",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "reachability": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "severity": {
+                          "const": "ignore",
+                          "type": "string"
+                        },
+                        "severity_rationale": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "change_conditions",
+                        "counterevidence",
+                        "dataflow",
+                        "decision",
+                        "impact",
+                        "likelihood",
+                        "reachability",
+                        "severity",
+                        "severity_rationale"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "change_conditions": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "counterevidence": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "dataflow": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "decision": {
+                          "const": "deferred",
+                          "type": "string"
+                        },
+                        "impact": {
+                          "enum": [
+                            "high",
+                            "medium",
+                            "low",
+                            "ignore",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "likelihood": {
+                          "enum": [
+                            "high",
+                            "medium",
+                            "low",
+                            "ignore",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "proof_gap": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "reachability": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "severity": {
+                          "enum": [
+                            "critical",
+                            "high",
+                            "medium",
+                            "low",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "severity_rationale": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "change_conditions",
+                        "counterevidence",
+                        "dataflow",
+                        "decision",
+                        "impact",
+                        "likelihood",
+                        "proof_gap",
+                        "reachability",
+                        "severity",
+                        "severity_rationale"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "candidateId": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "pattern": "^(?!\\.{1,2}$)(?!.*[\\u0000-\\u001f\\u007f])(?=.*\\S)[^/\\\\]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "attackPath",
+                "candidateId"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attackPaths",
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "record_pi_security_candidate_validations",
+      "originalName": "record_codex_security_candidate_validations",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "validations": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "candidateId": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "pattern": "^(?!\\.{1,2}$)(?!.*[\\u0000-\\u001f\\u007f])(?=.*\\S)[^/\\\\]+$",
+                  "type": "string"
+                },
+                "validation": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "artifact_paths": {
+                      "items": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "confidence": {
+                      "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                      ],
+                      "type": "string"
+                    },
+                    "confidence_rationale": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "control": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "counterevidence_or_proof_gap": {
+                      "type": "string"
+                    },
+                    "disposition": {
+                      "enum": [
+                        "reportable",
+                        "suppressed",
+                        "not_applicable",
+                        "deferred"
+                      ],
+                      "type": "string"
+                    },
+                    "evidence": {
+                      "anyOf": [
+                        {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      ]
+                    },
+                    "method": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "preconditions": {
+                      "anyOf": [
+                        {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      ]
+                    },
+                    "remaining_uncertainty": {
+                      "type": "string"
+                    },
+                    "rubric": {
+                      "anyOf": [
+                        {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        {
+                          "additionalProperties": {},
+                          "properties": {},
+                          "type": "object"
+                        },
+                        {
+                          "items": {
+                            "anyOf": [
+                              {
+                                "minLength": 1,
+                                "pattern": "\\S",
+                                "type": "string"
+                              },
+                              {
+                                "additionalProperties": {},
+                                "properties": {},
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      ]
+                    },
+                    "sink": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "source": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "confidence",
+                    "confidence_rationale",
+                    "counterevidence_or_proof_gap",
+                    "disposition",
+                    "evidence",
+                    "method",
+                    "remaining_uncertainty",
+                    "rubric"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "candidateId",
+                "validation"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "scanId",
+          "validations"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "record_pi_security_deep_reduction",
+      "originalName": "record_codex_security_deep_reduction",
+      "surfaces": [
+        "reducer"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "description": "Set false to save progress without declaring this worker or parent audit finished. Omit or set true only for the terminal result. Put provisional candidates in coverage.deferred, not findings.",
+            "type": "boolean"
+          },
+          "coverage": {
+            "additionalProperties": {},
+            "properties": {
+              "completeness": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "deferred": {
+                "items": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "candidateId": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "pattern": "^(?!\\.{1,2}$)(?!.*[\\u0000-\\u001f\\u007f])(?=.*\\S)[^/\\\\]+$",
+                      "type": "string"
+                    },
+                    "id": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "paths": {
+                      "items": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "surfaceIds": {
+                      "items": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "reason"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "documentType": {
+                "not": {}
+              },
+              "excludePaths": {
+                "not": {}
+              },
+              "explicitExclusions": {
+                "items": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "pattern": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "reason": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "pattern",
+                    "reason"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "includePaths": {
+                "not": {}
+              },
+              "inventoryStrategy": {
+                "not": {}
+              },
+              "mode": {
+                "not": {}
+              },
+              "openQuestions": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "followUpPrompt": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "question": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "question"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              "receiptRefs": {
+                "not": {}
+              },
+              "scanId": {
+                "not": {}
+              },
+              "schemaVersion": {
+                "not": {}
+              },
+              "surfaces": {
+                "items": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "disposition": {
+                      "enum": [
+                        "reported",
+                        "no_issue_found",
+                        "rejected",
+                        "not_applicable",
+                        "needs_follow_up"
+                      ],
+                      "type": "string"
+                    },
+                    "id": {
+                      "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+                      "type": "string"
+                    },
+                    "label": {
+                      "description": "The meaningful name of the reviewed security surface.",
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "notes": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "receiptRefs": {
+                      "items": {
+                        "minLength": 1,
+                        "pattern": "^(?!.*(?:^|\\/)\\.\\.(?:\\/|$))(?!.*\\\\)artifacts\\/.+$",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "riskArea": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "disposition",
+                    "label"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "completeness",
+              "deferred",
+              "explicitExclusions",
+              "surfaces"
+            ],
+            "type": "object"
+          },
+          "findings": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {
+                "attackPath": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "assumptions": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "blindspots": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "controls": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "data_flow": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": {},
+                              "properties": {
+                                "evidence_refs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "evidenceRefs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "outcome": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "sink": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "transformations": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "dataflow": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": {},
+                              "properties": {
+                                "evidence_refs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "evidenceRefs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "outcome": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "sink": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "transformations": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "dataFlow": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": {},
+                              "properties": {
+                                "evidence_refs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "evidenceRefs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "outcome": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "sink": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "transformations": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "evidence_refs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "evidenceRefs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "impact": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                {
+                                  "additionalProperties": {},
+                                  "properties": {
+                                    "level": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    },
+                                    "rationale": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    },
+                                    "why": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "likelihood": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                {
+                                  "additionalProperties": {},
+                                  "properties": {
+                                    "level": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    },
+                                    "rationale": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    },
+                                    "why": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "limitations": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "preconditions": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "reachability": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": {},
+                              "properties": {
+                                "attacker": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "entrypoint": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "evidence_refs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "evidenceRefs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "outcome": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "preconditions": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "sink": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "steps": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "summary": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "code_evidence": {
+                  "items": {
+                    "additionalProperties": {},
+                    "properties": {
+                      "code": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "id": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "id"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "codeEvidence": {
+                  "items": {
+                    "additionalProperties": {},
+                    "properties": {
+                      "code": {
+                        "description": "The genuine, nonempty source snippet at this evidence location.",
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "endLine": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "explanation": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "id": {
+                        "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+                        "type": "string"
+                      },
+                      "label": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "language": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "path": {
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "pattern": "^(?:\\.\\/)?(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|\\/)\\.\\.?(\\/|$))(?!.*\\/\\/)(?!.*[\\u0000-\\u001f\\u007f])(?!.*\\/$).+$",
+                        "type": "string"
+                      },
+                      "role": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "startLine": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "explanation",
+                      "id",
+                      "label",
+                      "path",
+                      "startLine"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "confidence": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                      ],
+                      "type": "string"
+                    },
+                    "rationale": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "rationale"
+                  ],
+                  "type": "object"
+                },
+                "extensions": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                "findingId": {
+                  "not": {}
+                },
+                "fingerprints": {
+                  "not": {}
+                },
+                "identity": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "anchor": {
+                      "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+                      "type": "string"
+                    },
+                    "instance": {
+                      "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "anchor"
+                  ],
+                  "type": "object"
+                },
+                "locations": {
+                  "items": {
+                    "additionalProperties": {},
+                    "properties": {
+                      "endLine": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "path": {
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "pattern": "^(?:\\.\\/)?(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|\\/)\\.\\.?(\\/|$))(?!.*\\/\\/)(?!.*[\\u0000-\\u001f\\u007f])(?!.*\\/$).+$",
+                        "type": "string"
+                      },
+                      "role": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "startLine": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "startLine"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "occurrenceId": {
+                  "not": {}
+                },
+                "preventiveControls": {
+                  "items": {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "provenance": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "source": {
+                      "description": "The actual finding producer. Use local_package only for a finding discovered by this package.",
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "sourceFindingIds": {
+                      "description": "Host-provided source finding references represented by this Deep reduction. Preserve every assigned reference exactly once.",
+                      "items": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "sourceFindings": {
+                      "description": "Original source payloads retained by the host for lossless semantic merges.",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "finding": {
+                            "additionalProperties": {},
+                            "properties": {},
+                            "type": "object"
+                          },
+                          "id": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "finding",
+                          "id"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "remediation": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "remediationTests": {
+                  "items": {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "root_cause": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "code": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "evidence_refs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "evidenceRefs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "language": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "summary": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "rootCause": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "code": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "evidenceRefs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "language": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "summary": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "summary"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "ruleId": {
+                  "description": "A stable lowercase vulnerability-family slug, such as prototype-pollution.json-patch; a CWE is taxonomy, not a rule ID.",
+                  "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+                  "type": "string"
+                },
+                "severity": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "changeConditions": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "level": {
+                      "enum": [
+                        "critical",
+                        "high",
+                        "medium",
+                        "low",
+                        "informational"
+                      ],
+                      "type": "string"
+                    },
+                    "rationale": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "score": {
+                      "maximum": 10,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "scoringSystem": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "vector": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "level"
+                  ],
+                  "type": "object"
+                },
+                "summary": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "taxonomy": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "category": {
+                      "description": "The actual primary broken security control, not a CWE identifier.",
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "cwe": {
+                      "description": "Copy the reviewed candidate's exact cwe_ids array. Use an empty array when no CWE is established; do not invent one.",
+                      "items": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "category",
+                    "cwe"
+                  ],
+                  "type": "object"
+                },
+                "title": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "validation": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "assertions": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "counterEvidence": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "disposition": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "evidence": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "items": {
+                                "minLength": 1,
+                                "pattern": "\\S",
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          ]
+                        },
+                        "evidence_refs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "evidenceRefs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "limitations": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "method": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "result": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "summary": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "writeup": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "reportPath": {
+                      "pattern": "^findings\\/([a-z0-9][a-z0-9._-]*)\\/\\1\\.md$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "reportPath"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "confidence",
+                "locations",
+                "provenance",
+                "remediation",
+                "ruleId",
+                "severity",
+                "summary",
+                "taxonomy",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "handoffClaimToken": {
+            "pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|recovery_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "scope": {
+            "additionalProperties": {},
+            "properties": {
+              "artifactsReviewed": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "context": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "excludePaths": {
+                "not": {}
+              },
+              "includePaths": {
+                "not": {}
+              },
+              "limitations": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "runtimeStatus": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "summary": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "validationMode": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "threatModel": {
+            "additionalProperties": {},
+            "properties": {
+              "assets": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "assumptions": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "attackerCapabilities": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "securityObjectives": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "trustBoundaries": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "summary"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "coverage",
+          "findings",
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "record_pi_security_discovery_candidates",
+      "originalName": "record_codex_security_discovery_candidates",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "context": {
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "cwe_ids": {
+                  "items": {
+                    "pattern": "^\\s*[Cc][Ww][Ee]-0*[1-9][0-9]*\\s*$",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "evidence": {
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "instance": {
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "locations": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "end_line": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "path": {
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "role": {
+                        "enum": [
+                          "entrypoint",
+                          "entrypoint/wrapper",
+                          "source",
+                          "root_control",
+                          "sink",
+                          "concrete_implementation",
+                          "evidence"
+                        ],
+                        "type": "string"
+                      },
+                      "start_line": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "role",
+                      "start_line"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "summary": {
+                  "pattern": "\\S",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cwe_ids",
+                "evidence",
+                "locations",
+                "summary"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "scanId": {
+            "pattern": "\\S",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidates",
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "record_pi_security_scan_draft",
+      "originalName": "record_codex_security_scan_draft",
+      "surfaces": [
+        "standalone",
+        "worker"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "description": "Set false to save progress without declaring this worker or parent audit finished. Omit or set true only for the terminal result. Put provisional candidates in coverage.deferred, not findings.",
+            "type": "boolean"
+          },
+          "coverage": {
+            "additionalProperties": {},
+            "properties": {
+              "completeness": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "deferred": {
+                "items": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "candidateId": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "pattern": "^(?!\\.{1,2}$)(?!.*[\\u0000-\\u001f\\u007f])(?=.*\\S)[^/\\\\]+$",
+                      "type": "string"
+                    },
+                    "id": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "paths": {
+                      "items": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "surfaceIds": {
+                      "items": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "reason"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "documentType": {
+                "not": {}
+              },
+              "excludePaths": {
+                "not": {}
+              },
+              "explicitExclusions": {
+                "items": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "pattern": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "reason": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "pattern",
+                    "reason"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "includePaths": {
+                "not": {}
+              },
+              "inventoryStrategy": {
+                "not": {}
+              },
+              "mode": {
+                "not": {}
+              },
+              "openQuestions": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "followUpPrompt": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "question": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "question"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              "receiptRefs": {
+                "not": {}
+              },
+              "scanId": {
+                "not": {}
+              },
+              "schemaVersion": {
+                "not": {}
+              },
+              "surfaces": {
+                "items": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "disposition": {
+                      "enum": [
+                        "reported",
+                        "no_issue_found",
+                        "rejected",
+                        "not_applicable",
+                        "needs_follow_up"
+                      ],
+                      "type": "string"
+                    },
+                    "id": {
+                      "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+                      "type": "string"
+                    },
+                    "label": {
+                      "description": "The meaningful name of the reviewed security surface.",
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "notes": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "receiptRefs": {
+                      "items": {
+                        "minLength": 1,
+                        "pattern": "^(?!.*(?:^|\\/)\\.\\.(?:\\/|$))(?!.*\\\\)artifacts\\/.+$",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "riskArea": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "disposition",
+                    "label"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "completeness",
+              "deferred",
+              "explicitExclusions",
+              "surfaces"
+            ],
+            "type": "object"
+          },
+          "findings": {
+            "items": {
+              "additionalProperties": {},
+              "properties": {
+                "attackPath": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "assumptions": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "blindspots": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "controls": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "data_flow": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": {},
+                              "properties": {
+                                "evidence_refs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "evidenceRefs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "outcome": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "sink": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "transformations": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "dataflow": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": {},
+                              "properties": {
+                                "evidence_refs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "evidenceRefs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "outcome": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "sink": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "transformations": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "dataFlow": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": {},
+                              "properties": {
+                                "evidence_refs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "evidenceRefs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "outcome": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "sink": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "transformations": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "evidence_refs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "evidenceRefs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "impact": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                {
+                                  "additionalProperties": {},
+                                  "properties": {
+                                    "level": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    },
+                                    "rationale": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    },
+                                    "why": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "likelihood": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                {
+                                  "additionalProperties": {},
+                                  "properties": {
+                                    "level": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    },
+                                    "rationale": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    },
+                                    "why": {
+                                      "minLength": 1,
+                                      "pattern": "\\S",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "limitations": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "preconditions": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "reachability": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": {},
+                              "properties": {
+                                "attacker": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "entrypoint": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "evidence_refs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "evidenceRefs": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "outcome": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "preconditions": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "sink": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "minLength": 1,
+                                  "pattern": "\\S",
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "steps": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "summary": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "code_evidence": {
+                  "items": {
+                    "additionalProperties": {},
+                    "properties": {
+                      "code": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "id": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "id"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "codeEvidence": {
+                  "items": {
+                    "additionalProperties": {},
+                    "properties": {
+                      "code": {
+                        "description": "The genuine, nonempty source snippet at this evidence location.",
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "endLine": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "explanation": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "id": {
+                        "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+                        "type": "string"
+                      },
+                      "label": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "language": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "path": {
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "pattern": "^(?:\\.\\/)?(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|\\/)\\.\\.?(\\/|$))(?!.*\\/\\/)(?!.*[\\u0000-\\u001f\\u007f])(?!.*\\/$).+$",
+                        "type": "string"
+                      },
+                      "role": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "startLine": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "explanation",
+                      "id",
+                      "label",
+                      "path",
+                      "startLine"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "confidence": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "level": {
+                      "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                      ],
+                      "type": "string"
+                    },
+                    "rationale": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "rationale"
+                  ],
+                  "type": "object"
+                },
+                "extensions": {
+                  "additionalProperties": {},
+                  "properties": {},
+                  "type": "object"
+                },
+                "findingId": {
+                  "not": {}
+                },
+                "fingerprints": {
+                  "not": {}
+                },
+                "identity": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "anchor": {
+                      "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+                      "type": "string"
+                    },
+                    "instance": {
+                      "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "anchor"
+                  ],
+                  "type": "object"
+                },
+                "locations": {
+                  "items": {
+                    "additionalProperties": {},
+                    "properties": {
+                      "endLine": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "path": {
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "pattern": "^(?:\\.\\/)?(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|\\/)\\.\\.?(\\/|$))(?!.*\\/\\/)(?!.*[\\u0000-\\u001f\\u007f])(?!.*\\/$).+$",
+                        "type": "string"
+                      },
+                      "role": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "startLine": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "startLine"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "occurrenceId": {
+                  "not": {}
+                },
+                "preventiveControls": {
+                  "items": {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "provenance": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "source": {
+                      "description": "The actual finding producer. Use local_package only for a finding discovered by this package.",
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "sourceFindingIds": {
+                      "description": "Host-provided source finding references represented by this Deep reduction. Preserve every assigned reference exactly once.",
+                      "items": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "sourceFindings": {
+                      "description": "Original source payloads retained by the host for lossless semantic merges.",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "finding": {
+                            "additionalProperties": {},
+                            "properties": {},
+                            "type": "object"
+                          },
+                          "id": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "finding",
+                          "id"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "remediation": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "remediationTests": {
+                  "items": {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "root_cause": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "code": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "evidence_refs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "evidenceRefs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "language": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "summary": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "rootCause": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "code": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "evidenceRefs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "language": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "summary": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "summary"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "ruleId": {
+                  "description": "A stable lowercase vulnerability-family slug, such as prototype-pollution.json-patch; a CWE is taxonomy, not a rule ID.",
+                  "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+                  "type": "string"
+                },
+                "severity": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "changeConditions": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "level": {
+                      "enum": [
+                        "critical",
+                        "high",
+                        "medium",
+                        "low",
+                        "informational"
+                      ],
+                      "type": "string"
+                    },
+                    "rationale": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "score": {
+                      "maximum": 10,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "scoringSystem": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "vector": {
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "level"
+                  ],
+                  "type": "object"
+                },
+                "summary": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "taxonomy": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "category": {
+                      "description": "The actual primary broken security control, not a CWE identifier.",
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "cwe": {
+                      "description": "Copy the reviewed candidate's exact cwe_ids array. Use an empty array when no CWE is established; do not invent one.",
+                      "items": {
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "category",
+                    "cwe"
+                  ],
+                  "type": "object"
+                },
+                "title": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "validation": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": {},
+                      "properties": {
+                        "assertions": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "counterEvidence": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "disposition": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "evidence": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "items": {
+                                "minLength": 1,
+                                "pattern": "\\S",
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          ]
+                        },
+                        "evidence_refs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "evidenceRefs": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "limitations": {
+                          "items": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "method": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "result": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "pattern": "\\S",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "summary": {
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "writeup": {
+                  "additionalProperties": {},
+                  "properties": {
+                    "reportPath": {
+                      "pattern": "^findings\\/([a-z0-9][a-z0-9._-]*)\\/\\1\\.md$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "reportPath"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "confidence",
+                "locations",
+                "provenance",
+                "remediation",
+                "ruleId",
+                "severity",
+                "summary",
+                "taxonomy",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "handoffClaimToken": {
+            "pattern": "^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|recovery_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "scope": {
+            "additionalProperties": {},
+            "properties": {
+              "artifactsReviewed": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "context": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "excludePaths": {
+                "not": {}
+              },
+              "includePaths": {
+                "not": {}
+              },
+              "limitations": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "runtimeStatus": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "summary": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "validationMode": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "threatModel": {
+            "additionalProperties": {},
+            "properties": {
+              "assets": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "assumptions": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "attackerCapabilities": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "securityObjectives": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "trustBoundaries": {
+                "items": {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "summary"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "coverage",
+          "findings",
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "recover_pi_security_scan_results",
+      "originalName": "recover_codex_security_scan_results",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "release_pi_security_finding_remediation_claim",
+      "originalName": "release_codex_security_finding_remediation_claim",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "actionToken": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "occurrenceId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actionToken",
+          "occurrenceId",
+          "requestId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "release_pi_security_scan_handoff_delivery",
+      "originalName": "release_codex_security_scan_handoff_delivery",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "claimToken": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              {
+                "pattern": "^recovery_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            ]
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimToken",
+          "scanId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "request_pi_security_finding_remediation",
+      "originalName": "request_codex_security_finding_remediation",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "actionToken": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "occurrenceId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actionToken",
+          "occurrenceId",
+          "requestId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "request_pi_security_finding_remediation_action",
+      "originalName": "request_codex_security_finding_remediation_action",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "action": {
+            "enum": [
+              "apply",
+              "verify"
+            ],
+            "type": "string"
+          },
+          "actionToken": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "expectedVersion": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "occurrenceId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "actionToken",
+          "expectedVersion",
+          "occurrenceId",
+          "requestId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "request_pi_security_user_input",
+      "originalName": "request_codex_security_user_input",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "questions": {
+            "description": "One to three non-sensitive multiple-choice questions for an interactive Pi Security workflow.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "header": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "id": {
+                  "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "description": {
+                        "maxLength": 1200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "label": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "description",
+                      "label"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 3,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "question": {
+                  "maxLength": 1200,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "header",
+                "id",
+                "options",
+                "question"
+              ],
+              "type": "object"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "questions"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_pi_security_finding_remediation",
+      "originalName": "set_codex_security_finding_remediation",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "actionToken": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "baseRevision": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expectedVersion": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "occurrenceId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "patchDigest": {
+            "pattern": "^sha256:[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "patchPath": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "generated",
+              "applied",
+              "verifying",
+              "verified",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 2400,
+            "type": "string"
+          },
+          "verificationSummary": {
+            "maxLength": 2400,
+            "type": "string"
+          }
+        },
+        "required": [
+          "actionToken",
+          "expectedVersion",
+          "occurrenceId",
+          "requestId",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_pi_security_finding_triage",
+      "originalName": "set_codex_security_finding_triage",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "closeReason": {
+            "enum": [
+              "already_fixed",
+              "wont_fix",
+              "false_positive"
+            ],
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 2400,
+            "type": "string"
+          },
+          "occurrenceId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "closed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "occurrenceId",
+          "status"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "start_pi_security_deep_scan",
+      "originalName": "start_codex_security_deep_scan",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "handoffClaimToken": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              {
+                "pattern": "^recovery_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            ],
+            "description": "Existing Deep Scan continuation claim. Pass the same token on every scanId resume, including after an MCP server restart."
+          },
+          "scanId": {
+            "description": "Existing app-created or previously returned Deep Scan ID.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "scope": {
+            "description": "Scope inside targetPath. Deep Scan currently requires the whole target.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetPath": {
+            "description": "Resolved local target path for a first terminal or headless Deep Scan call.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "userContext": {
+            "description": "Optional security focus supplied by the user.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "start_pi_security_prompt_only_scan",
+      "originalName": "start_codex_security_prompt_only_scan",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "diffTarget": {
+            "description": "Exact local Git revisions for Review changes mode.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentDigest": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "working_tree",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "commit",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "headRevision",
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "range",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "baseRevision",
+                  "headRevision",
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "mode": {
+            "description": "Prompt-driven scan mode. Deep Scan uses start_pi_security_deep_scan instead.",
+            "enum": [
+              "diff",
+              "standard"
+            ],
+            "type": "string"
+          },
+          "scope": {
+            "description": "Directory inside targetPath. Use '.' for the whole target.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetPath": {
+            "description": "Resolved local target path.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetSummary": {
+            "description": "Optional bounded target or change-set context.",
+            "maxLength": 2400,
+            "minLength": 1,
+            "type": "string"
+          },
+          "userContext": {
+            "description": "Optional security focus supplied by the user.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "scope",
+          "targetPath"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "start_pi_security_scan",
+      "originalName": "start_codex_security_scan",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reasoningEffort": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "start_pi_security_standard_scan",
+      "originalName": "start_codex_security_standard_scan",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "scope": {
+            "description": "Optional directory inside targetPath. Omit it or use '.' for the whole target.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetPath": {
+            "description": "Resolved local target path.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetSummary": {
+            "description": "Optional bounded target context.",
+            "maxLength": 2400,
+            "type": "string"
+          },
+          "userContext": {
+            "description": "Optional security focus supplied by the user.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetPath"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "submit_pi_security_setup",
+      "originalName": "submit_codex_security_setup",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "diffTarget": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "contentDigest": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "working_tree",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "commit",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "headRevision",
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "baseRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "headRevision": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "range",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "baseRevision",
+                  "headRevision",
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "mode": {
+            "enum": [
+              "diff",
+              "standard",
+              "deep"
+            ],
+            "type": "string"
+          },
+          "scope": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "targetPath": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetSummary": {
+            "maxLength": 2400,
+            "type": "string"
+          },
+          "userContext": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "scope",
+          "sessionId",
+          "targetPath"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "update_pi_security_scan_context",
+      "originalName": "update_codex_security_scan_context",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "handoffClaimToken": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              {
+                "pattern": "^recovery_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            ],
+            "description": "Opaque continuation token returned by the native launcher. Pass it on every progress, completion, or failure update after a resume."
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "userContext": {
+            "description": "Complete replacement context for the running scan. Pass an empty string to clear it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId",
+          "userContext"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "update_pi_security_scan_context_from_app",
+      "originalName": "update_codex_security_scan_context_from_app",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "app",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "userContext": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId",
+          "userContext"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "update_pi_security_scan_progress",
+      "originalName": "update_codex_security_scan_progress",
+      "surfaces": [
+        "standalone"
+      ],
+      "audience": "model",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "deepReviewPass": {
+            "description": "Current Deep Scan discovery pass. Send it when starting each pass together with that pass's total and zero completed items.",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "handoffClaimToken": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              {
+                "pattern": "^recovery_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            ],
+            "description": "Opaque continuation token returned by the native launcher. Pass it on every progress, completion, or failure update after a resume."
+          },
+          "phase": {
+            "description": "Current workflow phase. Send it immediately when the scan enters a new phase so persisted progress advances.",
+            "enum": [
+              "preflight",
+              "threat_model",
+              "discovery",
+              "validation",
+              "attack_path",
+              "reporting"
+            ],
+            "type": "string"
+          },
+          "phaseItemsCompleted": {
+            "description": "Completed authoritative coverage, receipts, or artifacts for the current phase. Increase it only after the corresponding work product exists.",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "phaseItemsTotal": {
+            "description": "Expected authoritative coverage, receipts, or artifacts for the current phase. Increase it before newly discovered work begins.",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "phaseProgressUnit": {
+            "description": "What phaseItemsTotal and phaseItemsCompleted count for the current phase.",
+            "enum": [
+              "checks",
+              "threat_surfaces",
+              "review_receipts",
+              "candidate_findings",
+              "validated_findings",
+              "report_artifacts"
+            ],
+            "type": "string"
+          },
+          "preflightChecks": {
+            "description": "Current standard or diff scan preflight results. Project every helper results entry to capability, reason, severity, and status only. The server derives the item counts and visible block/warn attention items.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "capability": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "reason": {
+                  "maxLength": 1200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "block",
+                    "warn",
+                    "suggest"
+                  ],
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pass",
+                    "fail",
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "capability",
+                "reason",
+                "severity",
+                "status"
+              ],
+              "type": "object"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "reportableFindingsCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reviewItemsCompleted": {
+            "description": "Cumulative completed reviews or coverage surfaces in the current discovery pass. Increment only after the corresponding review is complete.",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reviewItemsTotal": {
+            "description": "Expected reviews or coverage surfaces in the current discovery pass. Increase it before assigning newly discovered work.",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scanId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

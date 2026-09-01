@@ -1,0 +1,76 @@
+{
+  "name": "pi-security",
+  "version": "0.1.0",
+  "description": "Harness-agnostic security scanning workbench and MCP server for Pi",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "pi-security-mcp": "dist/server.cjs"
+  },
+  "files": [
+    "dist/server.cjs",
+    "dist/pi-security-extension.mjs",
+    "agents/*.md",
+    "skills/**/*.md",
+    "skills/**/*.py",
+    "scripts/*.py",
+    "scripts/**/*.py",
+    "schemas/*.json",
+    "schemas/**/*.json",
+    "references/*.md",
+    "references/**/*.md",
+    "templates/**/*.md",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts-build.mjs",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test:node": "node --test tests/*.test.mjs",
+    "test:python": "node tests/run-python-tests.mjs",
+    "test:pack": "npm run build && node --test tests/package-content.test.mjs",
+    "test": "npm run build && npm run test:node && npm run test:python"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "pi-subagents": "0.62.0",
+    "zod": "^4.3.6"
+  },
+  "bundledDependencies": ["pi-subagents"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": { "optional": true },
+    "typebox": { "optional": true }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.81.0",
+    "@types/node": "^25.0.0",
+    "esbuild": "^0.27.2",
+    "typebox": "^1.0.64",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  },
+  "keywords": [
+    "pi",
+    "security",
+    "mcp",
+    "static-analysis",
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./node_modules/pi-subagents/index.ts",
+      "./dist/pi-security-extension.mjs"
+    ],
+    "skills": ["./skills"],
+    "subagents": {
+      "agents": ["./agents"]
+    }
+  }
+}
