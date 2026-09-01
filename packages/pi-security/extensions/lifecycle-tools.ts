@@ -3,6 +3,7 @@ import type {
   ExtensionAPI,
   CreateAgentSessionOptions,
 } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type, type TSchema } from "typebox";
 import type { ExecutionPolicyContext } from "../src/execution-policy.js";
 import {
@@ -32,13 +33,21 @@ export function registerPiSecurityLifecycleTools(
       parameters: Type.Unsafe(
         lifecycleToolJsonSchema(tool.config.inputSchema) as TSchema
       ),
-      async execute(_toolCallId, params, signal, _onUpdate, context) {
+      ...deepScanToolRenderer(tool.name),
+      async execute(_toolCallId, params, signal, onUpdate, context) {
         assertPiPermissionSurface(executionContext, "lifecycle", tool.name);
         const sessionId = context.sessionManager.getSessionId();
         const input = parseLifecycleToolInput(tool.config.inputSchema, params);
         const result = await tool.handler(input, {
           sessionId,
           signal,
+          onUpdate: (update) => onUpdate?.(piToolResult(update)),
+          setStatus: context.hasUI
+            ? (key, text) => context.ui.setStatus(key, text)
+            : undefined,
+          setWidget: context.hasUI
+            ? (key, lines) => context.ui.setWidget(key, lines)
+            : undefined,
           model: context.model,
           modelId: context.model?.id,
           thinkingLevel: currentThinkingLevel(context.sessionManager.getEntries()),
@@ -77,6 +86,30 @@ export function registerPiSecurityLifecycleTools(
   pi.on("session_shutdown", () => {
     catalog.dispose();
   });
+}
+
+function deepScanToolRenderer(name: string) {
+  if (name !== "start_pi_security_deep_scan") return {};
+  return {
+    renderCall() {
+      return new Text("Deep Scan: preparing independent reviews…", 0, 0);
+    },
+    renderResult(
+      result: AgentToolResult<unknown>,
+      { isPartial }: { isPartial: boolean }
+    ) {
+      const details = isJsonObject(result.details) ? result.details : undefined;
+      const statusText = typeof details?.statusText === "string"
+        ? details.statusText
+        : result.content.find((item) => item.type === "text")?.text
+          ?? "Deep Scan is running.";
+      return new Text(
+        isPartial ? `Deep Scan: ${statusText}` : statusText,
+        0,
+        0
+      );
+    }
+  };
 }
 
 function currentThinkingLevel(

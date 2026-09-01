@@ -111,19 +111,19 @@ function dereferenceArtifactSchema(
     Object.entries(object).filter(([name]) => name !== "$ref")
   );
   if (Object.keys(siblings).length === 0) return resolved;
-  if (!resolved || typeof resolved !== "object" || Array.isArray(resolved)) {
-    throw new Error(
-      "Pi Security schema reference cannot have sibling fields: " + reference
-    );
-  }
+  // Draft 2020-12 evaluates a reference and its sibling keywords together.
+  // Object spreading would overwrite constraints such as `required` instead
+  // of intersecting them.
   return {
-    ...resolved,
-    ...dereferenceArtifactSchema(
-      siblings,
-      document,
-      documentsById,
-      activeReferences
-    ) as ArtifactSchemaObject
+    allOf: [
+      resolved,
+      dereferenceArtifactSchema(
+        siblings,
+        document,
+        documentsById,
+        activeReferences
+      )
+    ]
   };
 }
 

@@ -150,6 +150,36 @@ async function testSchemaSourceOfTruth() {
       candidateId
     );
   }
+  const siblingReferenceDocument = {
+    $id: "pi-security://schemas/tools/artifact-reference-siblings.schema.json",
+    $defs: {
+      requiresA: {
+        type: "object",
+        required: ["a"]
+      },
+      request: {
+        $ref: "#/$defs/requiresA",
+        required: ["b"]
+      }
+    }
+  };
+  const siblingBundled = schemas.bundleArtifactSchema(
+    [siblingReferenceDocument],
+    siblingReferenceDocument.$id,
+    "request"
+  );
+  assert.deepEqual(siblingBundled.allOf?.map((schema) => schema.required), [["a"], ["b"]]);
+  const siblingValidator = schemas.loadArtifactZodSchema(
+    [siblingReferenceDocument],
+    siblingReferenceDocument.$id,
+    "request"
+  );
+  assert.equal(siblingValidator.safeParse({ a: true, b: true }).success, true);
+  assert.equal(
+    siblingValidator.safeParse({ b: true }).success,
+    false,
+    "$ref sibling constraints must not overwrite referenced constraints"
+  );
   assert.throws(
     () => schemas.bundleArtifactSchema([common], "missing", "request"),
     /Unknown Pi Security schema document/

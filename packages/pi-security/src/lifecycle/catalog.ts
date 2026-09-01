@@ -34,6 +34,9 @@ export interface LifecycleUserInputQuestion {
 export interface LifecycleRequestContext {
   sessionId?: string;
   signal?: AbortSignal;
+  onUpdate?: (result: unknown) => void;
+  setStatus?: (key: string, text: string | undefined) => void;
+  setWidget?: (key: string, lines: string[] | undefined) => void;
   model?: CreateAgentSessionOptions["model"];
   modelId?: string;
   thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];

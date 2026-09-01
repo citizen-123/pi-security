@@ -934,6 +934,8 @@ function registerPiSecurityLifecycleTools(registrar: LifecycleToolRegistrar): vo
     if (!threadId) {
       return toolErrorResult("Starting or joining a Deep Scan requires the owning host session context.");
     }
+    const deepScanProgress = createDeepScanProgressReporter(extra);
+    deepScanProgress.report({ event: "coordinator_preparing", scanId: scanId ?? "new" });
     const modelSettings = piModelSettingsFromExtra(extra);
     const continuationPolicyValidator = new NativePiWorkerExecutor({
       model: extra.model,
@@ -1044,7 +1046,7 @@ function registerPiSecurityLifecycleTools(registrar: LifecycleToolRegistrar): vo
             ),
           }),
           packageRoot: PACKAGE_ROOT,
-          log: logDeepScanEvent,
+          log: (event) => deepScanProgress.report(event),
           handoffClaimToken,
           threadId,
           onComplete: async (draft, signal) => {
@@ -1099,13 +1101,20 @@ function registerPiSecurityLifecycleTools(registrar: LifecycleToolRegistrar): vo
             policyFailureStructuredContent(error),
           )
     }));
-    if ("invocationFailure" in preparation) return preparation.invocationFailure;
-    if ("immediate" in preparation) return preparation.immediate;
+    if ("invocationFailure" in preparation) {
+      deepScanProgress.clear();
+      return preparation.invocationFailure;
+    }
+    if ("immediate" in preparation) {
+      deepScanProgress.clear();
+      return preparation.immediate;
+    }
     const { begun, coordinator, joined, enforcementCapabilities } = preparation;
     if (joined) {
-      logDeepScanEvent({ event: "coordinator_joined", scanId: begun.run.scanId });
+      deepScanProgress.report({ event: "coordinator_joined", scanId: begun.run.scanId });
     }
-    const terminal = await coordinator.wait(abortSignalFromExtra(extra));
+    const terminal = await coordinator.wait(abortSignalFromExtra(extra))
+      .finally(() => deepScanProgress.clear());
     const result = deepScanTerminalResult(terminal, enforcementCapabilities);
     if (!result) {
       return toolErrorResult(deepScanInvocationFailureMessage(
@@ -1941,7 +1950,7 @@ export function deepScanTerminalResult(
   return undefined;
 }
 
-function logDeepScanEvent(event: {
+interface DeepScanEvent {
   event: string;
   scanId: string;
   workerId?: string;
@@ -1954,8 +1963,78 @@ function logDeepScanEvent(event: {
   reason?: string;
   threadId?: string;
   total?: number;
-}): void {
-  console.error(JSON.stringify({ component: "pi_security_deep_scan", ...event }));
+}
+
+interface DeepScanProgressReporter {
+  clear(): void;
+  report(event: DeepScanEvent): void;
+}
+
+function createDeepScanProgressReporter(
+  requestContext: LifecycleRequestContext
+): DeepScanProgressReporter {
+  const key = "pi-security-deep-scan";
+  return {
+    clear() {
+      try {
+        requestContext.setStatus?.(key, undefined);
+        requestContext.setWidget?.(key, undefined);
+      } catch {
+        // Rendering must not change the scan lifecycle.
+      }
+    },
+    report(event) {
+      const statusText = deepScanProgressText(event);
+      if (!statusText) return;
+      try {
+        requestContext.onUpdate?.({
+          content: [{ type: "text", text: statusText }],
+          structuredContent: {
+            kind: "deep_scan_progress",
+            event: event.event,
+            scanId: event.scanId,
+            statusText,
+            ...(event.completed === undefined ? {} : { completed: event.completed }),
+            ...(event.total === undefined ? {} : { total: event.total }),
+          }
+        });
+        requestContext.setStatus?.(key, statusText);
+        requestContext.setWidget?.(key, [
+          statusText,
+          `Scan: ${event.scanId}`,
+        ]);
+      } catch {
+        // Rendering must not change the scan lifecycle.
+      }
+    }
+  };
+}
+
+function deepScanProgressText(event: DeepScanEvent): string | undefined {
+  switch (event.event) {
+    case "coordinator_preparing":
+      return "Deep Scan: checking the target and preparing independent reviews.";
+    case "coordinator_started":
+      return "Deep Scan: independent Standard reviews are running.";
+    case "coordinator_joined":
+      return "Deep Scan: rejoined the running independent reviews.";
+    case "progress_updated": {
+      const completed = event.completed ?? event.count ?? 0;
+      return `Deep Scan: ${completed} independent Standard ${completed === 1 ? "review" : "reviews"} completed.`;
+    }
+    case "discovery_deadline_reached":
+      return "Deep Scan: consolidating completed independent reviews.";
+    case "coordinator_finish_replay":
+      return "Deep Scan: retrying durable finalization of the consolidated results.";
+    case "coordinator_terminal":
+      return "Deep Scan: consolidated canonical results are ready.";
+    case "setup_failed":
+    case "coordinator_failed":
+    case "coordinator_external_failure":
+      return "Deep Scan: stopped before completion.";
+    default:
+      return undefined;
+  }
 }
 async function runPreflightWorkbench(
   args: string[],
