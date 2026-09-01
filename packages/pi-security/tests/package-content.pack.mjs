@@ -339,7 +339,7 @@ test("package manifests pin bundled subagents and load its extension first", asy
   assert.deepEqual(nestedManifest.files, nestedFiles);
   for (const manifest of [rootManifest, nestedManifest]) {
     assert.deepEqual(manifest.dependencies, expectedRuntimeDependencies);
-    assert.deepEqual(manifest.bundledDependencies, ["pi-subagents"]);
+    assert.deepEqual(manifest.bundleDependencies, ["pi-subagents"]);
   }
   assert.deepEqual(rootManifest.pi.extensions, [
     "./node_modules/pi-subagents/index.ts",

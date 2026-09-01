@@ -71,7 +71,7 @@ class FakeEvents {
 test("package exposes bundled subagents before the security extension", async () => {
   const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
   assert.equal(manifest.dependencies["pi-subagents"], "0.62.0");
-  assert.deepEqual(manifest.bundledDependencies, ["pi-subagents"]);
+  assert.deepEqual(manifest.bundleDependencies, ["pi-subagents"]);
   assert.deepEqual(manifest.pi.extensions, [
     "./node_modules/pi-subagents/index.ts",
     "./dist/pi-security-extension.mjs"
