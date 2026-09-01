@@ -6,7 +6,7 @@ documentation corrections, and pull requests are welcome.
 ## Development
 
 Pi Security is implemented in `packages/pi-security/`. The package contains the
-Pi extension, MCP server, scan workbench, schemas, skills, and tests.
+native Pi extension, scan workbench, schemas, skills, and tests.
 
 Install dependencies and run the project checks from the repository root:
 

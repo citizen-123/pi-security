@@ -2,9 +2,9 @@ import { promises as fs, type Dirent } from "node:fs";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
 import * as z from "zod/v4";
-import commonSchema from "../../schemas/definitions/artifact-common.schema.json";
-import reducerSchema from "../../schemas/tools/deep-reducer.schema.json";
-import scanDraftSchema from "../../schemas/tools/scan-draft.schema.json";
+import commonSchema from "../../schemas/definitions/artifact-common.schema.json" with { type: "json" };
+import reducerSchema from "../../schemas/tools/deep-reducer.schema.json" with { type: "json" };
+import scanDraftSchema from "../../schemas/tools/scan-draft.schema.json" with { type: "json" };
 import {
   createWorkerArtifactContext,
   type ArtifactContext,
@@ -41,9 +41,9 @@ import {
 } from "../execution-policy.js";
 import { requireRegularFile } from "./artifacts.js";
 import {
-  bindMcpSamplingPolicy,
-  type SamplingPolicyRequirement,
-} from "./mcp-sampling-policy.js";
+  bindWorkerPolicy,
+  type WorkerPolicyRequirement,
+} from "./worker-policy.js";
 import type {
   DelegatedSecurityTaskResult,
   PiWorkerArtifactContext,
@@ -106,7 +106,7 @@ const delegatedResultInputSchema = z.object({
   unresolved: z.array(z.string().trim().min(1)).default([]),
 }).strict();
 
-export interface SamplingToolDefinition {
+export interface WorkerToolDefinition {
   name: string;
   description: string;
   inputSchema: ArtifactSchemaObject & { type: "object" };
@@ -119,7 +119,7 @@ export interface SamplingToolDefinition {
   };
 }
 
-export interface SamplingToolResult {
+export interface WorkerToolResult {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
 }
@@ -128,25 +128,25 @@ export type DelegatedSecurityTaskExecution =
   | { ordinal: number; result?: never; error: string };
 
 
-export interface ExecutedSamplingTool {
-  result: SamplingToolResult;
+export interface ExecutedWorkerTool {
+  result: WorkerToolResult;
   finalSubmissionAccepted: boolean;
   delegatedChildOrdinal?: number;
 }
 
-export interface BoundSamplingTools {
+export interface BoundWorkerTools {
   context: ArtifactContext;
-  definitions(): SamplingToolDefinition[];
+  definitions(): WorkerToolDefinition[];
   delegatedResult(): DelegatedSecurityTaskResult | undefined;
   execute(
     name: string,
     input: Record<string, unknown>,
     signal: AbortSignal,
-  ): Promise<ExecutedSamplingTool>;
+  ): Promise<ExecutedWorkerTool>;
 }
 
 
-const sourceToolAnnotations = (title: string): SamplingToolDefinition["annotations"] => ({
+const sourceToolAnnotations = (title: string): WorkerToolDefinition["annotations"] => ({
   title,
   readOnlyHint: true,
   destructiveHint: false,
@@ -154,7 +154,7 @@ const sourceToolAnnotations = (title: string): SamplingToolDefinition["annotatio
   openWorldHint: false,
 });
 
-const submissionToolAnnotations = (title: string): SamplingToolDefinition["annotations"] => ({
+const submissionToolAnnotations = (title: string): WorkerToolDefinition["annotations"] => ({
   title,
   readOnlyHint: false,
   destructiveHint: false,
@@ -162,8 +162,8 @@ const submissionToolAnnotations = (title: string): SamplingToolDefinition["annot
   openWorldHint: false,
 });
 
-/** Bind the tools advertised inside one MCP sampling conversation. */
-export async function createSamplingTools(input: {
+/** Bind the exact tools advertised inside one native Pi worker session. */
+export async function createWorkerTools(input: {
   kind: DeepScanWorkerKind;
   executionContext: ExecutionPolicyContext;
   artifactWriterContext: ExecutionPolicyContext;
@@ -178,7 +178,7 @@ export async function createSamplingTools(input: {
     result: DelegatedSecurityTaskResult,
     context: ArtifactContext,
   ) => Promise<void>;
-}): Promise<BoundSamplingTools> {
+}): Promise<BoundWorkerTools> {
   await assertExecutionBoundaryTuple({
     source: input.executionContext,
     writer: input.artifactWriterContext,
@@ -201,7 +201,7 @@ export async function createSamplingTools(input: {
     deepReducer: input.artifactContext.deepReducer,
     executionPolicy: input.artifactWriterContext,
   });
-  const commonDefinitions: SamplingToolDefinition[] = input.kind === "dedup"
+  const commonDefinitions: WorkerToolDefinition[] = input.kind === "dedup"
     ? []
     : [
       {
@@ -229,13 +229,13 @@ export async function createSamplingTools(input: {
         annotations: sourceToolAnnotations("Get repository metadata"),
       },
     ];
-  const contextDefinition: SamplingToolDefinition = {
+  const contextDefinition: WorkerToolDefinition = {
     name: "get_pi_security_scan_context",
     description: "Read the authoritative scan identity, scope, user focus, current threat model, and bundled Standard scan guidance for this worker.",
     inputSchema: jsonInputSchema(emptyInputSchema),
     annotations: sourceToolAnnotations("Get scan context"),
   };
-  const reducerDefinitions: SamplingToolDefinition[] = input.kind === "dedup"
+  const reducerDefinitions: WorkerToolDefinition[] = input.kind === "dedup"
     ? [{
       name: "get_pi_security_deep_reducer_inputs",
       description: "Read the complete validated Standard scan drafts assigned to this reducer and the previous aggregate, if one exists.",
@@ -243,18 +243,18 @@ export async function createSamplingTools(input: {
       annotations: sourceToolAnnotations("Get Deep reducer inputs"),
     }]
     : [];
-  const delegationDefinitions: SamplingToolDefinition[] = input.delegateSecurityTask
+  const delegationDefinitions: WorkerToolDefinition[] = input.delegateSecurityTask
     ? [{
       name: "delegate_security_task",
-      description: "Delegate one bounded repository-security investigation to an isolated nested sampler. The child inherits this worker's authoritative target and scope; its validated evidence is returned for parent synthesis.",
+      description: "Delegate one bounded repository-security investigation to an isolated nested worker. The child inherits this worker's authoritative target and scope; its validated evidence is returned for parent synthesis.",
       inputSchema: jsonInputSchema(delegateTaskInputSchema),
       annotations: sourceToolAnnotations("Delegate security task"),
     }]
     : [];
-  const submissionDefinition: SamplingToolDefinition = input.delegatedTask
+  const submissionDefinition: WorkerToolDefinition = input.delegatedTask
     ? {
       name: "record_delegate_security_result",
-      description: "Validate and return the completed scoped investigation to the parent sampler. The parent owns all final synthesis and scan-draft submission.",
+      description: "Validate and return the completed scoped investigation to the parent worker. The parent owns all final synthesis and scan-draft submission.",
       inputSchema: jsonInputSchema(delegatedResultInputSchema),
       annotations: submissionToolAnnotations("Record delegated security result"),
     }
@@ -266,7 +266,7 @@ export async function createSamplingTools(input: {
           schemaDocuments,
           reducerSchema.$id,
           "reductionInput",
-        ) as SamplingToolDefinition["inputSchema"],
+        ) as WorkerToolDefinition["inputSchema"],
         annotations: submissionToolAnnotations("Record Deep reduction"),
       }
       : {
@@ -276,7 +276,7 @@ export async function createSamplingTools(input: {
           schemaDocuments,
           scanDraftSchema.$id,
           "scanDraftInput",
-        ) as SamplingToolDefinition["inputSchema"],
+        ) as WorkerToolDefinition["inputSchema"],
         annotations: submissionToolAnnotations("Record scan draft"),
       };
   let delegatedResult: DelegatedSecurityTaskResult | undefined;
@@ -287,14 +287,14 @@ export async function createSamplingTools(input: {
     ...delegationDefinitions,
     submissionDefinition,
   ];
-  const policy = bindMcpSamplingPolicy({
+  const policy = bindWorkerPolicy({
     source: () => input.executionContext,
     artifactWriter: () => input.artifactWriterContext,
     delegation: input.delegationExecutionContext ?? (() => input.executionContext),
     tools: definitions.map((definition) => ({
       definition,
       available: true,
-      requirements: samplingPolicyRequirements(definition.name),
+      requirements: workerPolicyRequirements(definition.name),
     })),
   });
 
@@ -430,7 +430,7 @@ export async function createSamplingTools(input: {
             finalSubmissionAccepted = true;
             break;
           default:
-            throw new Error(`Unknown Pi Security sampling tool ${JSON.stringify(name)}.`);
+            throw new Error(`Unknown Pi Security worker tool ${JSON.stringify(name)}.`);
         }
         signal.throwIfAborted();
         return {
@@ -961,7 +961,7 @@ async function scanContext(
     const current = parsePersistedScanDraft(await readArtifactJsonObject(
       context,
       ["result.json"],
-      "sampling scan context",
+      "worker scan context",
     ));
     currentThreatModel = current.threatModel;
   }
@@ -993,7 +993,7 @@ async function scanContext(
 }
 
 
-function samplingPolicyRequirements(name: string): readonly SamplingPolicyRequirement[] {
+function workerPolicyRequirements(name: string): readonly WorkerPolicyRequirement[] {
   switch (name) {
     case "list_pi_security_target_files":
     case "read_pi_security_source":
@@ -1015,15 +1015,15 @@ function samplingPolicyRequirements(name: string): readonly SamplingPolicyRequir
     case "record_pi_security_deep_reduction":
       return [{ authority: "artifactWriter", capability: "scan-artifacts.write" }];
     default:
-      throw new Error(`Unknown Pi Security sampling tool definition ${JSON.stringify(name)}.`);
+      throw new Error(`Unknown Pi Security worker tool definition ${JSON.stringify(name)}.`);
   }
 }
 
-function jsonInputSchema(schema: z.ZodType): SamplingToolDefinition["inputSchema"] {
-  return z.toJSONSchema(schema, { target: "draft-7", io: "input" }) as SamplingToolDefinition["inputSchema"];
+function jsonInputSchema(schema: z.ZodType): WorkerToolDefinition["inputSchema"] {
+  return z.toJSONSchema(schema, { target: "draft-7", io: "input" }) as WorkerToolDefinition["inputSchema"];
 }
 
-function textToolResult(value: unknown): SamplingToolResult {
+function textToolResult(value: unknown): WorkerToolResult {
   return {
     content: [{ type: "text", text: JSON.stringify(value) }],
   };

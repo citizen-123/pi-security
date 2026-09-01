@@ -17,8 +17,8 @@ include a live credential.
 
 ## Scope
 
-This policy covers the Pi extension, MCP server, Python workbench, scan
-orchestration, schemas, generated artifacts, package contents, and build process
+This policy covers the Pi extension, Python workbench, scan orchestration,
+schemas, generated artifacts, package contents, and build process
 on the current default branch.
 
 Examples of in-scope issues include:

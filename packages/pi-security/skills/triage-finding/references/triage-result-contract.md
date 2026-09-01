@@ -1,6 +1,6 @@
 # Triage Result Contract
 
-Use this contract for `$triage-finding` first-pass output. The skill performs static, inline triage of supplied findings. It does not use a queue or deep triage mode.
+Use this contract for `/triage-finding` first-pass output. The skill performs static, inline triage of supplied findings. It does not use a queue or deep triage mode.
 
 ## Schema Fit
 

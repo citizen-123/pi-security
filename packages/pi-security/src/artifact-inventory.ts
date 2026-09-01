@@ -2,8 +2,8 @@ import { execFile as nodeExecFile } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import * as z from "zod/v4";
-import commonSchema from "../schemas/definitions/artifact-common.schema.json";
-import reviewItemsSchema from "../schemas/tools/review-items.schema.json";
+import commonSchema from "../schemas/definitions/artifact-common.schema.json" with { type: "json" };
+import reviewItemsSchema from "../schemas/tools/review-items.schema.json" with { type: "json" };
 import {
   artifactDestination,
   paginateArtifactRows,

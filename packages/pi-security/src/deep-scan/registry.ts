@@ -6,7 +6,7 @@ import { PolicyRecoveryRejectedError } from "../enforcement-capabilities.js";
 import {
   issueDeepScanArtifactWriterContext,
   issueDeepScanSourceContext,
-} from "./mcp-sampling-policy.js";
+} from "./worker-policy.js";
 import { DeepScanCoordinator } from "./coordinator.js";
 import type { CoordinatorOptions } from "./coordinator.js";
 import { isTransientPersistenceError } from "./store.js";
@@ -24,7 +24,7 @@ const COORDINATOR_POLL_MS = 1_000;
 export { DeepScanCoordinator, DeepScanNonRetryableError } from "./coordinator.js";
 export { PolicyRecoveryRejectedError };
 
-/** Owns the live coordinators in this MCP server process. */
+/** Owns the live coordinators in this Pi extension process. */
 export class DeepScanCoordinatorRegistry {
   private readonly coordinators = new Map<string, DeepScanCoordinator>();
 
@@ -111,7 +111,7 @@ export class DeepScanStartLock {
   }
 }
 
-/** Observes another MCP process without failing or duplicating its coordinator. */
+/** Observes another Pi process without failing or duplicating its coordinator. */
 export class DeepScanRemoteCoordinator {
   private nextClaimAt = Date.now() + COORDINATOR_LEASE_MS;
 
@@ -268,7 +268,7 @@ export async function validateResumableWorkerPolicies(
   for (const worker of bindings.resumableWorkers) {
     if (
       worker.status !== "running"
-      || !worker.threadId
+      || !worker.continuationId
       || (worker.kind !== "discovery" && worker.kind !== "dedup")
     ) {
       continue;
@@ -313,7 +313,7 @@ export async function validateResumableWorkerPolicies(
     await executor.validateContinuationPolicy({
       kind: worker.kind,
       subagents,
-      resumeThreadId: worker.threadId,
+      resumeContinuationId: worker.continuationId,
       artifactContext: {
         root: artifactDir,
         workerRoot,

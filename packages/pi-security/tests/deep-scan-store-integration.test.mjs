@@ -343,7 +343,7 @@ async function testReducerCommitAndFinishAgainstRealWorkbench() {
   try {
     await Promise.all([
       mkdir(targetPath, { recursive: true }),
-      mkdir(scanRoot, { recursive: true }),
+      mkdir(scanRoot, { recursive: true, mode: 0o700 }),
       mkdir(stateDir, { recursive: true }),
       mkdir(path.join(piHome, "pi-security"), { recursive: true })
     ]);
@@ -453,7 +453,7 @@ async function testReducerCommitAndFinishAgainstRealWorkbench() {
       promptPath: reducer.promptPath,
       artifactDir: reducer.artifactDir,
       attempt: 1,
-      threadId: "fixture-reducer-thread"
+      continuationId: "fixture-reducer-continuation"
     });
 
     const canonical = await createCanonicalFixture(run.scanDir);
@@ -492,7 +492,7 @@ async function testReducerCommitAndFinishAgainstRealWorkbench() {
       promptPath: late.promptPath,
       artifactDir: late.artifactDir,
       attempt: 1,
-      threadId: "fixture-late-thread",
+      continuationId: "fixture-late-continuation",
       resultManifestPath: late.resultPath
     });
     assert.equal(acceptedLate.status, "succeeded");
@@ -594,7 +594,7 @@ async function testExpiredDeadlineWithoutCompletedDiscoveryAgainstRealWorkbench(
   try {
     await Promise.all([
       mkdir(targetPath, { recursive: true }),
-      mkdir(scanRoot, { recursive: true }),
+      mkdir(scanRoot, { recursive: true, mode: 0o700 }),
       mkdir(stateDir, { recursive: true }),
       mkdir(path.join(piHome, "pi-security"), { recursive: true })
     ]);
@@ -705,7 +705,7 @@ async function createWorkerFixture(scanDir, label) {
   const artifactDir = path.join(root, "output");
   const promptPath = path.join(root, "prompt.md");
   const resultPath = path.join(artifactDir, "result.json");
-  await mkdir(artifactDir, { recursive: true });
+  await mkdir(artifactDir, { recursive: true, mode: 0o700 });
   await Promise.all([
     writeFile(promptPath, "fixture prompt\n"),
     writeFile(resultPath, "{}\n")

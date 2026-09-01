@@ -1,14 +1,10 @@
 {
   "name": "pi-security",
   "version": "0.1.0",
-  "description": "Harness-agnostic security scanning workbench and MCP server for Pi",
+  "description": "Native Pi security scanning workbench and extension",
   "license": "Apache-2.0",
   "type": "module",
-  "bin": {
-    "pi-security-mcp": "dist/server.cjs"
-  },
   "files": [
-    "dist/server.cjs",
     "dist/pi-security-extension.mjs",
     "agents/*.md",
     "skills/**/*.md",
@@ -32,7 +28,6 @@
     "test": "npm run build && npm run test:node && npm run test:python"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "pi-subagents": "0.62.0",
     "zod": "^4.3.6"
   },
@@ -42,7 +37,6 @@
     "typebox": "*"
   },
   "peerDependenciesMeta": {
-    "@earendil-works/pi-coding-agent": { "optional": true },
     "typebox": { "optional": true }
   },
   "devDependencies": {
@@ -59,7 +53,6 @@
   "keywords": [
     "pi",
     "security",
-    "mcp",
     "static-analysis",
     "pi-package"
   ],

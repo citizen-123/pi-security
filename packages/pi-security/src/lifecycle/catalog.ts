@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
 export type LifecycleToolRawShape = Record<string, z.ZodType>;
 export type LifecycleToolInputSchema = z.ZodType | LifecycleToolRawShape;
@@ -23,9 +24,34 @@ export interface LifecycleToolConfig<Schema extends LifecycleToolInputSchema = L
   _meta: Record<string, unknown>;
 }
 
+export interface LifecycleUserInputQuestion {
+  header: string;
+  id: string;
+  options: Array<{ description: string; label: string }>;
+  question: string;
+}
+
+export interface LifecycleRequestContext {
+  sessionId?: string;
+  signal?: AbortSignal;
+  model?: CreateAgentSessionOptions["model"];
+  modelId?: string;
+  thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
+  resolveModel?: (
+    modelId: string,
+  ) => CreateAgentSessionOptions["model"] | undefined;
+  requestUserInput?: (
+    questions: readonly LifecycleUserInputQuestion[],
+    signal?: AbortSignal,
+  ) => Promise<{
+    status: "accepted" | "declined" | "cancelled" | "unavailable";
+    answers?: Record<string, string>;
+  }>;
+}
+
 export type LifecycleToolHandler = (
   input: unknown,
-  requestContext: unknown
+  requestContext: LifecycleRequestContext
 ) => Promise<unknown>;
 
 export interface LifecycleToolRegistration {
@@ -40,29 +66,14 @@ export interface LifecycleToolRegistrar {
     config: LifecycleToolConfig<Schema>,
     handler: (
       input: LifecycleToolInput<Schema>,
-      requestContext: unknown
+      requestContext: LifecycleRequestContext
     ) => Promise<unknown>
   ): void;
+  onDispose(handler: () => void): void;
 }
 
-export interface LifecycleProtocolServer {
-  onclose?: () => void;
-  getClientCapabilities(): {
-    elicitation?: { form?: unknown };
-    sampling?: { tools?: unknown };
-  } | undefined;
-  elicitInput(
-    request: unknown,
-    options?: { timeout?: number; signal?: AbortSignal }
-  ): Promise<{
-    action: "accept" | "decline" | "cancel";
-    content?: unknown;
-  }>;
-}
-
-export interface LifecycleRegistrationServer extends LifecycleToolRegistrar {
-  server: LifecycleProtocolServer;
-  sendLoggingMessage(message: unknown): Promise<void>;
+export interface LifecycleCatalogCollector extends LifecycleToolRegistrar {
+  dispose(): void;
 }
 
 export interface LifecycleToolCatalog {
@@ -71,31 +82,30 @@ export interface LifecycleToolCatalog {
 }
 
 /** Collect canonical registrations without binding them to a transport. */
-export function createLifecycleCatalogServer(): {
+export function createLifecycleCatalogCollector(): {
   registrations: LifecycleToolRegistration[];
-  server: LifecycleRegistrationServer;
+  registrar: LifecycleCatalogCollector;
 } {
   const registrations: LifecycleToolRegistration[] = [];
-  const protocolServer: LifecycleProtocolServer = {
-    getClientCapabilities: () => ({}),
-    async elicitInput() {
-      throw new Error("This host does not support MCP form elicitation.");
-    }
-  };
-  const server: LifecycleRegistrationServer = {
-    server: protocolServer,
-    async sendLoggingMessage() {},
+  const disposalHandlers: Array<() => void> = [];
+  const registrar: LifecycleCatalogCollector = {
     registerTool(name, config, handler) {
       registrations.push({
         name,
         config: config as LifecycleToolConfig,
         handler: handler as LifecycleToolHandler
       });
+    },
+    onDispose(handler) {
+      disposalHandlers.push(handler);
+    },
+    dispose() {
+      for (const handler of disposalHandlers.splice(0).reverse()) handler();
     }
   };
-  return { registrations, server };
+  return { registrations, registrar };
 }
-/** Apply the canonical MCP input parser before a transport-neutral handler runs. */
+/** Apply the canonical lifecycle input parser before a handler runs. */
 export function parseLifecycleToolInput(
   schema: LifecycleToolInputSchema,
   input: unknown
@@ -103,7 +113,7 @@ export function parseLifecycleToolInput(
   return lifecycleToolZodSchema(schema).parse(input);
 }
 
-/** Emit the same draft-7 input schema the MCP SDK derives from canonical Zod registrations. */
+/** Emit the draft-7 input schema consumed by Pi's native tool registry. */
 export function lifecycleToolJsonSchema(
   schema: LifecycleToolInputSchema
 ): Record<string, unknown> {

@@ -1,6 +1,6 @@
 import type * as z from "zod/v4";
-import commonSchema from "../schemas/definitions/artifact-common.schema.json";
-import attackPathSchema from "../schemas/tools/candidate-attack-paths.schema.json";
+import commonSchema from "../schemas/definitions/artifact-common.schema.json" with { type: "json" };
+import attackPathSchema from "../schemas/tools/candidate-attack-paths.schema.json" with { type: "json" };
 import { candidateSchemaV1 } from "./deep-scan/artifact-contracts.js";
 import {
   artifactDestination,

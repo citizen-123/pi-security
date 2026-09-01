@@ -1,5 +1,5 @@
 import type * as z from "zod/v4";
-import workerThreatModelSchema from "../schemas/tools/worker-threat-model.schema.json";
+import workerThreatModelSchema from "../schemas/tools/worker-threat-model.schema.json" with { type: "json" };
 import type { ArtifactContext } from "./artifact-context.js";
 import {
   artifactDestination,

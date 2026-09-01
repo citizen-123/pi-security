@@ -3,9 +3,19 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { resolveCurrentSubagentCapabilityCeiling } from "pi-subagents/capability-ceiling";
+import { build } from "esbuild";
 
 const root = resolve(import.meta.dirname, "..");
+const ceilingBundle = await build({
+  bundle: true,
+  entryPoints: [resolve(root, "../../node_modules/pi-subagents/src/api/capability-ceiling.ts")],
+  format: "esm",
+  platform: "node",
+  write: false,
+});
+const { resolveCurrentSubagentCapabilityCeiling } = await import(
+  `data:text/javascript;base64,${Buffer.from(ceilingBundle.outputFiles[0].contents).toString("base64")}`,
+);
 
 class FakeEvents {
   handlers = new Map();

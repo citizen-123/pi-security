@@ -1,4 +1,4 @@
-import type { LifecycleToolRegistrar } from "./lifecycle-catalog.js";
+import type { LifecycleRequestContext, LifecycleToolRegistrar } from "./catalog.js";
 import type { ZodType } from "zod/v4";
 import {
   createScanArtifactContext,
@@ -48,7 +48,7 @@ export interface CompactArtifactToolOptions {
   packageRoot: string;
   resolveHandoffClaimToken?: (
     scanId: string,
-    requestContext: unknown
+    requestContext?: LifecycleRequestContext
   ) => string | undefined;
 }
 
@@ -72,10 +72,10 @@ const writingAnnotations = {
 
 /** Prepare diff inventories and read existing diff or Deep inventories. */
 export function registerReviewItemTools(
-  server: LifecycleToolRegistrar,
+  registrar: LifecycleToolRegistrar,
   options: CompactArtifactToolOptions
 ): void {
-  registerCompactTool(server, {
+  registerCompactTool(registrar, {
     name: "prepare_pi_security_review_items",
     title: "Prepare Pi Security Review Items",
     description: "Generate the changed-file inventory for a diff scan.",
@@ -89,7 +89,7 @@ export function registerReviewItemTools(
     }
   });
 
-  registerCompactTool(server, {
+  registerCompactTool(registrar, {
     name: "list_pi_security_review_items",
     title: "List Pi Security Review Items",
     description: "Read one page of the diff or Deep scan discovery inventory.",
@@ -107,13 +107,13 @@ export function registerReviewItemTools(
 
 /** Record diff candidates and read existing diff or Deep candidates. */
 export function registerDiscoveryCandidateTools(
-  server: LifecycleToolRegistrar,
+  registrar: LifecycleToolRegistrar,
   options: CompactArtifactToolOptions
 ): void {
   const writerSchema = workbenchDiscoveryCandidatesInputSchema;
   const readerSchema = workbenchListPiSecurityCandidatesInputSchema;
 
-  registerCompactTool(server, {
+  registerCompactTool(registrar, {
     name: "record_pi_security_discovery_candidates",
     title: "Record Pi Security Discovery Candidates",
     description: "Normalize and replace the selected diff scan's candidates.",
@@ -128,7 +128,7 @@ export function registerDiscoveryCandidateTools(
     }
   });
 
-  registerCompactTool(server, {
+  registerCompactTool(registrar, {
     name: "list_pi_security_candidates",
     title: "List Pi Security Candidates",
     description: "Read one page of diff or Deep scan discovery candidates.",
@@ -149,10 +149,10 @@ export function registerDiscoveryCandidateTools(
 
 /** Record centralized validation results for a diff or Deep scan. */
 export function registerCandidateValidationTools(
-  server: LifecycleToolRegistrar,
+  registrar: LifecycleToolRegistrar,
   options: CompactArtifactToolOptions
 ): void {
-  registerCompactTool(server, {
+  registerCompactTool(registrar, {
     name: "record_pi_security_candidate_validations",
     title: "Record Pi Security Candidate Validations",
     description: "Record the diff or Deep scan candidate validation results.",
@@ -170,10 +170,10 @@ export function registerCandidateValidationTools(
 
 /** Record centralized attack-path results for a diff or Deep scan. */
 export function registerCandidateAttackPathTools(
-  server: LifecycleToolRegistrar,
+  registrar: LifecycleToolRegistrar,
   options: CompactArtifactToolOptions
 ): void {
-  registerCompactTool(server, {
+  registerCompactTool(registrar, {
     name: "record_candidate_attack_paths",
     title: "Record Pi Security Candidate Attack Paths",
     description: "Record the diff or Deep scan candidate attack-path results.",
@@ -191,10 +191,10 @@ export function registerCandidateAttackPathTools(
 
 /** Register draft construction and read-only completed scan retrieval. */
 export function registerScanDraftTools(
-  server: LifecycleToolRegistrar,
+  registrar: LifecycleToolRegistrar,
   options: CompactArtifactToolOptions
 ): void {
-  registerCompactTool(server, {
+  registerCompactTool(registrar, {
     name: "record_pi_security_scan_draft",
     title: "Record Pi Security Scan Draft",
     description: "Save semantic findings and coverage as an unsealed draft. Use complete:false for progress checkpoints, then complete:true for the final result; keep unvalidated candidates in coverage.deferred.",
@@ -211,7 +211,7 @@ export function registerScanDraftTools(
     }
   });
 
-  registerCompactTool(server, {
+  registerCompactTool(registrar, {
     name: "get_pi_security_completed_scan",
     title: "Get Completed Pi Security Scan",
     description: "Read the selected scan's existing completed, sealed canonical documents.",
@@ -235,23 +235,23 @@ function signalFromRequestContext(requestContext: unknown): AbortSignal | undefi
 
 /** Keep each vertical operation independently reviewable and registered. */
 export function registerCompactArtifactTools(
-  server: LifecycleToolRegistrar,
+  registrar: LifecycleToolRegistrar,
   options: CompactArtifactToolOptions
 ): void {
-  registerReviewItemTools(server, options);
-  registerDiscoveryCandidateTools(server, options);
-  registerCandidateValidationTools(server, options);
-  registerCandidateAttackPathTools(server, options);
-  registerScanDraftTools(server, options);
+  registerReviewItemTools(registrar, options);
+  registerDiscoveryCandidateTools(registrar, options);
+  registerCandidateValidationTools(registrar, options);
+  registerCandidateAttackPathTools(registrar, options);
+  registerScanDraftTools(registrar, options);
 }
 
 /** Expose only the operations appropriate to the inherited worker phase. */
 export function registerCompactWorkerArtifactTools(
-  server: LifecycleToolRegistrar,
+  registrar: LifecycleToolRegistrar,
   context: ArtifactContext
 ): void {
   if (context.layout === "worker") {
-    registerCompactTool(server, {
+    registerCompactTool(registrar, {
       name: "record_pi_security_scan_draft",
       title: "Record Pi Security Scan Draft",
       description: "Save this Standard worker's semantic findings and coverage. Use complete:false for progress checkpoints, then complete:true for its final result; keep unvalidated candidates in coverage.deferred.",
@@ -272,10 +272,10 @@ export function registerCompactWorkerArtifactTools(
   }
 
   if (context.layout !== "reducer") {
-    throw new Error("The lightweight artifact server requires a bound discovery or reducer worker.");
+    throw new Error("The lightweight artifact registrar requires a bound discovery or reducer worker.");
   }
 
-  registerCompactTool(server, {
+  registerCompactTool(registrar, {
     name: "get_pi_security_deep_reducer_inputs",
     title: "Get Pi Security Deep Reducer Inputs",
     description: "Read the complete Standard scan results assigned to this reducer.",
@@ -290,7 +290,7 @@ export function registerCompactWorkerArtifactTools(
     }
   });
 
-  registerCompactTool(server, {
+  registerCompactTool(registrar, {
     name: "record_pi_security_deep_reduction",
     title: "Record Pi Security Deep Reduction",
     description: "Record this reducer's complete aggregated Standard scan result.",
@@ -315,20 +315,20 @@ interface CompactToolRegistration {
   description: string;
   inputSchema: ZodType;
   readOnly: boolean;
-  handler: (value: unknown, requestContext: unknown) => Promise<object>;
+  handler: (value: unknown, requestContext: LifecycleRequestContext) => Promise<object>;
 }
 
 function registerCompactTool(
-  server: LifecycleToolRegistrar,
+  registrar: LifecycleToolRegistrar,
   registration: CompactToolRegistration
 ): void {
-  server.registerTool(registration.name, {
+  registrar.registerTool(registration.name, {
     title: registration.title,
     description: registration.description,
     inputSchema: registration.inputSchema,
     annotations: registration.readOnly ? readingAnnotations : writingAnnotations,
     _meta: modelOnlyMeta
-  }, async (input: unknown, requestContext: unknown) => {
+  }, async (input: unknown, requestContext: LifecycleRequestContext) => {
     const value = await registration.handler(input, requestContext);
     return {
       content: [{ type: "text" as const, text: JSON.stringify(value) }],
@@ -341,7 +341,7 @@ async function scanContext(
   input: { scanId: string; handoffClaimToken?: string },
   options: CompactArtifactToolOptions,
   requireRunning = true,
-  requestContext?: unknown
+  requestContext?: LifecycleRequestContext
 ): Promise<ArtifactContext> {
   return createScanArtifactContext(input.scanId, options.runWorkbench, {
     requireRunning,
@@ -355,7 +355,7 @@ async function scanContext(
 async function phaseScanContext(
   input: { scanId: string; handoffClaimToken?: string },
   options: CompactArtifactToolOptions,
-  requestContext?: unknown,
+  requestContext?: LifecycleRequestContext,
   requiredMode?: "diff"
 ): Promise<ArtifactContext> {
   const context = await scanContext(input, options, true, requestContext);

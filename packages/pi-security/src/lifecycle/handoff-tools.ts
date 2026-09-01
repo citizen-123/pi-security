@@ -1,4 +1,4 @@
-import type { LifecycleToolRegistrar } from "./lifecycle-catalog.js";
+import type { LifecycleToolRegistrar } from "./catalog.js";
 import * as z from "zod/v4";
 import type { ScanResults } from "../types.js";
 
@@ -30,10 +30,10 @@ const scanContinuationThreadSchema = {
 };
 
 export function registerScanHandoffTools(
-  server: LifecycleToolRegistrar,
+  registrar: LifecycleToolRegistrar,
   { appMeta, runWorkbench, workspaceResult }: ScanHandoffToolDependencies
 ) {
-  server.registerTool("mark_pi_security_scan_handoff_delivered", {
+  registrar.registerTool("mark_pi_security_scan_handoff_delivered", {
     title: "Record Delivered Pi Security Handoff",
     description: "App-only. Record that the launched scan instructions were delivered to Pi.",
     inputSchema: handoffClaimSchema,
@@ -50,7 +50,7 @@ export function registerScanHandoffTools(
     return workspaceResult(workspace);
   });
 
-  server.registerTool("claim_pi_security_scan_handoff_delivery", {
+  registrar.registerTool("claim_pi_security_scan_handoff_delivery", {
     title: "Claim Pi Security Handoff Delivery",
     description: "App-only. Durably claim scan handoff delivery before sending continuation instructions to Pi.",
     inputSchema: handoffTakeoverSchema,
@@ -68,7 +68,7 @@ export function registerScanHandoffTools(
     return workspaceResult(workspace);
   });
 
-  server.registerTool("release_pi_security_scan_handoff_delivery", {
+  registrar.registerTool("release_pi_security_scan_handoff_delivery", {
     title: "Release Pi Security Handoff Delivery",
     description: "App-only. Release a failed scan handoff delivery claim so the app can retry it.",
     inputSchema: handoffClaimSchema,
@@ -85,7 +85,7 @@ export function registerScanHandoffTools(
     return workspaceResult(workspace);
   });
 
-  server.registerTool("attach_pi_security_scan_continuation_thread", {
+  registrar.registerTool("attach_pi_security_scan_continuation_thread", {
     title: "Attach Pi Security Scan Thread",
     description: "App-only. Persist the normal local host session created for a claimed scan handoff.",
     inputSchema: scanContinuationThreadSchema,

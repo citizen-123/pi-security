@@ -16,7 +16,7 @@ const MISSING_PYTHON_HELPER_MESSAGE = "Pi Security could not start its Python 3 
 
 /**
  * Resolve Python for each workbench invocation because Pi may finish installing
- * its primary runtime after the MCP server has already started.
+ * its primary runtime after the Pi extension has already started.
  */
 export async function resolvePythonCommand(options: ResolvePythonCommandOptions = {}): Promise<string> {
   const environment = options.environment ?? process.env;

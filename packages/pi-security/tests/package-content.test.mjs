@@ -14,7 +14,6 @@ const repositoryRoot = resolve(packageRoot, "../..");
 const repositoryPackagePrefix = "packages/pi-security/";
 
 const nestedFiles = [
-  "dist/server.cjs",
   "dist/pi-security-extension.mjs",
   "agents/*.md",
   "skills/**/*.md",
@@ -29,9 +28,9 @@ const nestedFiles = [
   "README.md",
 ];
 const rootFiles = [
-  ...nestedFiles.slice(0, 2).map((path) => `${repositoryPackagePrefix}${path}`),
+  `${repositoryPackagePrefix}dist/pi-security-extension.mjs`,
   `${repositoryPackagePrefix}package.json`,
-  ...nestedFiles.slice(2, -1).map((path) => `${repositoryPackagePrefix}${path}`),
+  ...nestedFiles.slice(1, -1).map((path) => `${repositoryPackagePrefix}${path}`),
   `${repositoryPackagePrefix}README.md`,
   "README.md",
   "LICENSE",
@@ -47,7 +46,6 @@ const runtimeTrees = [
 const requiredPackageSentinels = [
   "package.json",
   "README.md",
-  "dist/server.cjs",
   "dist/pi-security-extension.mjs",
   "agents/pi-security-scout.md",
   "agents/pi-security-auditor.md",
@@ -77,10 +75,15 @@ const bundledSubagentSentinels = [
   "node_modules/pi-subagents/agents/reviewer.md",
 ];
 const expectedRuntimeDependencies = {
-  "@modelcontextprotocol/sdk": "^1.29.0",
   "pi-subagents": "0.62.0",
   "zod": "^4.3.6",
 };
+const bundledRuntimeTrees = new Set([
+  "pi-subagents",
+  ...Object.keys(
+    (await readJson(resolve(repositoryRoot, "node_modules/pi-subagents/package.json"))).dependencies,
+  ),
+]);
 const requiredPolicyRuntimeMarkers = [
   "security-readonly",
   "security-delegating-readonly",
@@ -89,6 +92,7 @@ const requiredPolicyRuntimeMarkers = [
   "PI_SECURITY_ENFORCEMENT_UNSUPPORTED",
   "PI_SECURITY_POLICY_RECOVERY_REJECTED",
   "continuation.exact-policy-reissue",
+  "pi.worker-session.tools",
 ];
 const forbiddenPackPaths = [
   ["Python cache directory", /(?:^|\/)__pycache__(?:\/|$)/u],
@@ -101,7 +105,7 @@ const forbiddenPackPaths = [
   ["evaluation artifact", /^(?:packages\/pi-security\/)?evals(?:\/|$)/u],
   ["package test", /^(?:packages\/pi-security\/)?tests(?:\/|$)/u],
   ["unbundled TypeScript source", /^(?:packages\/pi-security\/)?(?:extensions|src)(?:\/|$)/u],
-  ["development input", /^(?:packages\/pi-security\/)?(?:artifact-writer-main\.ts|main\.ts|requirements-test\.txt|scripts-build\.mjs|server\.ts|tsconfig\.json)$/u],
+  ["development input", /^(?:packages\/pi-security\/)?(?:lifecycle\.ts|requirements-test\.txt|scripts-build\.mjs|tsconfig\.json)$/u],
 ];
 
 async function readJson(path) {
@@ -164,11 +168,14 @@ function assertPackContents(files, requiredPaths, packagePrefix) {
 
 function isAllowedPackPath(path, packagePrefix) {
   if (path === "package.json" || path === "README.md" || path === "LICENSE") return true;
-  if (path.startsWith("node_modules/pi-subagents/")) return true;
+  const dependency = path.match(/^node_modules\/((?:@[^/]+\/)?[^/]+)\//u)?.[1];
+  if (dependency && bundledRuntimeTrees.has(dependency)) return true;
   if (packagePrefix && !path.startsWith(packagePrefix)) return false;
   const relative = packagePrefix ? path.slice(packagePrefix.length) : path;
-  if (relative === "README.md" || relative === "package.json") return true;
-  if (relative === "dist/server.cjs" || relative === "dist/pi-security-extension.mjs") return true;
+  if (relative === "README.md" || relative === "package.json" || relative === "LICENSE") {
+    return true;
+  }
+  if (relative === "dist/pi-security-extension.mjs") return true;
   return [
     /^agents\/[^/]+\.md$/u,
     /^skills\/.+\.(?:md|py)$/u,
@@ -344,10 +351,7 @@ test("package manifests pin bundled subagents and load its extension first", asy
 });
 
 test("built runtime bundles include the complete permission-profile layer", async () => {
-  for (const relativePath of [
-    "dist/server.cjs",
-    "dist/pi-security-extension.mjs",
-  ]) {
+  for (const relativePath of ["dist/pi-security-extension.mjs"]) {
     const bundle = await readFile(resolve(packageRoot, relativePath), "utf8");
     for (const marker of requiredPolicyRuntimeMarkers) {
       assert.equal(
@@ -382,7 +386,7 @@ test("repository and nested npm packs contain runtime assets and no local artifa
 });
 
 test("pack-content assertion rejects missing and forbidden paths", () => {
-  const required = ["package.json", `${repositoryPackagePrefix}dist/server.cjs`];
+  const required = ["package.json", `${repositoryPackagePrefix}dist/pi-security-extension.mjs`];
   assert.throws(
     () => assertPackContents(["package.json"], required, repositoryPackagePrefix),
     /missing required runtime assets/u,

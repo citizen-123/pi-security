@@ -30,11 +30,11 @@ After `complete_pi_security_scan` succeeds, include its returned `usage.totalTok
 
 Before workbench-owned Standard or workbench-backed diff completion, require `record_pi_security_scan_draft` to succeed. Before Deep completion, require the coordinator to return the parent scan's already-authored canonical manifest; do not submit another draft or rerun worker phases. externally managed Standard and terminal diff workflows instead verify their canonical JSON before the appropriate owner finalizes it. Completion validates and seals existing canonical artifacts and generates `report.md`; it does not create missing artifacts or run skipped scan phases.
 
-An MCP `-32602` input rejection, an `isError: true` result reporting `Input validation error`, or an explicit pre-write rejection of complete coverage containing deferred work or a follow-up surface makes no draft write. Correct only the named paths in the same draft, preserving all valid findings, fields, evidence, and deferred work; retry the same scan at most twice. Stop final submission after the first accepted complete draft; an accepted complete:false checkpoint does not end the audit. Do not blindly retry an ambiguous transport or write failure.
+A native lifecycle input rejection, an `isError: true` result reporting `Input validation error`, or an explicit pre-write rejection of complete coverage containing deferred work or a follow-up surface makes no draft write. Correct only the named paths in the same draft, preserving all valid findings, fields, evidence, and deferred work; retry the same scan at most twice. Stop final submission after the first accepted complete draft; an accepted complete:false checkpoint does not end the audit. Do not blindly retry an ambiguous lifecycle or write failure.
 
 For any other required scan phase, canonical-artifact write, or on-disk existence check that fails before completion, stop the current response and surface the exact workflow blocker. Do not call completion with missing artifacts, return a final report or no-findings result, or satisfy a structured output schema. Leave the durable scan available for a later continuation instead of canceling or failing it solely because canonical assembly is blocked.
 
-If `complete_pi_security_scan` or the terminal/chat finalizer fails, stop the current response and surface the exact MCP or finalizer error. Do not retry completion in the same response, return a final report or no-findings result, or satisfy a structured output schema. Leave the durable scan available for a later continuation instead of canceling or failing it solely because completion failed.
+If `complete_pi_security_scan` or the terminal/chat finalizer fails, stop the current response and surface the exact lifecycle or finalizer error. Do not retry completion in the same response, return a final report or no-findings result, or satisfy a structured output schema. Leave the durable scan available for a later continuation instead of canceling or failing it solely because completion failed.
 
 Canonical report semantics live in these fields:
 
@@ -178,7 +178,7 @@ Include the final markdown report path in the response so the user can find the 
 After a completed scan:
 
 - If the scan found reportable issues, ask whether the user wants to export the findings as JSON, SARIF, or CSV, generate patches, or track selected findings. Name the highest-priority finding.
-- Offer tracking only when `$track-findings` can use an available destination, such as Linear, Jira, or GitHub Issues. Name the destination in the question.
+- Offer tracking only when `/track-findings` can use an available destination, such as Linear, Jira, or GitHub Issues. Name the destination in the question.
 - If the report names a specific follow-up, ask whether the user wants to investigate it.
 - If the scan found nothing and has no specific follow-up, do not add a generic question.
 - Wait for the user's answer before exporting findings, generating patches, tracking findings, or starting another scan.

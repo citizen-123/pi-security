@@ -1,6 +1,6 @@
 # Jira and Linear Ticket Intake
 
-Use this reference whenever `$triage-finding` imports Jira or Linear issues. Retrieve the requested ticket content before normalization. Never infer inaccessible ticket content from an identifier, title fragment, or repository code.
+Use this reference whenever `/triage-finding` imports Jira or Linear issues. Retrieve the requested ticket content before normalization. Never infer inaccessible ticket content from an identifier, title fragment, or repository code.
 
 ## Source Retrieval
 

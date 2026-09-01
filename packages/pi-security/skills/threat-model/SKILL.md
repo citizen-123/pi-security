@@ -1,6 +1,6 @@
 ---
 name: threat-model
-description: Use when Pi is already in the threat-modeling phase of a security scan, the user explicitly invokes $threat-model, or the user explicitly asks to create, update, or persist a repository threat model. Do not use as the primary trigger for full PR, commit, branch, patch, or repository scans.
+description: Use when Pi is already in the threat-modeling phase of a security scan, the user explicitly invokes /threat-model, or the user explicitly asks to create, update, or persist a repository threat model. Do not use as the primary trigger for full PR, commit, branch, patch, or repository scans.
 ---
 
 # Security Threat Model

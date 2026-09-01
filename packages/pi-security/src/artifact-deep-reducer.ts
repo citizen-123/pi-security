@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import type { ZodType } from "zod/v4";
-import commonSchema from "../schemas/definitions/artifact-common.schema.json";
-import reducerSchema from "../schemas/tools/deep-reducer.schema.json";
-import scanDraftSchema from "../schemas/tools/scan-draft.schema.json";
+import commonSchema from "../schemas/definitions/artifact-common.schema.json" with { type: "json" };
+import reducerSchema from "../schemas/tools/deep-reducer.schema.json" with { type: "json" };
+import scanDraftSchema from "../schemas/tools/scan-draft.schema.json" with { type: "json" };
 import type { ArtifactContext, DeepReducerContext } from "./artifact-context.js";
 import {
   parsePersistedScanDraft,

@@ -18,7 +18,7 @@ await build({
     contents: [
       'export * from "./src/pi-permission-profile.ts";',
       'export * from "./src/execution-policy-continuation.ts";',
-      'export * from "./src/deep-scan/mcp-sampling-policy.ts";',
+      'export * from "./src/deep-scan/worker-policy.ts";',
       'export * from "./src/enforcement-capabilities.ts";',
       'export * from "./src/execution-policy.ts";'
     ].join("\n"),
@@ -140,7 +140,7 @@ test("continuation policy is canonical, exact, and restores only an unspent succ
   );
 });
 
-test("MCP adapter keeps advertised tools and direct dispatch on the same authority", () => {
+test("worker policy keeps advertised tools and direct dispatch on the same authority", () => {
   const source = adapter.issueDeepScanSourceContext({
     targetRoot,
     scanId,
@@ -148,7 +148,7 @@ test("MCP adapter keeps advertised tools and direct dispatch on the same authori
     delegationBudget: 0
   });
   const writer = adapter.issueDeepScanArtifactWriterContext({ targetRoot, scanId, artifactRoot });
-  const policy = adapter.bindMcpSamplingPolicy({
+  const policy = adapter.bindWorkerPolicy({
     source: () => source,
     artifactWriter: () => writer,
     delegation: () => source,
@@ -172,7 +172,7 @@ test("MCP adapter keeps advertised tools and direct dispatch on the same authori
 
   const forged = structuredClone(source);
   assert.throws(
-    () => adapter.bindMcpSamplingPolicy({
+    () => adapter.bindWorkerPolicy({
       source: () => forged,
       artifactWriter: () => writer,
       delegation: () => forged,
@@ -240,7 +240,7 @@ test("enforcement failures stay typed and effective diagnostics redact bindings"
   const effective = adapter.describePiEnforcementCapabilities({
     kind: "effective",
     piTools: true,
-    samplingTools: true,
+    workerSessions: true,
     targetHandles: true,
     artifactRoots: true,
     trustedWorkbench: true,
