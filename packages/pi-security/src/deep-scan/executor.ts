@@ -1105,7 +1105,12 @@ async function writeDelegatedChildOutcome(
   const value: PersistedDelegatedChildOutcome = outcome.error === undefined
     ? { version: 1, status: "succeeded", result: outcome.result }
     : { version: 1, status: "failed", error: outcome.error };
-  await replaceArtifactJson(context, DELEGATED_OUTCOME_FILE, value);
+  const destination = await artifactDestination(
+    context,
+    [DELEGATED_OUTCOME_FILE],
+    "delegated security task outcome",
+  );
+  await replaceArtifactJson(context, destination, value);
 }
 
 async function delegatedChildContinuation(
@@ -1230,15 +1235,15 @@ async function writeContinuation(
   continuation: WorkerContinuation,
   createOnly = false,
 ): Promise<void> {
-  if (!createOnly) {
-    await replaceArtifactJson(context, CONTINUATION_FILE, continuation);
-    return;
-  }
   const destination = await artifactDestination(
     context,
     [CONTINUATION_FILE],
     "native worker continuation",
   );
+  if (!createOnly) {
+    await replaceArtifactJson(context, destination, continuation);
+    return;
+  }
   await fs.mkdir(dirname(destination), { recursive: true });
   await fs.writeFile(destination, `${JSON.stringify(continuation, null, 2)}\n`, {
     encoding: "utf8",

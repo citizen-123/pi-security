@@ -391,10 +391,14 @@ async function openSecureReadFile(
   label: string
 ): Promise<FileHandle> {
   if (process.platform !== "win32") {
-    return await fs.open(
-      parent.path,
-      secureOpenFlags(fsConstants.O_RDONLY, false, label, true)
-    );
+    try {
+      return await fs.open(
+        parent.path,
+        secureOpenFlags(fsConstants.O_RDONLY, false, label, true)
+      );
+    } catch (error) {
+      throw new Error(`${label} cannot be opened safely.`, { cause: error });
+    }
   }
   const before = await safeWindowsPathIdentity(parent.path, label);
   let file: FileHandle;
