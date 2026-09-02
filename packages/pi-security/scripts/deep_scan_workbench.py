@@ -20,7 +20,13 @@ from typing import Any, Callable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deep_scan_config import resolve_deep_scan_config
 from filesystem_identity import serialize_filesystem_identity
-from finalize_scan_contract import _read_scan_local_json
+from finalize_scan_contract import (
+    ContractError,
+    _read_scan_local_json,
+    _remove_scan_local_file_if_exists,
+    copy_scan_local_file,
+    replace_scan_local_file,
+)
 from workbench.handoff import require_current_continuation
 from workbench_target import (
     directory_content_digest,
@@ -437,42 +443,97 @@ def deep_scan_output_path(scan: sqlite3.Row, value: str, label: str) -> str:
     return str(output)
 
 
-def promote_staged_file(staged_path: str, output_path: str) -> tuple[Path, Path, Path | None]:
+def publication_relative_path(scan_dir: Path, value: str | Path, label: str) -> str:
+    root = scan_dir.expanduser().absolute()
+    path = Path(value).expanduser().absolute()
+    try:
+        relative = path.relative_to(root).as_posix()
+    except ValueError as exc:
+        raise SystemExit(f"{label} must stay inside the scan directory.") from exc
+    if relative in {"", "."}:
+        raise SystemExit(f"{label} must name a file inside the scan directory.")
+    return relative
+
+
+def create_publication_copy(scan_dir: Path, source: str | Path, destination: str | Path) -> None:
+    try:
+        copy_scan_local_file(
+            scan_dir,
+            publication_relative_path(scan_dir, source, "Staged Deep Scan artifact"),
+            publication_relative_path(scan_dir, destination, "Publication staging path"),
+        )
+    except (ContractError, OSError) as exc:
+        raise SystemExit(f"Deep Scan publication copy failed: {exc}") from exc
+
+
+def promote_staged_file(
+    scan_dir: Path, staged_path: str, output_path: str
+) -> tuple[Path, Path, Path | None]:
     staged = Path(staged_path)
     output = Path(output_path)
-    if staged == output:
+    staged_relative = publication_relative_path(scan_dir, staged, "Staged Deep Scan artifact")
+    output_relative = publication_relative_path(scan_dir, output, "Published Deep Scan artifact")
+    if staged_relative == output_relative:
         raise SystemExit("A staged Deep Scan artifact must not be its published output path.")
-    backup = output.with_name(f".{output.name}.{uuid.uuid4()}.backup") if output.exists() else None
-    if backup is not None:
-        os.replace(output, backup)
+    backup = output.with_name(f".{output.name}.{uuid.uuid4()}.backup")
+    backup_relative = publication_relative_path(scan_dir, backup, "Deep Scan artifact backup")
     try:
-        os.replace(staged, output)
-    except BaseException:
-        if backup is not None:
-            os.replace(backup, output)
-        raise
+        moved_existing = replace_scan_local_file(
+            scan_dir, output_relative, backup_relative, missing_ok=True
+        )
+        if not moved_existing:
+            backup = None
+        try:
+            replace_scan_local_file(scan_dir, staged_relative, output_relative)
+        except BaseException:
+            if backup is not None:
+                replace_scan_local_file(scan_dir, backup_relative, output_relative)
+            raise
+    except (ContractError, OSError) as exc:
+        raise SystemExit(f"Deep Scan artifact promotion failed: {exc}") from exc
     return staged, output, backup
 
 
-def rollback_staged_file(promotion: tuple[Path, Path, Path | None]) -> None:
+def rollback_staged_file(scan_dir: Path, promotion: tuple[Path, Path, Path | None]) -> None:
     staged, output, backup = promotion
-    if output.exists():
-        os.replace(output, staged)
-    if backup is not None:
-        os.replace(backup, output)
-
-
-def finish_staged_file(promotion: tuple[Path, Path, Path | None]) -> None:
-    backup = promotion[2]
-    if backup is not None:
-        backup.unlink(missing_ok=True)
-
-
-def create_publication_copy(source: str | Path, destination: str | Path) -> None:
     try:
-        os.link(source, destination)
-    except OSError:
-        shutil.copy2(source, destination)
+        replace_scan_local_file(
+            scan_dir,
+            publication_relative_path(scan_dir, output, "Published Deep Scan artifact"),
+            publication_relative_path(scan_dir, staged, "Staged Deep Scan artifact"),
+            missing_ok=True,
+        )
+        if backup is not None:
+            replace_scan_local_file(
+                scan_dir,
+                publication_relative_path(scan_dir, backup, "Deep Scan artifact backup"),
+                publication_relative_path(scan_dir, output, "Published Deep Scan artifact"),
+            )
+    except (ContractError, OSError) as exc:
+        raise SystemExit(f"Deep Scan artifact rollback failed: {exc}") from exc
+
+
+def finish_staged_file(scan_dir: Path, promotion: tuple[Path, Path, Path | None]) -> None:
+    backup = promotion[2]
+    if backup is None:
+        return
+    try:
+        _remove_scan_local_file_if_exists(
+            scan_dir,
+            publication_relative_path(scan_dir, backup, "Deep Scan artifact backup"),
+        )
+    except (ContractError, OSError) as exc:
+        raise SystemExit(f"Deep Scan artifact cleanup failed: {exc}") from exc
+
+
+def discard_staged_file(scan_dir: Path, path: Path) -> None:
+    try:
+        _remove_scan_local_file_if_exists(
+            scan_dir,
+            publication_relative_path(scan_dir, path, "Publication staging path"),
+        )
+    except (ContractError, OSError) as exc:
+        raise SystemExit(f"Deep Scan publication cleanup failed: {exc}") from exc
 
 
 def publication_matches_snapshot(publication: Path, snapshot: Path) -> bool:
@@ -1379,13 +1440,50 @@ def recover_expired_coordinator(
 
 def recover_candidate_ledger_publication(connection: sqlite3.Connection, scan_id: str) -> None:
     scan = require_scan(connection, scan_id)
-    ledger = Path(scan["scan_dir"]) / "artifacts" / "02_discovery" / "candidate_ledger.jsonl"
+    scan_dir = Path(scan["scan_dir"])
+    discovery_dir = Path(scan["scan_dir"]) / "artifacts" / "02_discovery"
+    if not discovery_dir.exists():
+        return
+    discovery_dir = Path(
+        deep_scan_path(
+            scan,
+            str(discovery_dir),
+            "Canonical discovery artifact directory",
+            kind="directory",
+        )
+    )
+    ledger = discovery_dir / "candidate_ledger.jsonl"
+    ledger_relative = publication_relative_path(
+        scan_dir, ledger, "Canonical candidate ledger path"
+    )
+    ledger_exists = False
+    try:
+        ledger.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        ledger = Path(
+            deep_scan_path(
+                scan, str(ledger), "Canonical candidate ledger path", kind="file"
+            )
+        )
+        ledger_exists = True
     backups = sorted(
-        ledger.parent.glob(f".{ledger.name}.*.backup"),
+        (
+            Path(
+                deep_scan_path(
+                    scan,
+                    str(backup),
+                    "Candidate ledger recovery backup",
+                    kind="file",
+                )
+            )
+            for backup in discovery_dir.glob(f".{ledger.name}.*.backup")
+        ),
         key=lambda backup: backup.stat().st_mtime_ns,
         reverse=True,
     )
-    if not ledger.exists() and not backups:
+    if not ledger_exists and not backups:
         return
     reducers = connection.execute(
         """
@@ -1401,17 +1499,35 @@ def recover_candidate_ledger_publication(connection: sqlite3.Connection, scan_id
         snapshot = Path(reducer["artifact_dir"]) / "canonical" / ledger.name
         if not snapshot.exists():
             continue
-        published = publication_matches_snapshot(ledger, snapshot)
+        snapshot = Path(
+            deep_scan_path(scan, str(snapshot), "Reducer candidate ledger snapshot", kind="file")
+        )
+        published = ledger_exists and publication_matches_snapshot(ledger, snapshot)
         interrupted = reducer["status"] != "succeeded"
-        if not published and not (interrupted and backups and not ledger.exists()):
+        if not published and not (interrupted and backups and not ledger_exists):
             continue
-        if interrupted:
-            if backups:
-                os.replace(backups.pop(0), ledger)
-            else:
-                ledger.unlink(missing_ok=True)
-        for backup in backups:
-            backup.unlink(missing_ok=True)
+        try:
+            if interrupted:
+                if backups:
+                    restore = backups.pop(0)
+                    replace_scan_local_file(
+                        scan_dir,
+                        publication_relative_path(
+                            scan_dir, restore, "Candidate ledger recovery backup"
+                        ),
+                        ledger_relative,
+                    )
+                elif ledger_exists:
+                    _remove_scan_local_file_if_exists(scan_dir, ledger_relative)
+            for backup in backups:
+                _remove_scan_local_file_if_exists(
+                    scan_dir,
+                    publication_relative_path(
+                        scan_dir, backup, "Candidate ledger recovery backup"
+                    ),
+                )
+        except (ContractError, OSError) as exc:
+            raise SystemExit(f"Deep Scan candidate ledger recovery failed: {exc}") from exc
         return
 
 
@@ -1878,11 +1994,13 @@ def commit_deep_scan_dedup_locked(
     worker_id = require_uuid(args.worker_id, "worker-id")
     promotion: tuple[Path, Path, Path | None] | None = None
     publication_copy: Path | None = None
+    scan_dir: Path | None = None
     connection.execute("BEGIN IMMEDIATE")
     try:
         run = require_deep_scan_run(connection, scan_id)
         require_current_coordinator(run, args)
         scan = require_scan(connection, scan_id)
+        scan_dir = Path(scan["scan_dir"])
         worker = require_deep_scan_worker(connection, worker_id)
         if worker["scan_id"] != scan_id or worker["kind"] != "dedup":
             raise SystemExit("Dedup worker does not belong to this Deep Scan.")
@@ -1939,8 +2057,9 @@ def commit_deep_scan_dedup_locked(
             publication_copy = canonical_path.with_name(
                 f".{canonical_path.name}.{uuid.uuid4()}.publish"
             )
-            create_publication_copy(candidate_ledger_path, publication_copy)
+            create_publication_copy(scan_dir, candidate_ledger_path, publication_copy)
             promotion = promote_staged_file(
+                scan_dir,
                 str(publication_copy),
                 canonical_candidate_ledger_path,
             )
@@ -1980,15 +2099,15 @@ def commit_deep_scan_dedup_locked(
         connection.commit()
     except BaseException:
         connection.rollback()
-        if promotion is not None:
-            rollback_staged_file(promotion)
-        if publication_copy is not None:
-            publication_copy.unlink(missing_ok=True)
+        if promotion is not None and scan_dir is not None:
+            rollback_staged_file(scan_dir, promotion)
+        if publication_copy is not None and scan_dir is not None:
+            discard_staged_file(scan_dir, publication_copy)
         raise
-    if promotion is not None:
-        finish_staged_file(promotion)
-    if publication_copy is not None:
-        publication_copy.unlink(missing_ok=True)
+    if promotion is not None and scan_dir is not None:
+        finish_staged_file(scan_dir, promotion)
+    if publication_copy is not None and scan_dir is not None:
+        discard_staged_file(scan_dir, publication_copy)
     return deep_scan_result(connection, scan_id)
 
 
@@ -2007,11 +2126,13 @@ def finish_deep_scan_locked(
     if len(set(omitted_worker_ids)) != len(omitted_worker_ids):
         raise SystemExit("Omitted Deep Scan worker IDs must be unique.")
     promotion: tuple[Path, Path, Path | None] | None = None
+    scan_dir: Path | None = None
     connection.execute("BEGIN IMMEDIATE")
     try:
         run = require_deep_scan_run(connection, scan_id)
         require_current_coordinator(run, args)
         scan = require_scan(connection, scan_id)
+        scan_dir = Path(scan["scan_dir"])
         manifest_path = (
             deep_scan_output_path(scan, args.manifest_path, "Deep Scan coordinator manifest path")
             if args.staged_manifest_path
@@ -2236,7 +2357,7 @@ def finish_deep_scan_locked(
                 "Staged Deep Scan coordinator manifest path",
                 kind="file",
             )
-            promotion = promote_staged_file(staged_manifest_path, manifest_path)
+            promotion = promote_staged_file(scan_dir, staged_manifest_path, manifest_path)
         timestamp = now()
         connection.execute(
             """
@@ -2251,11 +2372,11 @@ def finish_deep_scan_locked(
         connection.commit()
     except BaseException:
         connection.rollback()
-        if promotion is not None:
-            rollback_staged_file(promotion)
+        if promotion is not None and scan_dir is not None:
+            rollback_staged_file(scan_dir, promotion)
         raise
-    if promotion is not None:
-        finish_staged_file(promotion)
+    if promotion is not None and scan_dir is not None:
+        finish_staged_file(scan_dir, promotion)
     return deep_scan_result(connection, scan_id)
 
 
@@ -2273,6 +2394,7 @@ def fail_deep_scan_locked(
         raise SystemExit("message is required.")
     policy_failure = policy_failure_columns(args)
     promotion: tuple[Path, Path, Path | None] | None = None
+    scan_dir: Path | None = None
     connection.execute("BEGIN IMMEDIATE")
     try:
         run = require_deep_scan_run(connection, scan_id)
@@ -2291,6 +2413,7 @@ def fail_deep_scan_locked(
                 raise SystemExit("Deep Scan policy failure identity is immutable.")
         require_current_coordinator(run, args)
         scan = require_scan(connection, scan_id)
+        scan_dir = Path(scan["scan_dir"])
         manifest_path = None
         if args.manifest_path:
             manifest_path = (
@@ -2343,7 +2466,7 @@ def fail_deep_scan_locked(
                 "Staged Deep Scan failure manifest path",
                 kind="file",
             )
-            promotion = promote_staged_file(staged_manifest_path, manifest_path)
+            promotion = promote_staged_file(scan_dir, staged_manifest_path, manifest_path)
         timestamp = now()
         connection.execute(
             """
@@ -2383,11 +2506,11 @@ def fail_deep_scan_locked(
         connection.commit()
     except BaseException:
         connection.rollback()
-        if promotion is not None:
-            rollback_staged_file(promotion)
+        if promotion is not None and scan_dir is not None:
+            rollback_staged_file(scan_dir, promotion)
         raise
-    if promotion is not None:
-        finish_staged_file(promotion)
+    if promotion is not None and scan_dir is not None:
+        finish_staged_file(scan_dir, promotion)
     dependencies().preserve_stopped_results(connection, scan_id)
     return deep_scan_result(connection, scan_id)
 

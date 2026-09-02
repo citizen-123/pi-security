@@ -145,6 +145,42 @@ def write_worker_shard_outputs(shard_dir: Path, plan: Path, slot: int) -> list[s
     return output_names
 
 
+def test_diff_rank_input_disables_repository_fsmonitor(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    initialize_repo(repo)
+    source = repo / "src" / "runtime.py"
+    source.parent.mkdir()
+    source.write_text("runtime = False\n", encoding="utf-8")
+    git(repo, "add", "src/runtime.py")
+    git(repo, "commit", "-qm", "base")
+    base = git(repo, "rev-parse", "HEAD")
+    marker = tmp_path / "fsmonitor-ran"
+    helper = tmp_path / "fsmonitor.py"
+    helper.write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('ran')\nprint()\n",
+        encoding="utf-8",
+    )
+    git(repo, "config", "core.fsmonitor", f"{sys.executable} {helper}")
+    source.write_text("runtime = True\n", encoding="utf-8")
+    (repo / "src" / "untracked.py").write_text("untracked = True\n", encoding="utf-8")
+
+    result = run_cli(
+        "make-diff-rank-input",
+        "--repo",
+        str(repo),
+        "--base",
+        base,
+        "--mode",
+        "local-patch",
+        "--out",
+        str(tmp_path / "rank_input.jsonl"),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not marker.exists()
+
+
 def test_make_repo_rank_input_matches_golden_and_filters_noise(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)

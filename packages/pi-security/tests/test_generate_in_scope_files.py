@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -156,6 +157,58 @@ def test_inventory_keeps_ignored_tracked_files_without_ignored_untracked_files(
     assert "./ignored/tracked.py" in paths
     assert "./ignored/secret.py" not in paths
     assert "./app/ignored.skip" not in paths
+
+
+def test_inventory_treats_git_pathspec_magic_scope_as_literal(tmp_path: Path) -> None:
+    repository = make_repository(tmp_path)
+    magic_scope = repository / ":(exclude)app"
+    write_file(magic_scope, "only.py")
+    output = tmp_path / "in_scope_files.txt"
+
+    result = run_inventory(repository, magic_scope.name, output)
+
+    assert result.returncode == 0, result.stderr
+    assert output.read_text(encoding="utf-8").splitlines() == [":(exclude)app/only.py"]
+
+
+def test_inventory_disables_repository_fsmonitor(tmp_path: Path) -> None:
+    repository = make_repository(tmp_path)
+    marker = tmp_path / "fsmonitor-ran"
+    helper = tmp_path / "fsmonitor.py"
+    helper.write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('ran')\nprint()\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["git", "config", "core.fsmonitor", f"{sys.executable} {helper}"],
+        cwd=repository,
+        check=True,
+    )
+
+    result = run_inventory(repository, ".", tmp_path / "in_scope_files.txt")
+
+    assert result.returncode == 0, result.stderr
+    assert not marker.exists()
+
+
+def test_inventory_rejects_parent_symlink_swap_after_output_validation(tmp_path: Path) -> None:
+    namespace = runpy.run_path(str(SCRIPT), run_name="inventory_output_swap_test")
+    parent = tmp_path / "artifacts"
+    parent.mkdir()
+    output = namespace["resolve_output"](str(parent / "in_scope_files.txt"))
+    parked = tmp_path / "parked-artifacts"
+    parent.rename(parked)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        parent.symlink_to(outside, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"creating a symbolic link requires host support: {error}")
+
+    with pytest.raises(namespace["InventoryError"], match="external output path"):
+        namespace["write_inventory"](output, [b"trusted.py\n"])
+
+    assert not (outside / "in_scope_files.txt").exists()
 
 
 def test_diff_inventory_includes_power_shell_files(tmp_path: Path) -> None:

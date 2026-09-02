@@ -620,6 +620,347 @@ def write_scan_local_bytes(
             os.close(root_fd)
 
 
+
+def _open_regular_scan_local_file(
+    parent_fd: int,
+    file_name: str,
+    context: str,
+    *,
+    missing_ok: bool = False,
+) -> tuple[int | None, os.stat_result | None]:
+    try:
+        descriptor = os.open(
+            file_name,
+            os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0),
+            dir_fd=parent_fd,
+        )
+    except FileNotFoundError:
+        if missing_ok:
+            return None, None
+        raise ContractError(f"{context}: expected a regular non-symlink file") from None
+    except OSError as exc:
+        raise ContractError(f"{context}: expected a regular non-symlink file") from exc
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ContractError(f"{context}: expected a regular non-symlink file")
+        return descriptor, metadata
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _verify_opened_scan_local_file(
+    parent_fd: int,
+    file_name: str,
+    descriptor: int,
+    metadata: os.stat_result,
+    context: str,
+) -> None:
+    try:
+        named_metadata = os.stat(file_name, dir_fd=parent_fd, follow_symlinks=False)
+    except OSError as exc:
+        raise ContractError(f"{context}: changed while it was being opened") from exc
+    if not stat.S_ISREG(named_metadata.st_mode) or (
+        named_metadata.st_dev,
+        named_metadata.st_ino,
+    ) != (metadata.st_dev, metadata.st_ino):
+        raise ContractError(f"{context}: changed while it was being opened")
+    opened_metadata = os.fstat(descriptor)
+    if (opened_metadata.st_dev, opened_metadata.st_ino) != (
+        metadata.st_dev,
+        metadata.st_ino,
+    ):
+        raise ContractError(f"{context}: changed while it was being opened")
+
+
+def _copy_open_scan_local_file(
+    source_fd: int,
+    source_metadata: os.stat_result,
+    destination_parent_fd: int,
+    destination_name: str,
+    context: str,
+) -> None:
+    destination_fd: int | None = None
+    created = False
+    completed = False
+    try:
+        try:
+            destination_fd = os.open(
+                destination_name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                stat.S_IMODE(source_metadata.st_mode),
+                dir_fd=destination_parent_fd,
+            )
+        except FileExistsError as exc:
+            raise ContractError(f"{context}: destination already exists") from exc
+        created = True
+        while chunk := os.read(source_fd, 1024 * 1024):
+            view = memoryview(chunk)
+            while view:
+                written = os.write(destination_fd, view)
+                if written <= 0:
+                    raise OSError("write made no progress")
+                view = view[written:]
+        os.fchmod(destination_fd, stat.S_IMODE(source_metadata.st_mode))
+        os.fsync(destination_fd)
+        completed = True
+    except ContractError:
+        raise
+    except OSError as exc:
+        raise ContractError(f"{context}: could not copy regular file") from exc
+    finally:
+        if destination_fd is not None:
+            os.close(destination_fd)
+        if created and not completed:
+            try:
+                os.unlink(destination_name, dir_fd=destination_parent_fd)
+            except FileNotFoundError:
+                pass
+
+
+def copy_scan_local_file(
+    scan_dir: Path,
+    source_relative_path: str,
+    destination_relative_path: str,
+    *,
+    expected_root_identity: tuple[int, int] | None = None,
+) -> None:
+    """Create a scan-local regular-file copy without following swapped paths."""
+
+    scan_dir = _require_scan_directory(scan_dir)
+    source_relative_path = _require_portable_relative_path(
+        source_relative_path, "scan-local copy source"
+    )
+    destination_relative_path = _require_portable_relative_path(
+        destination_relative_path, "scan-local copy destination"
+    )
+    if source_relative_path == destination_relative_path:
+        raise ContractError("scan-local copy source and destination must differ")
+    if not _descriptor_relative_writes_available():
+        if not _is_windows():
+            raise ContractError("scan-local copy requires descriptor-relative file operations")
+        try:
+            _windows_scan_local_files().copy_file(
+                scan_dir,
+                source_relative_path,
+                destination_relative_path,
+                expected_root_identity=expected_root_identity,
+            )
+        except OSError as exc:
+            raise ContractError(f"{destination_relative_path}: {exc}") from exc
+        return
+    root_fd: int | None = None
+    source_parent_fd: int | None = None
+    destination_parent_fd: int | None = None
+    source_fd: int | None = None
+    try:
+        root_fd = _open_verified_scan_directory(scan_dir, expected_root_identity)
+        source_parts = PurePosixPath(source_relative_path).parts
+        destination_parts = PurePosixPath(destination_relative_path).parts
+        source_parent_fd = _open_scan_local_directory(root_fd, source_parts[:-1], create=False)
+        destination_parent_fd = _open_scan_local_directory(
+            root_fd, destination_parts[:-1], create=False
+        )
+        source_fd, source_metadata = _open_regular_scan_local_file(
+            source_parent_fd, source_parts[-1], "scan-local copy source"
+        )
+        assert source_fd is not None and source_metadata is not None
+        _verify_opened_scan_local_file(
+            source_parent_fd,
+            source_parts[-1],
+            source_fd,
+            source_metadata,
+            "scan-local copy source",
+        )
+        try:
+            os.link(
+                source_parts[-1],
+                destination_parts[-1],
+                src_dir_fd=source_parent_fd,
+                dst_dir_fd=destination_parent_fd,
+                follow_symlinks=False,
+            )
+        except FileExistsError as exc:
+            raise ContractError("scan-local copy destination already exists") from exc
+        except OSError:
+            _copy_open_scan_local_file(
+                source_fd,
+                source_metadata,
+                destination_parent_fd,
+                destination_parts[-1],
+                "scan-local copy destination",
+            )
+            return
+        try:
+            destination_fd, destination_metadata = _open_regular_scan_local_file(
+                destination_parent_fd,
+                destination_parts[-1],
+                "scan-local copy destination",
+            )
+            assert destination_fd is not None and destination_metadata is not None
+            try:
+                if (destination_metadata.st_dev, destination_metadata.st_ino) != (
+                    source_metadata.st_dev,
+                    source_metadata.st_ino,
+                ):
+                    raise ContractError("scan-local copy destination changed during link")
+            finally:
+                os.close(destination_fd)
+        except BaseException:
+            try:
+                os.unlink(destination_parts[-1], dir_fd=destination_parent_fd)
+            except FileNotFoundError:
+                pass
+            raise
+    finally:
+        if source_fd is not None:
+            os.close(source_fd)
+        if destination_parent_fd is not None:
+            os.close(destination_parent_fd)
+        if source_parent_fd is not None:
+            os.close(source_parent_fd)
+        if root_fd is not None:
+            os.close(root_fd)
+
+
+def replace_scan_local_file(
+    scan_dir: Path,
+    source_relative_path: str,
+    destination_relative_path: str,
+    *,
+    missing_ok: bool = False,
+    expected_root_identity: tuple[int, int] | None = None,
+) -> bool:
+    """Atomically move a scan-local regular file without following swapped paths."""
+
+    scan_dir = _require_scan_directory(scan_dir)
+    source_relative_path = _require_portable_relative_path(
+        source_relative_path, "scan-local replace source"
+    )
+    destination_relative_path = _require_portable_relative_path(
+        destination_relative_path, "scan-local replace destination"
+    )
+    if source_relative_path == destination_relative_path:
+        raise ContractError("scan-local replace source and destination must differ")
+    if not _descriptor_relative_writes_available():
+        if not _is_windows():
+            raise ContractError("scan-local replacement requires descriptor-relative file operations")
+        try:
+            return _windows_scan_local_files().replace_file(
+                scan_dir,
+                source_relative_path,
+                destination_relative_path,
+                missing_ok=missing_ok,
+                expected_root_identity=expected_root_identity,
+            )
+        except OSError as exc:
+            raise ContractError(f"{destination_relative_path}: {exc}") from exc
+    root_fd: int | None = None
+    source_parent_fd: int | None = None
+    destination_parent_fd: int | None = None
+    source_fd: int | None = None
+    replaced = False
+    try:
+        root_fd = _open_verified_scan_directory(scan_dir, expected_root_identity)
+        source_parts = PurePosixPath(source_relative_path).parts
+        destination_parts = PurePosixPath(destination_relative_path).parts
+        source_parent_fd = _open_scan_local_directory(root_fd, source_parts[:-1], create=False)
+        destination_parent_fd = _open_scan_local_directory(
+            root_fd, destination_parts[:-1], create=False
+        )
+        source_fd, source_metadata = _open_regular_scan_local_file(
+            source_parent_fd,
+            source_parts[-1],
+            "scan-local replace source",
+            missing_ok=missing_ok,
+        )
+        if source_fd is None or source_metadata is None:
+            return False
+        _verify_opened_scan_local_file(
+            source_parent_fd,
+            source_parts[-1],
+            source_fd,
+            source_metadata,
+            "scan-local replace source",
+        )
+        try:
+            os.replace(
+                source_parts[-1],
+                destination_parts[-1],
+                src_dir_fd=source_parent_fd,
+                dst_dir_fd=destination_parent_fd,
+            )
+        except OSError as exc:
+            raise ContractError("scan-local replacement could not move regular file") from exc
+        replaced = True
+        try:
+            destination_fd, destination_metadata = _open_regular_scan_local_file(
+                destination_parent_fd,
+                destination_parts[-1],
+                "scan-local replace destination",
+            )
+            assert destination_fd is not None and destination_metadata is not None
+            try:
+                if (destination_metadata.st_dev, destination_metadata.st_ino) != (
+                    source_metadata.st_dev,
+                    source_metadata.st_ino,
+                ):
+                    raise ContractError("scan-local replace destination changed during move")
+            finally:
+                os.close(destination_fd)
+        except BaseException:
+            try:
+                os.unlink(destination_parts[-1], dir_fd=destination_parent_fd)
+            except FileNotFoundError:
+                pass
+            raise
+        return True
+    finally:
+        if source_fd is not None:
+            os.close(source_fd)
+        if destination_parent_fd is not None:
+            os.close(destination_parent_fd)
+        if source_parent_fd is not None:
+            os.close(source_parent_fd)
+        if root_fd is not None:
+            os.close(root_fd)
+def external_output_path(output: Path) -> Path:
+    """Normalize an external output path without resolving symbolic links."""
+    try:
+        return Path(os.path.abspath(os.fspath(output.expanduser())))
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ContractError("external output path: expected a valid path") from exc
+
+
+def write_external_output_bytes(output: Path, payload: bytes) -> None:
+    """Atomically write an external output without following swapped parent links."""
+    output = external_output_path(output)
+    parent = output.parent
+    missing_parents: list[str] = []
+    while True:
+        try:
+            metadata = parent.lstat()
+        except FileNotFoundError:
+            if parent == parent.parent:
+                raise ContractError("external output path: no existing directory ancestor")
+            missing_parents.append(parent.name)
+            parent = parent.parent
+            continue
+        except OSError as exc:
+            raise ContractError("external output path: unable to inspect output directory") from exc
+        if not stat.S_ISDIR(metadata.st_mode) or (
+            getattr(metadata, "st_file_attributes", 0)
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        ):
+            raise ContractError(
+                "external output path: expected a non-symlink directory parent"
+            )
+        break
+    relative_output = PurePosixPath(*reversed(missing_parents), output.name).as_posix()
+    write_scan_local_bytes(parent, relative_output, payload)
+
+
 def _remove_scan_local_file_if_exists(scan_dir: Path, relative_path: str) -> None:
     scan_dir = _require_scan_directory(scan_dir)
     relative_path = _require_portable_relative_path(relative_path, "scan-local cleanup path")

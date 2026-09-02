@@ -613,7 +613,10 @@ def test_expired_coordinator_recovers_reducer_publication_after_process_death(
     hook = "finish_staged_file" if crash_point == "after_commit" else "promote_staged_file"
     call_original = "    original(*args, **kwargs)\n" if hook == "promote_staged_file" else ""
     copy_override = (
-        "deep_scan_workbench.create_publication_copy = shutil.copy2\n" if copy_publication else ""
+        "deep_scan_workbench.create_publication_copy = "
+        "lambda _scan_dir, source, destination: shutil.copy2(source, destination)\n"
+        if copy_publication
+        else ""
     )
     wrapper = tmp_path / "crash_reducer.py"
     wrapper.write_text(
@@ -670,6 +673,62 @@ def test_expired_coordinator_recovers_reducer_publication_after_process_death(
         assert reducer["status"] == "canceled"
         assert not canonical.exists()
     assert list(canonical.parent.glob(f".{canonical.name}.*.backup")) == []
+
+
+def test_expired_coordinator_rejects_swapped_canonical_discovery_directory(
+    tmp_path: Path,
+) -> None:
+    state_dir, pi_home, target = tmp_path / "state", tmp_path / "pi-home", tmp_path / "target"
+    target.mkdir()
+    run = begin_target_scan(state_dir, pi_home, target, tmp_path / "scans")["deepScan"]
+    scan_id, scan_dir = str(run["scanId"]), Path(str(run["scanDir"]))
+    claim_deep_scan_coordinator(state_dir, pi_home, scan_id)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_ledger = outside / "candidate_ledger.jsonl"
+    outside_ledger.write_text('{"candidate":"outside"}\n')
+    artifacts = scan_dir / "artifacts"
+    artifacts.mkdir()
+    try:
+        (artifacts / "02_discovery").symlink_to(outside, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"creating a symbolic link requires host support: {error}")
+    prompt_path, artifact_dir, _ = worker_paths(scan_dir, "swapped-canonical-reducer")
+    snapshot = artifact_dir / "canonical" / "candidate_ledger.jsonl"
+    snapshot.parent.mkdir()
+    snapshot.write_text('{"candidate":"outside"}\n')
+    with sqlite3.connect(state_dir / "workbench.sqlite3") as connection:
+        connection.execute(
+            """
+            INSERT INTO deep_scan_workers (
+                id, scan_id, kind, status, prompt_path, artifact_dir, created_at, updated_at
+            ) VALUES (?, ?, 'dedup', 'queued', ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                scan_id,
+                str(prompt_path),
+                str(artifact_dir),
+                "2000-01-01T00:00:00Z",
+                "2000-01-01T00:00:00Z",
+            ),
+        )
+    expire_deep_scan_coordinator(state_dir, scan_id)
+
+    rejected = run_workbench(
+        state_dir,
+        "claim-deep-scan-coordinator",
+        "--scan-id",
+        scan_id,
+        "--thread-id",
+        "thread-deep-scan",
+        environment=deep_environment(pi_home),
+        check=False,
+    )
+
+    assert rejected["returncode"] != 0
+    assert "Canonical discovery artifact directory" in str(rejected["stderr"])
+    assert outside_ledger.read_text() == '{"candidate":"outside"}\n'
 
 
 @pytest.mark.parametrize(

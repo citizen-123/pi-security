@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import runpy
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -51,6 +52,42 @@ def setup_repo(tmp_path: Path) -> tuple[Path, Path]:
     scope.write_text("app/routes.py\napp/query.py\napp/export.py\n", encoding="utf-8")
     return repo, scope
 
+
+def test_combiner_rejects_parent_symlink_swap_after_output_validation(tmp_path: Path) -> None:
+    namespace = runpy.run_path(str(SCRIPT), run_name="candidate_output_swap_test")
+    parent = tmp_path / "artifacts"
+    parent.mkdir()
+    output = namespace["external_output_path"](parent / "candidate_ledger.jsonl")
+    parked = tmp_path / "parked-artifacts"
+    parent.rename(parked)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        parent.symlink_to(outside, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"creating a symbolic link requires host support: {error}")
+
+    with pytest.raises(ValueError, match="--out: external output path"):
+        namespace["write_combined_candidates"](output, [])
+
+    assert not (outside / "candidate_ledger.jsonl").exists()
+
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["app/routes.py:stream", "app/CON", "app/COM1.py", "app/trailing."],
+)
+def test_combiner_rejects_windows_alias_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, value: str
+) -> None:
+    namespace = runpy.run_path(str(SCRIPT), run_name="candidate_windows_alias_test")
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    monkeypatch.setattr(namespace["sys"], "platform", "win32")
+
+    with pytest.raises(ValueError, match="repository-relative path"):
+        namespace["relative_file"](value, repository)
 
 def run_combiner(
     tmp_path: Path,
