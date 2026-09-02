@@ -530,6 +530,10 @@ def write_scan_local_bytes(
     if external_name:
         if relative_path in {"", ".", ".."} or "/" in relative_path or "\0" in relative_path:
             raise ContractError("external output path: expected a safe file name")
+        if _is_windows() and any(
+            _windows_unsafe_path_component(part) for part in PurePosixPath(relative_path).parts
+        ):
+            raise ContractError("external output path: expected a portable file name")
     else:
         relative_path = _require_portable_relative_path(relative_path, "scan-local output path")
     path = scan_dir / relative_path
@@ -958,7 +962,7 @@ def write_external_output_bytes(output: Path, payload: bytes) -> None:
             )
         break
     relative_output = PurePosixPath(*reversed(missing_parents), output.name).as_posix()
-    write_scan_local_bytes(parent, relative_output, payload)
+    write_scan_local_bytes(parent, relative_output, payload, external_name=True)
 
 
 def _remove_scan_local_file_if_exists(scan_dir: Path, relative_path: str) -> None:

@@ -1410,6 +1410,28 @@ The extraction root is not enforced.
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["version"], "2.1.0")
 
+    @unittest.skipIf(os.name == "nt", "colon is not valid in Windows file names")
+    def test_external_output_writer_accepts_posix_resolver_inventory_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as external_directory:
+            output = Path(external_directory) / "resolver:inventory.json"
+
+            FINALIZER.write_external_output_bytes(output, b'{"inventory":"complete"}\n')
+
+            self.assertEqual(output.read_bytes(), b'{"inventory":"complete"}\n')
+
+    def test_external_output_writer_rejects_windows_alias_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as external_directory:
+            with mock.patch.object(FINALIZER, "_is_windows", return_value=True):
+                with self.assertRaisesRegex(
+                    FINALIZER.ContractError, "external output path: expected a portable file name"
+                ):
+                    FINALIZER.write_scan_local_bytes(
+                        Path(external_directory),
+                        "resolver:inventory.json",
+                        b"unsafe\n",
+                        external_name=True,
+                    )
+
     def test_sarif_only_entrypoint_accepts_read_only_scan_directory(self) -> None:
         self.write_scan()
         FINALIZER.finalize_scan(self.scan_dir)
