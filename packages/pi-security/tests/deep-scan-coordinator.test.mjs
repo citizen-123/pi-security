@@ -1614,6 +1614,32 @@ async function testMissingDiscoveryResultResumesExistingThread(
   );
 }
 
+async function testMissingDiscoveryParentDoesNotResumeThread() {
+  const fixture = await fixtureRun({ workers: 1, subagents: 0, stopAfterNoNew: 1, maxDiscoveryRuns: 1 });
+  const executor = new FakeExecutor({
+    dedupNewFindings: [0],
+    removeFirstDiscoveryArtifactDirectory: true
+  });
+  const coordinator = new DeepScanCoordinator({
+    run: fixture.run,
+    store: new FakeStore(fixture.run),
+    executor,
+    packageRoot: fixture.packageRoot,
+    random: () => 0,
+    retryDelaysMs: [1],
+    clock: immediateClock
+  });
+  coordinator.start();
+
+  const terminal = await coordinator.wait(undefined, 5_000);
+
+  assert.equal(terminal?.status, "succeeded");
+  assert.deepEqual(executor.discoveryResumeContinuationIds, [undefined, undefined]);
+  assert.equal(new Set(executor.discoveryContinuationIds).size, 2);
+  assert.equal([...executor.discoveryPromptPaths.values()][0].size, 2);
+}
+
+
 async function testInvalidArtifactsRetry() {
   const fixture = await fixtureRun({ workers: 2, subagents: 1, stopAfterNoNew: 2, maxDiscoveryRuns: 2 });
   const store = new FakeStore(fixture.run);
@@ -4052,6 +4078,12 @@ class FakeExecutor {
         if (malformedResult) {
           await writeFile(path.join(request.artifactContext.root, "result.json"), "{malformed");
         }
+        if (
+          this.options.removeFirstDiscoveryArtifactDirectory
+          && this.discoveryAttempts.get(workerId) === 1
+        ) {
+          await rm(request.workingDirectory, { recursive: true, force: true });
+        }
         this.discoveryArtifactsWritten.resolve();
         if (this.options.blockDiscoveryAfterWrite) await waitForAbort(request.signal);
         return {
@@ -4347,6 +4379,7 @@ try {
   await testCancellationClearsRetryWait();
   await testMissingDiscoveryResultResumesExistingThread();
   await testMissingDiscoveryResultResumesExistingThread(true);
+  await testMissingDiscoveryParentDoesNotResumeThread();
   await testInvalidArtifactsRetry();
   await testInvalidReducerResultRetriesFromSnapshot();
   await testInvalidReducerResultRetriesFromSnapshot(true);

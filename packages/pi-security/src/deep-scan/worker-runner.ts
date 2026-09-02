@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { getPiSecurityDeepReducerInputs } from "../artifact-deep-reducer.js";
 import { createWorkerArtifactContext } from "../artifact-context.js";
 import { describePolicyEnforcementFailure } from "../enforcement-capabilities.js";
@@ -1062,18 +1062,22 @@ class ExpectedWorkerResultMissingError extends Error {
 function expectedWorkerResultMissing(error: unknown): Error {
   const normalized = asError(error);
   const cause = normalized.cause;
-  // requireRegularFile reports a descriptor-relative ENOENT through this
-  // secure-open wrapper. Its caller is the expected result validation.
-  if (
-    normalized.message === "Deep Scan artifact cannot be opened safely."
-    && cause instanceof Error
-    && (cause as NodeJS.ErrnoException).code === "ENOENT"
-  ) {
-    return new ExpectedWorkerResultMissingError(normalized);
+  // Secure descriptor-relative opens report the final component rather than the
+  // configured artifact path. Brand only that expected result-file ENOENT; a
+  // missing parent or any other artifact validation failure remains a clean retry.
+  if (cause instanceof Error) {
+    const errno = cause as NodeJS.ErrnoException;
+    if (
+      errno.code === "ENOENT"
+      && errno.syscall === "open"
+      && typeof errno.path === "string"
+      && basename(errno.path) === "result.json"
+    ) {
+      return new ExpectedWorkerResultMissingError(normalized);
+    }
   }
   return normalized;
 }
-
 function isMissingWorkerResult(error: Error): boolean {
   let current: unknown = error;
   while (current instanceof Error) {
