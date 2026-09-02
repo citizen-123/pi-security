@@ -1352,13 +1352,20 @@ async function testPostPublicationFinishExhaustionStaysRecoverable() {
   });
   coordinator.start();
 
-  const pending = await coordinator.wait(undefined, 5_000);
-  assert.equal(pending?.status, "running");
+  const deferred = await coordinator.wait(undefined, 5_000);
+  assert.equal(deferred?.status, "interrupted");
+  assert.equal(deferred?.phase, "terminal");
+  assert.match(deferred?.error ?? "", /authoritative scan remains recoverable/i);
   assert.equal(store.failCalls, 0, "published results must not be overwritten as failed");
   assert.equal(store.finishCalls.length, 2, "terminal persistence must replay once");
   assert.equal(published.length, 1);
 
   const recoveryRun = await store.get();
+  assert.equal(
+    recoveryRun.status,
+    "running",
+    "the authoritative durable run must remain recoverable for a new coordinator"
+  );
   const discovery = recoveryRun.persistedWorkers.find((worker) => worker.kind === "discovery");
   const reducer = recoveryRun.persistedWorkers.find((worker) => worker.kind === "dedup");
   assert.ok(discovery);

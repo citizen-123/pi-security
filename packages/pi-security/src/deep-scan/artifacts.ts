@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { constants as fsConstants, promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs, type Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import {
@@ -132,10 +132,7 @@ export async function readJsonObject(path: string): Promise<Record<string, unkno
     const parent = await openSecureParent(path, false, "Deep Scan JSON artifact");
     try {
       await assertSecureParentStillBound(parent, "Deep Scan JSON artifact");
-      const file = await fs.open(
-        parent.path,
-        secureOpenFlags(fsConstants.O_RDONLY, false, "Deep Scan JSON artifact")
-      );
+      const file = await openSecureReadFile(parent, "Deep Scan JSON artifact");
       try {
         await assertSecureParentStillBound(parent, "Deep Scan JSON artifact");
         if (!(await file.stat()).isFile()) {
@@ -173,10 +170,7 @@ export async function requireRegularFile(
   const parent = await openSecureParent(requestedPath, false, "Deep Scan artifact");
   try {
     await assertSecureParentStillBound(parent, "Deep Scan artifact");
-    const file = await fs.open(
-      parent.path,
-      secureOpenFlags(fsConstants.O_RDONLY, false, "Deep Scan artifact")
-    );
+    const file = await openSecureReadFile(parent, "Deep Scan artifact");
     try {
       await assertSecureParentStillBound(parent, "Deep Scan artifact");
       const fileStat = await file.stat();
@@ -258,17 +252,34 @@ async function openSecureParent(
   if (!name) throw new Error(`${label} must not be a filesystem root.`);
 
   let directory = await openSecureDirectory(root, label);
+  let directoryPath = root;
   try {
     for (const component of components) {
-      const childPath = join(descriptorDirectoryPath(directory, label), component);
+      const childPath = process.platform === "win32"
+        ? join(directoryPath, component)
+        : join(descriptorDirectoryPath(directory, label), component);
       if (createParents) await createSecureDirectory(childPath, label);
       const child = await openSecureDirectory(childPath, label);
+      if (process.platform === "win32") {
+        try {
+          await assertWindowsDirectoryStillBound(directory, directoryPath, label);
+        } catch (error) {
+          await child.close();
+          throw error;
+        }
+      }
       await directory.close();
       directory = child;
+      directoryPath = childPath;
     }
     return {
       handle: directory,
-      path: join(descriptorDirectoryPath(directory, label), name),
+      path: join(
+        process.platform === "win32"
+          ? directoryPath
+          : descriptorDirectoryPath(directory, label),
+        name
+      ),
       expectedParentPath: dirname(absolute)
     };
   } catch (error) {
@@ -278,6 +289,10 @@ async function openSecureParent(
 }
 
 async function assertSecureParentStillBound(parent: SecureParent, label: string): Promise<void> {
+  if (process.platform === "win32") {
+    await assertWindowsDirectoryStillBound(parent.handle, parent.expectedParentPath, label);
+    return;
+  }
   const current = await openSecureParent(
     join(parent.expectedParentPath, ".deep-scan-parent-probe"),
     false,
@@ -300,11 +315,14 @@ async function assertSecureParentStillBound(parent: SecureParent, label: string)
 }
 
 async function openSecureDirectory(path: string, label: string): Promise<FileHandle> {
+  if (process.platform === "win32") {
+    return await openWindowsSecureDirectory(path, label);
+  }
   let directory: FileHandle;
   try {
     directory = await fs.open(
       path,
-      secureOpenFlags(fsConstants.O_RDONLY, true, label)
+      secureOpenFlags(fsConstants.O_RDONLY, true, label, true)
     );
   } catch (error) {
     throw new Error(`${label} cannot be opened safely.`, { cause: error });
@@ -329,18 +347,33 @@ async function createSecureDirectory(path: string, label: string): Promise<void>
   }
 }
 
-function secureOpenFlags(base: number, directory: boolean, label: string): number {
+function secureOpenFlags(
+  base: number,
+  directory: boolean,
+  label: string,
+  nonBlockingRead = false
+): number {
+  if (process.platform === "win32") return base;
   const noFollow = fsConstants.O_NOFOLLOW;
   const directoryOnly = fsConstants.O_DIRECTORY;
   if (
-    process.platform === "win32"
-    || !Number.isInteger(noFollow)
+    !Number.isInteger(noFollow)
     || noFollow === 0
     || (directory && (!Number.isInteger(directoryOnly) || directoryOnly === 0))
   ) {
     throw new Error(`${label} requires no-follow directory-handle support.`);
   }
-  return base | noFollow | (directory ? directoryOnly : 0);
+  const nonBlocking = fsConstants.O_NONBLOCK;
+  if (
+    nonBlockingRead
+    && (!Number.isInteger(nonBlocking) || nonBlocking === 0)
+  ) {
+    throw new Error(`${label} requires nonblocking pre-stat open support.`);
+  }
+  return base
+    | noFollow
+    | (directory ? directoryOnly : 0)
+    | (nonBlockingRead ? nonBlocking : 0);
 }
 
 function descriptorDirectoryPath(handle: FileHandle, label: string): string {
@@ -352,6 +385,113 @@ function descriptorDirectoryPath(handle: FileHandle, label: string): string {
   if (!root) throw new Error(`${label} requires descriptor-backed directory paths.`);
   return join(root, String(handle.fd));
 }
+
+async function openSecureReadFile(
+  parent: SecureParent,
+  label: string
+): Promise<FileHandle> {
+  if (process.platform !== "win32") {
+    return await fs.open(
+      parent.path,
+      secureOpenFlags(fsConstants.O_RDONLY, false, label, true)
+    );
+  }
+  const before = await safeWindowsPathIdentity(parent.path, label);
+  let file: FileHandle;
+  try {
+    file = await fs.open(parent.path, fsConstants.O_RDONLY);
+  } catch (error) {
+    throw new Error(`${label} cannot be opened safely.`, { cause: error });
+  }
+  try {
+    const opened = await file.stat();
+    assertSameIdentity(before.metadata, opened, label);
+    await assertSecureParentStillBound(parent, label);
+    const after = await safeWindowsPathIdentity(parent.path, label);
+    assertSameIdentity(opened, after.metadata, label);
+    return file;
+  } catch (error) {
+    await file.close();
+    throw error;
+  }
+}
+
+async function openWindowsSecureDirectory(path: string, label: string): Promise<FileHandle> {
+  const before = await safeWindowsPathIdentity(path, label);
+  if (!before.metadata.isDirectory()) {
+    throw new Error(`${label} is not a regular directory.`);
+  }
+  let directory: FileHandle;
+  try {
+    directory = await fs.open(before.canonicalPath, fsConstants.O_RDONLY);
+  } catch (error) {
+    throw new Error(`${label} cannot be opened safely.`, { cause: error });
+  }
+  try {
+    const opened = await directory.stat();
+    if (!opened.isDirectory()) {
+      throw new Error(`${label} is not a regular directory.`);
+    }
+    assertSameIdentity(before.metadata, opened, label);
+    const after = await safeWindowsPathIdentity(before.canonicalPath, label);
+    assertSameIdentity(opened, after.metadata, label);
+    return directory;
+  } catch (error) {
+    await directory.close();
+    throw error;
+  }
+}
+
+async function assertWindowsDirectoryStillBound(
+  expected: FileHandle,
+  path: string,
+  label: string
+): Promise<void> {
+  const current = await openWindowsSecureDirectory(path, label);
+  try {
+    const [expectedMetadata, currentMetadata] = await Promise.all([
+      expected.stat(),
+      current.stat()
+    ]);
+    assertSameIdentity(
+      expectedMetadata,
+      currentMetadata,
+      `${label} changed while its directory handle was open.`
+    );
+  } finally {
+    await current.close();
+  }
+}
+
+interface WindowsPathIdentity {
+  canonicalPath: string;
+  metadata: Stats;
+}
+
+async function safeWindowsPathIdentity(
+  path: string,
+  label: string
+): Promise<WindowsPathIdentity> {
+  const metadata = await fs.lstat(path).catch(() => undefined);
+  if (!metadata || metadata.isSymbolicLink()) {
+    throw new Error(`${label} is a reparse point and cannot be accessed.`);
+  }
+  const canonicalPath = await fs.realpath(path).catch(() => undefined);
+  if (
+    !canonicalPath
+    || resolve(path).toLowerCase() !== resolve(canonicalPath).toLowerCase()
+  ) {
+    throw new Error(`${label} is a reparse point and cannot be accessed.`);
+  }
+  return { canonicalPath, metadata };
+}
+
+function assertSameIdentity(expected: Stats, actual: Stats, label: string): void {
+  if (expected.dev !== actual.dev || expected.ino !== actual.ino) {
+    throw new Error(label);
+  }
+}
+
 
 function absolutePath(path: string, label: string): string {
   if (typeof path !== "string" || !path || !isAbsolute(path)) {

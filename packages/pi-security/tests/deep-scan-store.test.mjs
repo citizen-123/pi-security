@@ -53,6 +53,7 @@ await testHeartbeatBypassesBlockedWriteQueue();
 await testOwnershipReadClearsStaleLease();
 await testWorkerResponseParsing();
 await testPerScanExecutionContextsRemainBound();
+await testReturnedRunRootAllowsOnlyScanDir();
 await testMutationResponsesRemainArtifactBound();
 await testMutationResponsesMatchRequestedScan();
 await testReplaceableDiscoveryFailureProtocol();
@@ -445,6 +446,58 @@ async function testPerScanExecutionContextsRemainBound() {
       rm(firstRoot, { recursive: true, force: true }),
       rm(secondRoot, { recursive: true, force: true }),
     ]);
+  }
+}
+
+async function testReturnedRunRootAllowsOnlyScanDir() {
+  const root = await mkdtemp(join(tmpdir(), "pi-security-store-run-root-"));
+  const scanId = randomUUID();
+  const workerId = randomUUID();
+  const executionContext = createExecutionPolicyContext({
+    profile: "security-artifact-writer",
+    target: { root: "/" },
+    scan: { id: scanId, artifactRoot: root },
+  });
+  let response = stateResult(scanId, { deepScan: { scanDir: root } });
+  const store = new WorkbenchDeepScanStore(
+    async () => response,
+    async () => executionContext,
+  );
+
+  try {
+    const run = await store.get(scanId, "thread-fixture");
+    assert.equal(run.scanDir, root);
+
+    response = stateResult(scanId, {
+      deepScan: { scanDir: root, manifestPath: root },
+    });
+    await assert.rejects(
+      store.get(scanId, "thread-fixture"),
+      /Deep Scan store artifact path/,
+      "a returned manifest must remain a child of the issued artifact root",
+    );
+
+    response = stateResult(scanId, {
+      deepScan: {
+        scanDir: root,
+        workers: [{
+          id: workerId,
+          kind: "discovery",
+          status: "queued",
+          mergeState: "none",
+          promptPath: join(root, "prompt.md"),
+          artifactDir: root,
+          attempt: 1,
+        }],
+      },
+    });
+    await assert.rejects(
+      store.get(scanId, "thread-fixture"),
+      /Deep Scan store artifact path/,
+      "returned worker paths must remain children of the issued artifact root",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 }
 

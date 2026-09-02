@@ -77,13 +77,20 @@ interface SchedulerAudit {
 }
 
 class DeepScanTerminalPersistenceReplayError extends Error {
-  constructor(firstError: unknown, replayError: unknown) {
+  readonly recoveryState: DeepScanRunState | undefined;
+
+  constructor(
+    firstError: unknown,
+    replayError: unknown,
+    recoveryState?: DeepScanRunState
+  ) {
     super(
       `Deep Scan terminal persistence replay failed: ${errorMessage(replayError)}`
       + ` (initial attempt: ${errorMessage(firstError)})`,
       { cause: replayError }
     );
     this.name = "DeepScanTerminalPersistenceReplayError";
+    this.recoveryState = recoveryState;
   }
 }
 
@@ -368,6 +375,18 @@ export class DeepScanCoordinator {
         this.publicationCompleted
         && error instanceof DeepScanTerminalPersistenceReplayError
       ) {
+        this.state = {
+          ...(error.recoveryState ?? this.state),
+          status: "interrupted",
+          phase: "terminal",
+          error: boundedDeepScanErrorPair(
+            "Canonical Deep Scan results were published, but durable finalization "
+            + "could not be confirmed. The authoritative scan remains recoverable; "
+            + "rejoin it to retry finalization.",
+            "\nFinalization diagnostics:\n",
+            error
+          )
+        };
         this.log({
           event: "coordinator_finalization_deferred",
           scanId: this.state.scanId,
@@ -1180,7 +1199,7 @@ export class DeepScanCoordinator {
 
   /**
    * A workbench process can commit SQLite and still lose its stdout response.
-   * Replay the exact idempotent finish once, then reconcile durable success.
+   * Replay the exact idempotent finish once, then reconcile durable state.
    * A published draft stays recoverable rather than being overwritten as failed.
    */
   private async finishWithReplay(result: SchedulerResult): Promise<DeepScanRunState> {
@@ -1201,6 +1220,7 @@ export class DeepScanCoordinator {
       try {
         return await this.options.store.finish(input);
       } catch (replayError) {
+        let recoveryState: DeepScanRunState | undefined;
         if (this.options.threadId) {
           try {
             const reconciled = await this.options.store.get(
@@ -1214,6 +1234,8 @@ export class DeepScanCoordinator {
             ) {
               return reconciled;
             }
+            if (reconciled.status !== "running") return reconciled;
+            recoveryState = reconciled;
           } catch (readError) {
             this.log({
               event: "coordinator_finish_reconciliation_failed",
@@ -1222,7 +1244,11 @@ export class DeepScanCoordinator {
             });
           }
         }
-        throw new DeepScanTerminalPersistenceReplayError(firstError, replayError);
+        throw new DeepScanTerminalPersistenceReplayError(
+          firstError,
+          replayError,
+          recoveryState
+        );
       }
     }
   }

@@ -637,8 +637,8 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
   }
 
   private async assertRunArtifactPaths(run: DeepScanRunState): Promise<void> {
+    await this.assertArtifactPaths(run.scanId, [run.scanDir], true);
     await this.assertArtifactPaths(run.scanId, [
-      run.scanDir,
       run.manifestPath,
       run.canonicalArtifacts?.inScopeFilesPath,
       run.canonicalArtifacts?.candidateLedgerPath,
