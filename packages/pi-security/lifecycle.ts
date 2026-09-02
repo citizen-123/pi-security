@@ -50,7 +50,10 @@ import {
 import {
   NativePiWorkerExecutor,
 } from "./src/deep-scan/executor.js";
-import { WorkbenchDeepScanStore } from "./src/deep-scan/store.js";
+import {
+  isTransientPersistenceError,
+  WorkbenchDeepScanStore,
+} from "./src/deep-scan/store.js";
 import type { DeepScanRunState } from "./src/deep-scan/types.js";
 
 const execFileAsync = promisify(execFile);
@@ -68,6 +71,7 @@ const READ_ONLY_PREFLIGHT_NOT_FOUND_EXIT = 66;
 const READ_ONLY_PREFLIGHT_NOT_FOUND_CODE = "PI_SECURITY_WORKBENCH_STATE_NOT_FOUND";
 const WORKBENCH_SETUP_CHANGED_EXIT = 75;
 const WORKBENCH_SETUP_CHANGED_CODE = "PI_SECURITY_SETUP_CHANGED";
+const DEEP_SCAN_PROGRESS_POLL_MS = 1_000;
 
 type JsonObject = Record<string, unknown>;
 export class WorkbenchStateNotFoundError extends Error {
@@ -1113,8 +1117,16 @@ function registerPiSecurityLifecycleTools(registrar: LifecycleToolRegistrar): vo
     if (joined) {
       deepScanProgress.report({ event: "coordinator_joined", scanId: begun.run.scanId });
     }
-    const terminal = await coordinator.wait(abortSignalFromExtra(extra))
-      .finally(() => deepScanProgress.clear());
+    const signal = abortSignalFromExtra(extra);
+    const terminal = await (joined
+      ? waitForJoinedDeepScanWithProgress({
+          coordinator,
+          readRun: () => deepScanStore.get(begun.run.scanId, threadId),
+          reporter: deepScanProgress,
+          signal,
+        })
+      : coordinator.wait(signal)
+    ).finally(() => deepScanProgress.clear());
     const result = deepScanTerminalResult(terminal, enforcementCapabilities);
     if (!result) {
       return toolErrorResult(deepScanInvocationFailureMessage(
@@ -1950,7 +1962,7 @@ export function deepScanTerminalResult(
   return undefined;
 }
 
-interface DeepScanEvent {
+export interface DeepScanProgressEvent {
   event: string;
   scanId: string;
   workerId?: string;
@@ -1965,15 +1977,66 @@ interface DeepScanEvent {
   total?: number;
 }
 
-interface DeepScanProgressReporter {
+export interface DeepScanProgressReporter {
   clear(): void;
-  report(event: DeepScanEvent): void;
+  report(event: DeepScanProgressEvent): void;
 }
 
-function createDeepScanProgressReporter(
+export async function waitForJoinedDeepScanWithProgress(input: {
+  coordinator: {
+    wait(
+      signal: AbortSignal | undefined,
+      timeoutMs: number,
+    ): Promise<DeepScanRunState | undefined>;
+  };
+  readRun: () => Promise<DeepScanRunState>;
+  reporter: DeepScanProgressReporter;
+  signal: AbortSignal | undefined;
+}): Promise<DeepScanRunState> {
+  let lastProgressEvent: string | undefined;
+  const reportRun = (run: DeepScanRunState): void => {
+    const event = deepScanProgressEvent(run);
+    const eventKey = [
+      event.event,
+      event.completed ?? "",
+      event.total ?? "",
+    ].join(":");
+    if (eventKey === lastProgressEvent) return;
+    lastProgressEvent = eventKey;
+    input.reporter.report(event);
+  };
+
+  for (;;) {
+    const terminal = await input.coordinator.wait(
+      input.signal,
+      DEEP_SCAN_PROGRESS_POLL_MS,
+    );
+    if (terminal) {
+      if (terminal.status === "running") {
+        input.reporter.report({
+          event: "coordinator_finalization_deferred",
+          scanId: terminal.scanId,
+        });
+      } else {
+        reportRun(terminal);
+      }
+      return terminal;
+    }
+    try {
+      const run = await input.readRun();
+      reportRun(run);
+      if (run.status !== "running") return run;
+    } catch (error) {
+      if (!isTransientPersistenceError(error)) throw error;
+    }
+  }
+}
+
+export function createDeepScanProgressReporter(
   requestContext: LifecycleRequestContext
 ): DeepScanProgressReporter {
-  const key = "pi-security-deep-scan";
+  const key = requestContext.deepScanProgressKey
+    ?? `pi-security-deep-scan:${randomUUID()}`;
   return {
     clear() {
       try {
@@ -2010,7 +2073,36 @@ function createDeepScanProgressReporter(
   };
 }
 
-function deepScanProgressText(event: DeepScanEvent): string | undefined {
+function deepScanProgressEvent(run: DeepScanRunState): DeepScanProgressEvent {
+  if (run.status === "succeeded") {
+    return { event: "coordinator_terminal", scanId: run.scanId };
+  }
+  if (run.status !== "running") {
+    return { event: "coordinator_failed", scanId: run.scanId };
+  }
+  if (run.phase === "setup") {
+    return { event: "coordinator_preparing", scanId: run.scanId };
+  }
+  if (run.phase === "reducing") {
+    return { event: "discovery_deadline_reached", scanId: run.scanId };
+  }
+  let completed = 0;
+  for (const worker of run.persistedWorkers ?? []) {
+    if (worker.kind === "discovery" && worker.completionSequence !== undefined) {
+      completed += 1;
+    }
+  }
+  return completed > 0
+    ? {
+        event: "progress_updated",
+        scanId: run.scanId,
+        completed,
+        total: run.config.maxDiscoveryRuns,
+      }
+    : { event: "coordinator_started", scanId: run.scanId };
+}
+
+export function deepScanProgressText(event: DeepScanProgressEvent): string | undefined {
   switch (event.event) {
     case "coordinator_preparing":
       return "Deep Scan: checking the target and preparing independent reviews.";
@@ -2026,6 +2118,8 @@ function deepScanProgressText(event: DeepScanEvent): string | undefined {
       return "Deep Scan: consolidating completed independent reviews.";
     case "coordinator_finish_replay":
       return "Deep Scan: retrying durable finalization of the consolidated results.";
+    case "coordinator_finalization_deferred":
+      return "Deep Scan: canonical results are saved; durable finalization is pending recovery.";
     case "coordinator_terminal":
       return "Deep Scan: consolidated canonical results are ready.";
     case "setup_failed":
@@ -2036,6 +2130,7 @@ function deepScanProgressText(event: DeepScanEvent): string | undefined {
       return undefined;
   }
 }
+
 async function runPreflightWorkbench(
   args: string[],
   input?: string

@@ -46,6 +46,7 @@ const fixture = await realpath(
 const artifactScanId = "61a20957-1be8-4ccf-8de8-eab4061e8cc3";
 
 async function boundArtifactContext(root, repoRoot, layout = "scan", extra = {}) {
+  await mkdir(root, { recursive: true });
   const executionPolicy = createExecutionPolicyContext({
     profile: "security-artifact-writer",
     target: { root: repoRoot },
@@ -125,6 +126,7 @@ async function testSchemaSourceOfTruth() {
   );
   for (const repositoryPath of [
     "src/index.ts",
+    ".",
     "./src/index.ts",
     "scope with spaces/café.ts",
     ".hidden/config.ts"
@@ -146,7 +148,15 @@ async function testSchemaSourceOfTruth() {
     "src/config.ts:private",
     "src/NUL",
     "src/result.json.",
-    "src/result.json "
+    "src/result.json ",
+    "./.",
+    "./..",
+    "././outside.ts",
+    "./../outside.ts",
+    "./CON",
+    "./COM¹",
+    "./LPT³.txt",
+    "src/COM².txt",
   ]) {
     assert.equal(
       validator.safeParse({ path: repositoryPath, candidateId: "candidate-1" }).success,
@@ -166,10 +176,12 @@ async function testSchemaSourceOfTruth() {
     $defs: {
       requiresA: {
         type: "object",
+        properties: { a: {} },
         required: ["a"]
       },
       request: {
         $ref: "#/$defs/requiresA",
+        properties: { b: {} },
         required: ["b"]
       }
     }
@@ -191,6 +203,37 @@ async function testSchemaSourceOfTruth() {
     false,
     "$ref sibling constraints must not overwrite referenced constraints"
   );
+  const annotationReferenceDocument = {
+    $id: "pi-security://schemas/tools/artifact-reference-annotations.schema.json",
+    $defs: {
+      nonEmpty: {
+        type: "string",
+        minLength: 1,
+        description: "Referenced description",
+      },
+      request: {
+        $ref: "#/$defs/nonEmpty",
+        title: "Annotated request",
+        description: "Sibling description",
+      },
+    },
+  };
+  const annotationBundled = schemas.bundleArtifactSchema(
+    [annotationReferenceDocument],
+    annotationReferenceDocument.$id,
+    "request",
+  );
+  assert.equal(annotationBundled.allOf, undefined);
+  assert.equal(annotationBundled.minLength, 1);
+  assert.equal(annotationBundled.title, "Annotated request");
+  assert.equal(annotationBundled.description, "Sibling description");
+  const annotationValidator = schemas.loadArtifactZodSchema(
+    [annotationReferenceDocument],
+    annotationReferenceDocument.$id,
+    "request",
+  );
+  assert.equal(annotationValidator.safeParse("").success, false);
+  assert.equal(annotationValidator.safeParse("value").success, true);
   assert.throws(
     () => schemas.bundleArtifactSchema([common], "missing", "request"),
     /Unknown Pi Security schema document/

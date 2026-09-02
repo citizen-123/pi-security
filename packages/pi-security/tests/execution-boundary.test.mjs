@@ -30,6 +30,11 @@ test("repository-relative scope rejects Windows path aliases on every host", () 
     "src/NUL",
     "src/result.json.",
     "src/result.json ",
+    "src/COM¹",
+    "src/LPT².txt",
+    "./COM³",
+    "./.",
+    "./../outside.ts",
   ]) {
     assert.throws(
       () => boundary.validateRepositoryRelativeScope(unsafePath),
@@ -38,6 +43,11 @@ test("repository-relative scope rejects Windows path aliases on every host", () 
   }
   assert.equal(
     boundary.validateRepositoryRelativeScope("src/config.ts"),
+    "src/config.ts",
+  );
+  assert.equal(boundary.validateRepositoryRelativeScope("."), ".");
+  assert.equal(
+    boundary.validateRepositoryRelativeScope("./src/config.ts"),
     "src/config.ts",
   );
 });

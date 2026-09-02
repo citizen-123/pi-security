@@ -707,7 +707,7 @@ function requireRepositoryRelativePath(input: string, label: string): string {
       || component === ".."
       || /[:<>|"?*]/u.test(component)
       || /[. ]$/u.test(component)
-      || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(component)
+      || /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\..*)?$/iu.test(component)
     ))
   ) {
     throw new Error(`${label} contains unsafe traversal.`);

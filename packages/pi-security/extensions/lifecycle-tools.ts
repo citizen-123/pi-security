@@ -34,7 +34,7 @@ export function registerPiSecurityLifecycleTools(
         lifecycleToolJsonSchema(tool.config.inputSchema) as TSchema
       ),
       ...deepScanToolRenderer(tool.name),
-      async execute(_toolCallId, params, signal, onUpdate, context) {
+      async execute(toolCallId, params, signal, onUpdate, context) {
         assertPiPermissionSurface(executionContext, "lifecycle", tool.name);
         const sessionId = context.sessionManager.getSessionId();
         const input = parseLifecycleToolInput(tool.config.inputSchema, params);
@@ -42,6 +42,9 @@ export function registerPiSecurityLifecycleTools(
           sessionId,
           signal,
           onUpdate: (update) => onUpdate?.(piToolResult(update)),
+          deepScanProgressKey: tool.name === "start_pi_security_deep_scan"
+            ? `pi-security-deep-scan:${toolCallId}`
+            : undefined,
           setStatus: context.hasUI
             ? (key, text) => context.ui.setStatus(key, text)
             : undefined,
@@ -103,11 +106,10 @@ function deepScanToolRenderer(name: string) {
         ? details.statusText
         : result.content.find((item) => item.type === "text")?.text
           ?? "Deep Scan is running.";
-      return new Text(
-        isPartial ? `Deep Scan: ${statusText}` : statusText,
-        0,
-        0
-      );
+      const text = isPartial && !statusText.startsWith("Deep Scan:")
+        ? `Deep Scan: ${statusText}`
+        : statusText;
+      return new Text(text, 0, 0);
     }
   };
 }

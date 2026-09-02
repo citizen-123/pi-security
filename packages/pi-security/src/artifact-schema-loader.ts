@@ -7,6 +7,21 @@ export type SchemaDocument = ArtifactSchemaObject & {
   $defs: Record<string, unknown>;
 };
 
+const ANNOTATION_ONLY_SCHEMA_KEYWORDS: Record<string, true> = {
+  "$comment": true,
+  contentEncoding: true,
+  contentMediaType: true,
+  contentSchema: true,
+  default: true,
+  deprecated: true,
+  description: true,
+  examples: true,
+  format: true,
+  readOnly: true,
+  title: true,
+  writeOnly: true,
+};
+
 /**
  * Bundle checked-in Draft 2020-12 definitions for the lifecycle catalog.
  */
@@ -111,20 +126,35 @@ function dereferenceArtifactSchema(
     Object.entries(object).filter(([name]) => name !== "$ref")
   );
   if (Object.keys(siblings).length === 0) return resolved;
-  // Draft 2020-12 evaluates a reference and its sibling keywords together.
-  // Object spreading would overwrite constraints such as `required` instead
-  // of intersecting them.
+  const dereferencedSiblings = dereferenceArtifactSchema(
+    siblings,
+    document,
+    documentsById,
+    activeReferences,
+  );
+  if (
+    annotationOnlySchemaSiblings(siblings)
+    && resolved
+    && typeof resolved === "object"
+    && !Array.isArray(resolved)
+  ) {
+    return {
+      ...(resolved as ArtifactSchemaObject),
+      ...(dereferencedSiblings as ArtifactSchemaObject),
+    };
+  }
+  // Draft 2020-12 evaluates a reference and assertion siblings together.
+  // Keep that conjunction explicit so sibling constraints cannot overwrite
+  // referenced constraints. Annotation-only siblings can be merged above.
   return {
-    allOf: [
-      resolved,
-      dereferenceArtifactSchema(
-        siblings,
-        document,
-        documentsById,
-        activeReferences
-      )
-    ]
+    allOf: [resolved, dereferencedSiblings]
   };
+}
+
+function annotationOnlySchemaSiblings(siblings: ArtifactSchemaObject): boolean {
+  return Object.keys(siblings).every((name) =>
+    ANNOTATION_ONLY_SCHEMA_KEYWORDS[name] === true,
+  );
 }
 
 function readSchemaPointer(document: SchemaDocument, pointer: string): unknown {
