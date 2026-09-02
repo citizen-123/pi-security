@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { promises as fs, type Stats } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import type * as z from "zod/v4";
 import commonSchema from "../schemas/definitions/artifact-common.schema.json" with { type: "json" };
@@ -277,10 +277,21 @@ export async function saveScanDraftCheckpoint(
   const name = scanDraftCheckpointName(input);
   const destination = await artifactDestination(context, ["checkpoints", name], "scan checkpoint");
   try {
-    const existing = await fs.readFile(destination, "utf8");
-    if (existing !== contents) throw new Error("scan checkpoint: existing content does not match its digest.");
+    const existing = await readArtifactText(
+      context,
+      ["checkpoints", name],
+      "scan checkpoint",
+    );
+    if (existing !== contents) {
+      throw new Error("scan checkpoint: existing content does not match its digest.");
+    }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if (
+      !(error instanceof Error)
+      || error.message !== "scan checkpoint: the requested artifact is unavailable."
+    ) {
+      throw error;
+    }
     await replaceArtifactJson(context, destination, snapshot);
   }
   if (context.layout === "worker" && updateHead) {
@@ -720,7 +731,7 @@ function archivedAttemptNumber(name: string): number {
   return match ? Number(match[1]) : -1;
 }
 
-async function lstatIfExists(path: string): Promise<Awaited<ReturnType<typeof fs.lstat>> | undefined> {
+async function lstatIfExists(path: string): Promise<Stats | undefined> {
   try {
     return await fs.lstat(path);
   } catch (error) {

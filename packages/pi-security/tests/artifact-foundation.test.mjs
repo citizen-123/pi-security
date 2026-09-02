@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
@@ -9,7 +10,9 @@ import {
   symlink,
   writeFile
 } from "node:fs/promises";
+import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
+import { promisify } from "node:util";
 import path from "node:path";
 import { build } from "esbuild";
 
@@ -75,6 +78,10 @@ try {
   await testArtifactDestinationSwap();
   await testSafeJsonAndJsonl();
   await testAtomicReplaceAndAppend();
+  await testArtifactParentSwapDuringWrite();
+  await testArtifactDirectoryMoveDuringWrite();
+  await testArtifactParentSwapDuringRead();
+  await testArtifactFifoSwapDuringRead();
   await testBoundedPagination();
   await testUnsafeArtifacts();
 } finally {
@@ -135,7 +142,11 @@ async function testSchemaSourceOfTruth() {
     "src/./outside.ts",
     "src//outside.ts",
     "C:\\outside.ts",
-    "src/\0outside.ts"
+    "src/\0outside.ts",
+    "src/config.ts:private",
+    "src/NUL",
+    "src/result.json.",
+    "src/result.json "
   ]) {
     assert.equal(
       validator.safeParse({ path: repositoryPath, candidateId: "candidate-1" }).success,
@@ -554,6 +565,199 @@ async function testArtifactDestinationSwap() {
   await assert.rejects(readFile(path.join(outsideDirectory, "result.json"), "utf8"));
 }
 
+async function testArtifactParentSwapDuringWrite() {
+  if (process.platform === "win32") return;
+  const context = await boundArtifactContext(
+    path.join(fixture, "write-race"),
+    path.join(fixture, "repository")
+  );
+  const destination = await io.artifactDestination(
+    context,
+    ["swap", "result.json"],
+    "artifact write race"
+  );
+  const destinationDirectory = path.dirname(destination);
+  const originalDirectory = destinationDirectory + "-original";
+  const outsideDirectory = path.join(fixture, "outside-write-race");
+  await mkdir(outsideDirectory);
+
+  const originalOpen = fs.open;
+  let swapped = false;
+  fs.open = async (...arguments_) => {
+    if (
+      !swapped
+      && typeof arguments_[0] === "string"
+      && arguments_[0].endsWith(".lock")
+    ) {
+      swapped = true;
+      await rename(destinationDirectory, originalDirectory);
+      await symlink(outsideDirectory, destinationDirectory);
+    }
+    return originalOpen(...arguments_);
+  };
+  try {
+    await io.replaceArtifactJson(context, destination, { escaped: true });
+  } finally {
+    fs.open = originalOpen;
+  }
+
+  assert.equal(swapped, true);
+  await assert.rejects(readFile(path.join(outsideDirectory, "result.json"), "utf8"));
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(originalDirectory, "result.json"), "utf8")),
+    { escaped: true }
+  );
+}
+
+async function testArtifactDirectoryMoveDuringWrite() {
+  if (process.platform === "win32") return;
+  const context = await boundArtifactContext(
+    path.join(fixture, "write-move-race"),
+    path.join(fixture, "repository")
+  );
+  const destination = await io.artifactDestination(
+    context,
+    ["swap", "result.json"],
+    "artifact directory move race"
+  );
+  const destinationDirectory = path.dirname(destination);
+  const outsideDirectory = path.join(fixture, "outside-write-move-race");
+  const movedDirectory = path.join(outsideDirectory, "moved");
+  await mkdir(outsideDirectory);
+
+  const originalOpen = fs.open;
+  let swapped = false;
+  fs.open = async (...arguments_) => {
+    if (
+      !swapped
+      && typeof arguments_[0] === "string"
+      && arguments_[0].endsWith(".lock")
+    ) {
+      swapped = true;
+      await rename(destinationDirectory, movedDirectory);
+      await symlink(movedDirectory, destinationDirectory);
+    }
+    return originalOpen(...arguments_);
+  };
+  try {
+    await assert.rejects(
+      io.replaceArtifactJson(context, destination, { escaped: true }),
+      /outside its coordinator-bound root/
+    );
+  } finally {
+    fs.open = originalOpen;
+  }
+
+  assert.equal(swapped, true);
+  await assert.rejects(readFile(path.join(movedDirectory, "result.json"), "utf8"));
+}
+
+async function testArtifactParentSwapDuringRead() {
+  if (process.platform === "win32") return;
+  const context = await boundArtifactContext(
+    path.join(fixture, "read-race"),
+    path.join(fixture, "repository")
+  );
+  const destination = await io.artifactDestination(
+    context,
+    ["swap", "result.json"],
+    "artifact read race"
+  );
+  await writeFile(destination, "safe artifact\n");
+  const destinationDirectory = path.dirname(destination);
+  const originalDirectory = destinationDirectory + "-original";
+  const outsideDirectory = path.join(fixture, "outside-read-race");
+  await mkdir(outsideDirectory);
+  await writeFile(path.join(outsideDirectory, "result.json"), "outside secret\n");
+
+  const originalRealpath = fs.realpath;
+  let swapped = false;
+  fs.realpath = async (...arguments_) => {
+    const canonical = await originalRealpath(...arguments_);
+    const candidate = arguments_[0];
+    if (
+      !swapped
+      && (
+        candidate === destination
+        || (
+          typeof candidate === "string"
+          && (
+            candidate.startsWith("/proc/self/fd/")
+            || candidate.startsWith("/dev/fd/")
+          )
+        )
+      )
+    ) {
+      swapped = true;
+      await rename(destinationDirectory, originalDirectory);
+      await symlink(outsideDirectory, destinationDirectory);
+    }
+    return canonical;
+  };
+  let source;
+  try {
+    source = await io.readArtifactText(
+      context,
+      ["swap", "result.json"],
+      "artifact read race"
+    );
+  } finally {
+    fs.realpath = originalRealpath;
+  }
+
+  assert.equal(swapped, true);
+  assert.equal(source, "safe artifact\n");
+}
+
+async function testArtifactFifoSwapDuringRead() {
+  if (process.platform === "win32") return;
+  const context = await boundArtifactContext(
+    path.join(fixture, "read-fifo-race"),
+    path.join(fixture, "repository")
+  );
+  const destination = await io.artifactDestination(
+    context,
+    ["swap", "result.json"],
+    "artifact FIFO read race"
+  );
+  await writeFile(destination, "safe artifact\n");
+
+  const originalLstat = fs.lstat;
+  let swapped = false;
+  let writer;
+  let timer;
+  fs.lstat = async (...arguments_) => {
+    const metadata = await originalLstat(...arguments_);
+    if (!swapped && arguments_[0] === destination) {
+      swapped = true;
+      await rm(destination);
+      await promisify(execFile)("mkfifo", [destination]);
+    }
+    return metadata;
+  };
+  try {
+    timer = setTimeout(() => {
+      writer = fs.open(destination, "w").then((handle) => handle.close());
+    }, 1000);
+    const started = Date.now();
+    await assert.rejects(
+      io.readArtifactText(
+        context,
+        ["swap", "result.json"],
+        "artifact FIFO read race"
+      ),
+      /not a safe regular file/
+    );
+    assert.ok(Date.now() - started < 500);
+  } finally {
+    fs.lstat = originalLstat;
+    clearTimeout(timer);
+    if (writer) await writer;
+  }
+
+  assert.equal(swapped, true);
+}
+
 async function testUnsafeArtifacts() {
   const context = await boundArtifactContext(
     path.join(fixture, "scan"),
@@ -565,13 +769,27 @@ async function testUnsafeArtifacts() {
     [".", "outside.json"],
     ["artifacts/02_discovery", "candidate_ledger.jsonl"],
     ["artifacts", "..", "outside.json"],
-    ["artifacts", "bad\0name"]
+    ["artifacts", "bad\0name"],
+    ["artifacts", "candidate_ledger.jsonl:metadata"],
+    ["artifacts", "NUL"],
+    ["artifacts", "result.json."],
+    ["artifacts", "result.json "],
+    ["artifacts", "bad\nname"]
   ]) {
     await assert.rejects(
       io.artifactDestination(context, components, "discovery_candidates"),
       /fixed artifact destination|unsafe/
     );
   }
+
+  await assert.rejects(
+    io.replaceArtifactText(
+      context,
+      path.join(context.root, "candidate_ledger.jsonl:metadata"),
+      "unsafe"
+    ),
+    /artifact destination is unsafe/
+  );
 
   await assert.rejects(
     io.artifactDestination(

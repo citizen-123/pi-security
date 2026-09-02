@@ -469,7 +469,8 @@ async function openVerifiedPath(
 ): Promise<OpenedExecutionPath> {
   const flags = fsConstants.O_RDONLY
     | fsConstants.O_NOFOLLOW
-    | (expected === "directory" ? fsConstants.O_DIRECTORY : 0);
+    | (expected === "directory" ? fsConstants.O_DIRECTORY : 0)
+    | (process.platform === "win32" ? 0 : (fsConstants.O_NONBLOCK ?? 0));
   let handle: FileHandle;
   try {
     handle = await fs.open(requested, flags);
@@ -699,7 +700,16 @@ function requireRepositoryRelativePath(input: string, label: string): string {
   }
   if (input === ".") return input;
   const components = input.replace(/^\.\//u, "").split("/");
-  if (components.some((component) => component === "" || component === "." || component === "..")) {
+  if (
+    components.some((component) => (
+      component === ""
+      || component === "."
+      || component === ".."
+      || /[:<>|"?*]/u.test(component)
+      || /[. ]$/u.test(component)
+      || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(component)
+    ))
+  ) {
     throw new Error(`${label} contains unsafe traversal.`);
   }
   return components.join("/");

@@ -9,6 +9,7 @@ import {
   symlink,
   writeFile
 } from "node:fs/promises";
+import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,6 +98,7 @@ try {
   await verifyReaderPreservesSharedPhaseRecords(scan);
   await verifyNormalizerFailuresPreserveOutput(scan);
   await verifyDiffInventoryAllowsDeletedFiles(root, repoRoot);
+  await verifyCandidateInputUsesPrivateTemp(root, repoRoot);
   await verifyEmptyReplacement(scan);
   await verifyWorkerContext(root, repoRoot);
   await verifyMalformedLedgerIsNotModified(root, repoRoot);
@@ -334,6 +336,45 @@ async function verifyEmptyReplacement(context) {
     "candidate_ledger.jsonl"
   ), "utf8");
   assert.equal(content, "");
+}
+
+async function verifyCandidateInputUsesPrivateTemp(root, repoRoot) {
+  const context = await createContext(root, repoRoot, "private-input-output", "scan");
+  const originalMkdtemp = fs.mkdtemp;
+  const originalWriteFile = fs.writeFile;
+  const privateInputs = [];
+  let prefix;
+  fs.mkdtemp = async (...arguments_) => {
+    prefix = arguments_[0];
+    return originalMkdtemp(...arguments_);
+  };
+  fs.writeFile = async (...arguments_) => {
+    if (
+      typeof arguments_[0] === "string"
+      && ["candidates.jsonl", "in_scope_files.txt"].includes(path.basename(arguments_[0]))
+    ) {
+      privateInputs.push(arguments_[0]);
+    }
+    return originalWriteFile(...arguments_);
+  };
+  try {
+    await recordPiSecurityDiscoveryCandidates({ candidates: [rawCandidate()] }, context);
+  } finally {
+    fs.mkdtemp = originalMkdtemp;
+    fs.writeFile = originalWriteFile;
+  }
+
+  assert.equal(typeof prefix, "string");
+  assert.equal(
+    prefix.startsWith(path.join(tmpdir(), "pi-security-discovery-candidates-")),
+    true
+  );
+  assert.equal(prefix.startsWith(context.root), false);
+  assert.deepEqual(
+    privateInputs.map((value) => path.basename(value)).sort(),
+    ["candidates.jsonl", "in_scope_files.txt"]
+  );
+  assert.equal(privateInputs.every((value) => value.startsWith(prefix)), true);
 }
 
 async function verifyWorkerContext(root, repoRoot) {
