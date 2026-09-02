@@ -205,7 +205,7 @@ export class DeepScanWorkerRunner {
         userContext: run.userContext
       },
       subagents: run.config.subagents,
-      validate: async () => {
+      validateResult: async () => {
         await validateDiscoveryArtifacts(artifacts, files.resultPath, run.scanId);
         discoveryValidated = true;
       },
@@ -384,7 +384,7 @@ export class DeepScanWorkerRunner {
       artifactDir,
       artifactContext,
       subagents: 0,
-      validate: async () => {
+      validateResult: async () => {
         reducerValidation = await validateReducerArtifacts({
           artifacts,
           artifactDir,
@@ -496,7 +496,7 @@ export class DeepScanWorkerRunner {
     artifactDir: string;
     artifactContext: PiWorkerArtifactContext;
     subagents: number;
-    validate: () => Promise<void>;
+    validateResult: () => Promise<void>;
     beforeRetry: (attempt: number) => Promise<void>;
   }): Promise<WorkerAttemptOutcome> {
     const { run, signal } = this.options;
@@ -621,9 +621,12 @@ export class DeepScanWorkerRunner {
         }
         validationStarted = true;
         try {
-          await input.validate();
+          await input.validateResult();
         } catch (validationError) {
-          throw withWorkerDiagnostics(validationError, result.diagnostics);
+          throw withWorkerDiagnostics(
+            expectedWorkerResultMissing(validationError),
+            result.diagnostics
+          );
         }
         validationCompleted = true;
         if (signal.aborted) {
@@ -718,7 +721,7 @@ export class DeepScanWorkerRunner {
           && validationStarted
           && !validationCompleted
           && activeContinuationId
-          && isMissingWorkerResult(normalized, input.artifactDir)
+          && isMissingWorkerResult(normalized)
         ) {
           // Completed analysis may only be missing its final recording tool.
           // Keep the existing conversation so the worker can correct that call.
@@ -1050,13 +1053,34 @@ function withWorkerDiagnostics(
   return combined;
 }
 
-function isMissingWorkerResult(error: Error, artifactDir: string): boolean {
-  const diagnosed = error as NodeJS.ErrnoException;
-  const original = diagnosed.code === "artifact_tool_failed" && error.cause instanceof Error
-    ? error.cause as NodeJS.ErrnoException
-    : diagnosed;
-  return original.code === "ENOENT"
-    && original.path === join(artifactDir, "result.json");
+class ExpectedWorkerResultMissingError extends Error {
+  constructor(cause: Error) {
+    super("The expected worker result (result.json) is missing.", { cause });
+  }
+}
+
+function expectedWorkerResultMissing(error: unknown): Error {
+  const normalized = asError(error);
+  const cause = normalized.cause;
+  // requireRegularFile reports a descriptor-relative ENOENT through this
+  // secure-open wrapper. Its caller is the expected result validation.
+  if (
+    normalized.message === "Deep Scan artifact cannot be opened safely."
+    && cause instanceof Error
+    && (cause as NodeJS.ErrnoException).code === "ENOENT"
+  ) {
+    return new ExpectedWorkerResultMissingError(normalized);
+  }
+  return normalized;
+}
+
+function isMissingWorkerResult(error: Error): boolean {
+  let current: unknown = error;
+  while (current instanceof Error) {
+    if (current instanceof ExpectedWorkerResultMissingError) return true;
+    current = current.cause;
+  }
+  return false;
 }
 
 function standardScanCompletionContinuation(attempt: number): string {

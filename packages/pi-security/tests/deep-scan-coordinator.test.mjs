@@ -1554,13 +1554,15 @@ async function testCancellationClearsRetryWait() {
   );
 }
 
-async function testMissingDiscoveryResultResumesExistingThread(withToolFailure = false) {
+async function testMissingDiscoveryResultResumesExistingThread(
+  withArtifactToolFailureDiagnostic = false
+) {
   const fixture = await fixtureRun({ workers: 1, subagents: 0, stopAfterNoNew: 1, maxDiscoveryRuns: 1 });
   const store = new FakeStore(fixture.run);
   const executor = new FakeExecutor({
     dedupNewFindings: [0],
     omitFirstDiscoveryArtifact: true,
-    ...(withToolFailure ? {
+    ...(withArtifactToolFailureDiagnostic ? {
       discoveryDiagnostics: [{
         code: "artifact_tool_failed",
         message: "Pi worker artifact tool record_pi_security_scan_draft failed."
