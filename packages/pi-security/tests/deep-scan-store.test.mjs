@@ -436,8 +436,11 @@ async function testPerScanExecutionContextsRemainBound() {
     assert.deepEqual(requestedScanIds, [
       firstScanId,
       firstScanId,
+      firstScanId,
       secondScanId,
       secondScanId,
+      secondScanId,
+      firstScanId,
       firstScanId,
       firstScanId,
     ], "joining a second root must not replace the first scan's store authority");
