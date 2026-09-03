@@ -3634,10 +3634,16 @@ def main() -> None:
             result = runtime_state.transition(connection, json.load(sys.stdin), now)
         elif args.command == "runtime-record-event":
             result = runtime_state.record_event(connection, json.load(sys.stdin), now)
+        elif args.command == "runtime-start-attempt":
+            result = runtime_state.start_attempt(connection, json.load(sys.stdin), now)
+        elif args.command == "runtime-update-attempt":
+            result = runtime_state.update_attempt(connection, json.load(sys.stdin), now)
         elif args.command == "runtime-reuse-output":
             result = runtime_state.reuse_output(connection, json.load(sys.stdin), now)
         elif args.command == "runtime-get-run":
             result = runtime_state.get_run(connection, args.run_id)
+        elif args.command == "runtime-get-agent":
+            result = runtime_state.get_agent(connection, args.run_id, args.logical_agent_id)
         elif args.command == "runtime-list-events":
             result = runtime_state.list_events(connection, args.run_id, args.after_sequence)
         elif args.command == "get-scan-feedback":

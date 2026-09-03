@@ -83,11 +83,14 @@ export interface OwnedRuntimeOperation {
 export interface RuntimeStateRepository {
   claimRun(input: OwnedRuntimeOperation): Promise<RuntimeRunRecord>;
   createRun(input: CreateRuntimeRunInput): Promise<RuntimeRunRecord>;
+  getAgent(runId: string, logicalAgentId: string): Promise<RuntimeLogicalAgentRecord>;
   getRun(runId: string): Promise<RuntimeRunRecord>;
   listEvents(runId: string, afterSequence?: number): Promise<RuntimeEvent[]>;
-  recordEvent(input: OwnedRuntimeOperation & { event: RuntimeEventInput }): Promise<{ runId: string; sequence: number; version: number }>;
+  recordEvent(input: OwnedRuntimeOperation & { event: RuntimeEventInput }): Promise<RuntimeMutationResult>;
   reuseOutput(input: ReuseRuntimeOutputInput): Promise<RuntimeRunRecord>;
+  startAttempt(input: StartRuntimeAttemptInput): Promise<RuntimeAttemptMutationResult>;
   transition(input: TransitionRuntimeInput): Promise<RuntimeRunRecord>;
+  updateAttempt(input: UpdateRuntimeAttemptInput): Promise<RuntimeAttemptMutationResult>;
 }
 
 export interface RuntimeEventInput {
@@ -122,6 +125,53 @@ export interface ReuseRuntimeOutputInput extends OwnedRuntimeOperation {
   sourcePhaseId: string;
   sourceRunId: string;
   validation: Record<string, unknown>;
+}
+export interface RuntimeAttemptRecord {
+  createdAt: string;
+  details: Record<string, unknown>;
+  failureCategory: string | null;
+  id: string;
+  ordinal: number;
+  piSessionId: string | null;
+  status: "starting" | "running" | "completed" | "failed" | "interrupted" | "canceled";
+  updatedAt: string;
+}
+
+export interface RuntimeLogicalAgentRecord {
+  attempts: RuntimeAttemptRecord[];
+  id: string;
+  phaseId: string;
+  runId: string;
+  status: string;
+}
+
+export interface RuntimeMutationResult {
+  runId: string;
+  sequence: number;
+  version: number;
+}
+
+export interface RuntimeAttemptMutationResult extends RuntimeMutationResult {
+  attemptId: string;
+  logicalAgentId: string;
+  status: RuntimeAttemptRecord["status"];
+}
+
+export interface StartRuntimeAttemptInput extends OwnedRuntimeOperation {
+  attemptId: string;
+  details?: Record<string, unknown>;
+  logicalAgentId: string;
+  ordinal: number;
+  phaseId: string;
+}
+
+export interface UpdateRuntimeAttemptInput extends OwnedRuntimeOperation {
+  attemptId: string;
+  details?: Record<string, unknown>;
+  event: RuntimeEventInput;
+  failureCategory?: string;
+  piSessionId?: string;
+  status: Exclude<RuntimeAttemptRecord["status"], "starting">;
 }
 
 export type WorkbenchExecutor = (command: string, payload?: Record<string, unknown>, args?: readonly string[]) => Promise<unknown>;
@@ -176,6 +226,34 @@ const eventSchema = z.object({
   source: z.string(),
   timestamp: z.string(),
 }).strict();
+const mutationSchema = z.object({
+  runId: z.string().uuid(),
+  sequence: z.number().int().positive(),
+  version: z.number().int().positive(),
+}).strict();
+const attemptStatusSchema = z.enum(["starting", "running", "completed", "failed", "interrupted", "canceled"]);
+const attemptMutationSchema = mutationSchema.extend({
+  attemptId: z.string().uuid(),
+  logicalAgentId: z.string().uuid(),
+  status: attemptStatusSchema,
+}).strict();
+const attemptSchema = z.object({
+  createdAt: z.string(),
+  details: z.record(z.string(), z.unknown()),
+  failureCategory: z.string().nullable(),
+  id: z.string().uuid(),
+  ordinal: z.number().int().positive(),
+  piSessionId: z.string().nullable(),
+  status: attemptStatusSchema,
+  updatedAt: z.string(),
+}).strict();
+const logicalAgentSchema = z.object({
+  attempts: z.array(attemptSchema),
+  id: z.string().uuid(),
+  phaseId: z.string(),
+  runId: z.string().uuid(),
+  status: z.string(),
+}).strict();
 
 export class WorkbenchRuntimeStateRepository implements RuntimeStateRepository {
   constructor(private readonly execute: WorkbenchExecutor) {}
@@ -192,17 +270,38 @@ export class WorkbenchRuntimeStateRepository implements RuntimeStateRepository {
     return parseRun(await this.execute("runtime-transition", input as unknown as Record<string, unknown>));
   }
 
-  async recordEvent(input: OwnedRuntimeOperation & { event: RuntimeEventInput }): Promise<{ runId: string; sequence: number; version: number }> {
-    const schema = z.object({ runId: z.string().uuid(), sequence: z.number().int().positive(), version: z.number().int().positive() }).strict();
-    return schema.parse(await this.execute("runtime-record-event", input as unknown as Record<string, unknown>));
+  async recordEvent(input: OwnedRuntimeOperation & { event: RuntimeEventInput }): Promise<RuntimeMutationResult> {
+    return mutationSchema.parse(
+      await this.execute("runtime-record-event", input as unknown as Record<string, unknown>)
+    );
   }
 
   async reuseOutput(input: ReuseRuntimeOutputInput): Promise<RuntimeRunRecord> {
     return parseRun(await this.execute("runtime-reuse-output", input as unknown as Record<string, unknown>));
   }
+  async startAttempt(input: StartRuntimeAttemptInput): Promise<RuntimeAttemptMutationResult> {
+    return attemptMutationSchema.parse(
+      await this.execute("runtime-start-attempt", input as unknown as Record<string, unknown>)
+    );
+  }
+
+  async updateAttempt(input: UpdateRuntimeAttemptInput): Promise<RuntimeAttemptMutationResult> {
+    return attemptMutationSchema.parse(
+      await this.execute("runtime-update-attempt", input as unknown as Record<string, unknown>)
+    );
+  }
 
   async getRun(runId: string): Promise<RuntimeRunRecord> {
     return parseRun(await this.execute("runtime-get-run", undefined, ["--run-id", runId]));
+  }
+  async getAgent(runId: string, logicalAgentId: string): Promise<RuntimeLogicalAgentRecord> {
+    return logicalAgentSchema.parse(
+      await this.execute(
+        "runtime-get-agent",
+        undefined,
+        ["--run-id", runId, "--logical-agent-id", logicalAgentId]
+      )
+    );
   }
 
   async listEvents(runId: string, afterSequence = 0): Promise<RuntimeEvent[]> {

@@ -291,6 +291,226 @@ def record_event(
     return {"runId": run_id, "sequence": sequence, "version": expected_version + 1}
 
 
+def start_attempt(
+    connection: sqlite3.Connection,
+    payload: dict[str, Any],
+    clock: Callable[[], str],
+) -> dict[str, Any]:
+    run_id = require_uuid(payload.get("runId"), "runId")
+    phase_id = require_text(payload.get("phaseId"), "phaseId")
+    logical_agent_id = require_uuid(payload.get("logicalAgentId"), "logicalAgentId")
+    attempt_id = require_uuid(payload.get("attemptId"), "attemptId")
+    ordinal = require_positive_int(payload.get("ordinal"), "ordinal")
+    expected_version = require_positive_int(payload.get("expectedVersion"), "expectedVersion")
+    controller_id = require_text(payload.get("controllerId"), "controllerId")
+    claim_token = require_text(payload.get("claimToken"), "claimToken")
+    details = require_object(payload.get("details", {}), "details")
+    timestamp = clock()
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        require_owned_run(connection, run_id, expected_version, controller_id, claim_token)
+        phase = require_phase(connection, run_id, phase_id)
+        if phase["state"] not in {"ready", "running"}:
+            raise SystemExit("Workflow phase is not ready for an attempt.")
+        agent = connection.execute(
+            "SELECT * FROM workflow_logical_agents WHERE id = ?", (logical_agent_id,)
+        ).fetchone()
+        if agent is None:
+            connection.execute(
+                """
+                INSERT INTO workflow_logical_agents (
+                    id, run_id, phase_id, status, created_at, updated_at
+                ) VALUES (?, ?, ?, 'running', ?, ?)
+                """,
+                (logical_agent_id, run_id, phase_id, timestamp, timestamp),
+            )
+        elif agent["run_id"] != run_id or agent["phase_id"] != phase_id:
+            raise SystemExit("Logical agent does not belong to the requested run phase.")
+        else:
+            active = connection.execute(
+                """
+                SELECT 1 FROM workflow_attempts
+                WHERE logical_agent_id = ? AND status IN ('starting', 'running')
+                """,
+                (logical_agent_id,),
+            ).fetchone()
+            if active is not None:
+                raise SystemExit("Logical agent already has an active attempt.")
+            connection.execute(
+                """
+                UPDATE workflow_logical_agents
+                SET status = 'running', updated_at = ? WHERE id = ?
+                """,
+                (timestamp, logical_agent_id),
+            )
+        connection.execute(
+            """
+            INSERT INTO workflow_attempts (
+                id, logical_agent_id, ordinal, status, details_json, created_at, updated_at
+            ) VALUES (?, ?, ?, 'starting', ?, ?, ?)
+            """,
+            (attempt_id, logical_agent_id, ordinal, canonical_json(details), timestamp, timestamp),
+        )
+        sequence = append_event(
+            connection,
+            run_id,
+            {
+                "category": "domain",
+                "kind": "agent.attempt_started",
+                "source": "runtime",
+                "phaseId": phase_id,
+                "logicalAgentId": logical_agent_id,
+                "attemptId": attempt_id,
+                "payload": {"ordinal": ordinal, "details": details},
+            },
+            timestamp,
+        )
+        connection.execute(
+            "UPDATE workflow_runs SET version = version + 1, updated_at = ? WHERE id = ?",
+            (timestamp, run_id),
+        )
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+    return {
+        "runId": run_id,
+        "logicalAgentId": logical_agent_id,
+        "attemptId": attempt_id,
+        "status": "starting",
+        "sequence": sequence,
+        "version": expected_version + 1,
+    }
+
+
+def update_attempt(
+    connection: sqlite3.Connection,
+    payload: dict[str, Any],
+    clock: Callable[[], str],
+) -> dict[str, Any]:
+    run_id = require_uuid(payload.get("runId"), "runId")
+    attempt_id = require_uuid(payload.get("attemptId"), "attemptId")
+    status = require_choice(
+        payload.get("status"),
+        {"running", "completed", "failed", "interrupted", "canceled"},
+        "status",
+    )
+    expected_version = require_positive_int(payload.get("expectedVersion"), "expectedVersion")
+    controller_id = require_text(payload.get("controllerId"), "controllerId")
+    claim_token = require_text(payload.get("claimToken"), "claimToken")
+    pi_session_id = optional_text(payload.get("piSessionId"), "piSessionId")
+    failure_category = optional_text(payload.get("failureCategory"), "failureCategory")
+    details = require_object(payload.get("details", {}), "details")
+    event = require_object(payload.get("event"), "event")
+    timestamp = clock()
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        require_owned_run(connection, run_id, expected_version, controller_id, claim_token)
+        attempt = connection.execute(
+            """
+            SELECT workflow_attempts.*, workflow_logical_agents.run_id,
+                workflow_logical_agents.phase_id
+            FROM workflow_attempts
+            JOIN workflow_logical_agents
+                ON workflow_logical_agents.id = workflow_attempts.logical_agent_id
+            WHERE workflow_attempts.id = ?
+            """,
+            (attempt_id,),
+        ).fetchone()
+        if attempt is None or attempt["run_id"] != run_id:
+            raise SystemExit("Workflow attempt does not belong to the requested run.")
+        allowed = {
+            "starting": {"running", "failed", "interrupted", "canceled"},
+            "running": {"completed", "failed", "interrupted", "canceled"},
+        }
+        if status not in allowed.get(attempt["status"], set()):
+            raise SystemExit(
+                f"Workflow attempt cannot transition from {attempt['status']} to {status}."
+            )
+        connection.execute(
+            """
+            UPDATE workflow_attempts
+            SET status = ?, pi_session_id = COALESCE(?, pi_session_id),
+                failure_category = ?, details_json = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                status,
+                pi_session_id,
+                failure_category,
+                canonical_json(details),
+                timestamp,
+                attempt_id,
+            ),
+        )
+        if status in {"completed", "failed", "interrupted", "canceled"}:
+            connection.execute(
+                """
+                UPDATE workflow_logical_agents
+                SET status = ?, updated_at = ? WHERE id = ?
+                """,
+                (status, timestamp, attempt["logical_agent_id"]),
+            )
+        sequence = append_event(connection, run_id, event, timestamp)
+        connection.execute(
+            "UPDATE workflow_runs SET version = version + 1, updated_at = ? WHERE id = ?",
+            (timestamp, run_id),
+        )
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+    return {
+        "runId": run_id,
+        "logicalAgentId": attempt["logical_agent_id"],
+        "attemptId": attempt_id,
+        "status": status,
+        "sequence": sequence,
+        "version": expected_version + 1,
+    }
+
+
+def get_agent(
+    connection: sqlite3.Connection, run_id_value: Any, logical_agent_id_value: Any
+) -> dict[str, Any]:
+    run_id = require_uuid(run_id_value, "runId")
+    logical_agent_id = require_uuid(logical_agent_id_value, "logicalAgentId")
+    agent = connection.execute(
+        """
+        SELECT * FROM workflow_logical_agents WHERE id = ? AND run_id = ?
+        """,
+        (logical_agent_id, run_id),
+    ).fetchone()
+    if agent is None:
+        raise SystemExit("Workflow logical agent was not found for this run.")
+    attempts = connection.execute(
+        """
+        SELECT * FROM workflow_attempts
+        WHERE logical_agent_id = ? ORDER BY ordinal
+        """,
+        (logical_agent_id,),
+    ).fetchall()
+    return {
+        "id": agent["id"],
+        "runId": agent["run_id"],
+        "phaseId": agent["phase_id"],
+        "status": agent["status"],
+        "attempts": [
+            {
+                "id": row["id"],
+                "ordinal": row["ordinal"],
+                "piSessionId": row["pi_session_id"],
+                "status": row["status"],
+                "failureCategory": row["failure_category"],
+                "details": json.loads(row["details_json"]),
+                "createdAt": row["created_at"],
+                "updatedAt": row["updated_at"],
+            }
+            for row in attempts
+        ],
+    }
+
+
 def reuse_output(
     connection: sqlite3.Connection,
     payload: dict[str, Any],
@@ -514,6 +734,13 @@ def append_event(
     kind = require_text(event.get("kind"), "event.kind")
     source = require_text(event.get("source"), "event.source")
     payload = require_object(event.get("payload", {}), "event.payload")
+    phase_id = optional_text(event.get("phaseId"), "event.phaseId")
+    logical_agent_id = optional_uuid(event.get("logicalAgentId"), "event.logicalAgentId")
+    attempt_id = optional_uuid(event.get("attemptId"), "event.attemptId")
+    correlation_id = optional_text(event.get("correlationId"), "event.correlationId")
+    validate_event_bindings(
+        connection, run_id, phase_id, logical_agent_id, attempt_id
+    )
     sequence = connection.execute(
         "SELECT COALESCE(MAX(sequence), 0) + 1 FROM workflow_events WHERE run_id = ?",
         (run_id,),
@@ -531,15 +758,48 @@ def append_event(
             category,
             kind,
             source,
-            optional_text(event.get("phaseId"), "event.phaseId"),
-            optional_text(event.get("logicalAgentId"), "event.logicalAgentId"),
-            optional_text(event.get("attemptId"), "event.attemptId"),
-            optional_text(event.get("correlationId"), "event.correlationId"),
+            phase_id,
+            logical_agent_id,
+            attempt_id,
+            correlation_id,
             canonical_json(payload),
             timestamp,
         ),
     )
     return sequence
+
+
+def validate_event_bindings(
+    connection: sqlite3.Connection,
+    run_id: str,
+    phase_id: str | None,
+    logical_agent_id: str | None,
+    attempt_id: str | None,
+) -> None:
+    if phase_id is not None:
+        require_phase(connection, run_id, phase_id)
+    if logical_agent_id is None:
+        if attempt_id is not None:
+            raise SystemExit("Attempt event binding requires a logical agent identity.")
+        return
+    agent = connection.execute(
+        """
+        SELECT * FROM workflow_logical_agents WHERE id = ? AND run_id = ?
+        """,
+        (logical_agent_id, run_id),
+    ).fetchone()
+    if agent is None or (phase_id is not None and agent["phase_id"] != phase_id):
+        raise SystemExit("Event logical agent binding does not match the workflow phase.")
+    if attempt_id is None:
+        return
+    attempt = connection.execute(
+        """
+        SELECT 1 FROM workflow_attempts WHERE id = ? AND logical_agent_id = ?
+        """,
+        (attempt_id, logical_agent_id),
+    ).fetchone()
+    if attempt is None:
+        raise SystemExit("Event attempt binding does not match the logical agent.")
 
 
 def require_owned_run(
