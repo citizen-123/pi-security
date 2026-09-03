@@ -6,6 +6,7 @@
   "type": "module",
   "files": [
     "dist/pi-security-extension.mjs",
+    "dist/pi-security-cli.mjs",
     "agents/*.md",
     "skills/**/*.md",
     "skills/**/*.py",
@@ -27,8 +28,12 @@
     "test:pack": "npm run build && node --test tests/package-content.pack.mjs",
     "test": "npm run build && npm run test:node && npm run test:python"
   },
+  "bin": {
+    "pi-security": "./dist/pi-security-cli.mjs"
+  },
   "dependencies": {
     "pi-subagents": "0.62.0",
+    "smol-toml": "^1.8.0",
     "zod": "^4.3.6"
   },
   "bundleDependencies": ["pi-subagents"],
