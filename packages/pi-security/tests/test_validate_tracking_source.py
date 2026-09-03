@@ -82,7 +82,7 @@ class ValidateTrackingSourceTest(unittest.TestCase):
     def test_selects_the_finding_from_a_sealed_scan(self) -> None:
         findings = VALIDATOR.validate_source(self.scan_dir)
 
-        self.assertEqual(findings[0]["findingId"], "csf_852f90d6e1177502ff113d4a")
+        self.assertEqual(findings[0]["findingId"], "csf_63e47f0d1bc734a6d3f22eee")
 
     def test_tampered_findings_are_rejected(self) -> None:
         findings_path = self.scan_dir / "findings.json"
@@ -197,7 +197,7 @@ class ValidateTrackingSourceTest(unittest.TestCase):
             exit_code = VALIDATOR.main([str(self.scan_dir)])
 
         self.assertEqual(exit_code, 0)
-        self.assertEqual(stdout.getvalue(), "csf_852f90d6e1177502ff113d4a\n")
+        self.assertEqual(stdout.getvalue(), "csf_63e47f0d1bc734a6d3f22eee\n")
         self.assertEqual(stderr.getvalue(), "")
 
 

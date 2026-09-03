@@ -40,7 +40,7 @@ export type ExecutionPolicyContextProvider = (
   scanId?: string,
 ) => Promise<ExecutionPolicyContext>;
 
-const WORKFLOW_VERSION = "deep-scan-mcp/v1";
+const WORKFLOW_VERSION = "deep-scan-native/v1";
 const MAX_IDEMPOTENT_PERSISTENCE_ATTEMPTS = 3;
 const PERSISTENCE_RETRY_BASE_DELAY_MS = 100;
 
@@ -200,12 +200,16 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       throw new Error("Pi Security workbench returned an invalid Deep Scan start disposition.");
     }
     const artifactWriteAuthorization = result.artifactWriteAuthorization;
+    const parsedAuthorization = artifactWriteAuthorization === "creator"
+      || artifactWriteAuthorization === "owning_thread_live_rejoin"
+      ? artifactWriteAuthorization
+      : undefined;
     const expectedAuthorization = startDisposition === "created"
       ? "creator"
       : run.status === "running"
         ? "owning_thread_live_rejoin"
-        : "none";
-    if (artifactWriteAuthorization !== expectedAuthorization) {
+        : undefined;
+    if (parsedAuthorization !== expectedAuthorization) {
       throw new Error(
         "Pi Security workbench returned an invalid Deep Scan artifact-write authorization.",
       );
@@ -214,9 +218,7 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       run,
       shouldStart: startDisposition === "created",
       startDisposition,
-      ...(artifactWriteAuthorization === "none"
-        ? {}
-        : { artifactWriteAuthorization }),
+      ...(parsedAuthorization ? { artifactWriteAuthorization: parsedAuthorization } : {}),
     };
   }
 
@@ -329,9 +331,8 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       ...(update.resultManifestPath
         ? ["--result-manifest-path", update.resultManifestPath]
         : []),
-      // Preserve the existing SQLite field as an opaque worker continuation ID.
-      // Sampling executors never store a provider thread identifier here.
-      ...(update.threadId ? ["--sdk-thread-id", update.threadId] : []),
+      // Preserve the opaque application continuation ID.
+      ...(update.continuationId ? ["--continuation-id", update.continuationId] : []),
       ...(update.error ? ["--error-message", update.error] : []),
       ...(update.replaceableFailureKind
         ? ["--replaceable-failure-kind", update.replaceableFailureKind]
@@ -358,8 +359,7 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
     promptPath: string;
     artifactDir: string;
   }): Promise<void> {
-    await this.assertArtifactPaths(input.scanId, [input.promptPath, input.artifactDir]);
-    await this.enqueueWrite([
+    const args = [
       "claim-deep-scan-dedup",
       "--scan-id",
       input.scanId,
@@ -371,7 +371,11 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
       input.artifactDir,
       ...this.coordinatorLeaseArgs(input.scanId),
       ...input.workerIds.flatMap((workerId) => ["--input-worker-id", workerId])
-    ], true);
+    ];
+    await this.enqueueWriteTask(args, async () => {
+      await this.assertArtifactPaths(input.scanId, [input.promptPath, input.artifactDir]);
+      return this.runIdempotentPersistence(args);
+    });
   }
 
   async commitDedup(commit: DedupCommit): Promise<DeepScanRunState> {
@@ -509,11 +513,20 @@ export class WorkbenchDeepScanStore implements DeepScanStore {
     retryTransientFailure = false,
     input?: string
   ): Promise<JsonObject> {
+    return this.enqueueWriteTask(args, async () => (
+      retryTransientFailure
+        ? await this.runIdempotentPersistence(args)
+        : await this.invokeWorkbench(args, input)
+    ));
+  }
+
+  private enqueueWriteTask(
+    args: string[],
+    task: () => Promise<JsonObject>,
+  ): Promise<JsonObject> {
     const operation = this.writeTail.then(async () => {
       try {
-        return retryTransientFailure
-          ? await this.runIdempotentPersistence(args)
-          : await this.invokeWorkbench(args, input);
+        return await task();
       } catch (error) {
         const scanId = argumentValue(args, "--scan-id");
         if (scanId && isStaleCoordinatorGenerationError(error)) {
@@ -906,7 +919,7 @@ function parsePersistedWorker(value: JsonObject): PersistedDeepScanWorker {
     promptPath: requiredString(value.promptPath, "deepScan.worker.promptPath"),
     artifactDir: requiredString(value.artifactDir, "deepScan.worker.artifactDir"),
     attempt: nonNegativeInteger(value.attempt, "deepScan.worker.attempt"),
-    threadId: optionalString(value.sdkThreadId),
+    continuationId: optionalString(value.continuationId),
     resultManifestPath: optionalString(value.resultManifestPath),
     completionSequence: optionalPositiveInteger(value.completionSequence),
     error: optionalString(value.error)

@@ -1445,7 +1445,8 @@ try {
     threatModel: _archivedThreatModel,
     ...replacementAttempt
   } = workerInput;
-  await recordPiSecurityWorkerScanDraft(archivedRetryContext, {
+  const replacementAttemptContext = bindContext(workerContext, archivedRetryOutput);
+  await recordPiSecurityWorkerScanDraft(replacementAttemptContext, {
     ...replacementAttempt,
     findings: [],
   });

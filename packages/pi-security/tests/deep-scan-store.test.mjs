@@ -155,7 +155,7 @@ async function testBeginProtocolAndParsing() {
   assert.equal(calls[0].input, "focus on archive parsing");
   assert.equal(flagValue(calls[0].args, "--scan-root"), "/fixture/scans");
   assert.equal(flagValue(calls[0].args, "--available-parallelism"), String(availableParallelism()));
-  assert.equal(flagValue(calls[0].args, "--workflow-version"), "deep-scan-mcp/v1");
+  assert.equal(flagValue(calls[0].args, "--workflow-version"), "deep-scan-native/v1");
 
   const claimToken = randomUUID();
   let joinedArgs;
@@ -349,7 +349,7 @@ async function testWorkerResponseParsing() {
         artifactDir: mutation.artifactDir,
         resultManifestPath: mutation.resultManifestPath,
         attempt: 1,
-        sdkThreadId: "thread-worker",
+        continuationId: "worker-continuation",
         completionSequence: 3,
         error: "worker was rate limited"
       }]
@@ -358,7 +358,7 @@ async function testWorkerResponseParsing() {
 
   assert.equal(worker.completionSequence, 3);
   assert.equal(worker.mergeState, "buffered");
-  assert.equal(worker.threadId, "thread-worker");
+  assert.equal(worker.continuationId, "worker-continuation");
   assert.equal(worker.error, "worker was rate limited");
 }
 
@@ -909,7 +909,7 @@ function idempotentPersistenceScenarios() {
           mergeState: "none",
           resultManifestPath: undefined,
           completionSequence: undefined,
-          sdkThreadId: "thread-worker"
+          continuationId: "worker-continuation"
         }]
       }
     }),
@@ -921,7 +921,7 @@ function idempotentPersistenceScenarios() {
       promptPath: worker.promptPath,
       artifactDir: worker.artifactDir,
       attempt: worker.attempt,
-      threadId: "thread-worker"
+      continuationId: "worker-continuation"
     })
   }, ...["queued", "failed", "canceled"].map((status) => ({
     operation: "upsert-deep-scan-worker",

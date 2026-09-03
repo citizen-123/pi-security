@@ -134,7 +134,8 @@ async function testStandardWorkersReceiveExistingFalsePositiveFeedback() {
   ));
   assert.ok(worker);
   const prompt = await readFile(worker.promptPath, "utf8");
-  assert.equal(prompt.includes(JSON.stringify(feedbackPath)), true);
+  assert.match(prompt, /reviewer false-positive feedback/u);
+  assert.equal(prompt.includes(JSON.stringify(feedbackPath)), false);
   assert.equal(Object.hasOwn(await promptContext(worker.promptPath), "falsePositiveFeedbackPath"), false);
   await assert.rejects(readFile(path.join(
     worker.artifactDir,
@@ -1188,9 +1189,9 @@ async function testTransientExecutionFailureResumesWorkerThread() {
   const terminal = await coordinator.wait(undefined, 5_000);
   assert.equal(terminal?.status, "succeeded");
   assert.equal(executor.discoveryCalls, 2);
-  assert.equal(executor.discoveryResumeThreadIds[0], undefined);
-  assert.equal(executor.discoveryResumeThreadIds[1], executor.discoveryThreadIds[0]);
-  assert.equal(new Set(executor.discoveryThreadIds).size, 1);
+  assert.equal(executor.discoveryResumeContinuationIds[0], undefined);
+  assert.equal(executor.discoveryResumeContinuationIds[1], executor.discoveryContinuationIds[0]);
+  assert.equal(new Set(executor.discoveryContinuationIds).size, 1);
   assert.match(
     executor.discoveryContinuationPrompts[1] ?? "",
     /transient Pi execution failure/
@@ -1464,8 +1465,8 @@ async function testMissingDiscoveryResultResumesExistingThread(withToolFailure =
   assert.equal(terminal?.status, "succeeded");
   assert.equal(executor.discoveryCalls, 2);
   assert.deepEqual(sleeps, [1]);
-  assert.deepEqual(executor.discoveryResumeThreadIds, [undefined, executor.discoveryThreadIds[0]]);
-  assert.equal(new Set(executor.discoveryThreadIds).size, 1);
+  assert.deepEqual(executor.discoveryResumeContinuationIds, [undefined, executor.discoveryContinuationIds[0]]);
+  assert.equal(new Set(executor.discoveryContinuationIds).size, 1);
   const continuation = executor.discoveryContinuationPrompts[1] ?? "";
   assert.match(continuation, /completed source analysis/);
   assert.match(
@@ -1523,9 +1524,9 @@ async function testInvalidArtifactsRetry() {
   const retriedWorkerId = [...executor.discoveryAttempts.entries()]
     .find(([, attempts]) => attempts === 2)?.[0];
   assert.deepEqual(
-    executor.discoveryResumeThreadIdsByWorker.get(retriedWorkerId),
+    executor.discoveryResumeContinuationIdsByWorker.get(retriedWorkerId),
     [undefined, undefined],
-    "deterministic validation retries must start a clean thread"
+    "deterministic validation retries must start a clean continuation"
   );
   assert.equal(retriedPromptPaths?.size, 2);
   const [basePromptPath, retryPromptPath] = [...retriedPromptPaths];
@@ -1605,11 +1606,11 @@ async function testInvalidReducerResultRetriesFromSnapshot(missingCandidateLedge
   const [basePromptPath, retryPromptPath] = [...new Set(executor.dedupPromptPaths)];
   assert.doesNotMatch(await readFile(basePromptPath, "utf8"), /Deterministic validation retry/);
   if (missingCandidateLedger) {
-    assert.deepEqual(executor.dedupResumeThreadIds, [undefined, executor.dedupThreadIds[0]],
-      "an incomplete tool submission must resume its existing reducer conversation");
+    assert.deepEqual(executor.dedupResumeContinuationIds, [undefined, executor.dedupContinuationIds[0]],
+      "an incomplete tool submission must resume its existing reducer continuation");
   } else {
     assert.match(await readFile(retryPromptPath, "utf8"), /Deterministic validation retry after attempt 1/);
-    assert.deepEqual(executor.dedupResumeThreadIds, [undefined, undefined],
+    assert.deepEqual(executor.dedupResumeContinuationIds, [undefined, undefined],
       "an invalid reducer result must still retry in a clean conversation");
   }
 }
@@ -1651,8 +1652,8 @@ async function testMissingReducerResultResumesExistingThread() {
   assert.equal(store.dedupClaims.length, 1);
   assert.equal(executor.dedupCalls, 2);
   assert.deepEqual(sleeps, [1]);
-  assert.deepEqual(executor.dedupResumeThreadIds, [undefined, executor.dedupThreadIds[0]]);
-  assert.equal(new Set(executor.dedupThreadIds).size, 1);
+  assert.deepEqual(executor.dedupResumeContinuationIds, [undefined, executor.dedupContinuationIds[0]]);
+  assert.equal(new Set(executor.dedupContinuationIds).size, 1);
   assert.match(
     executor.dedupContinuationPrompts[1] ?? "",
     /record_pi_security_deep_reduction\(\{ scanId, findings, coverage, threatModel\?, scope\? \}\)/
@@ -1713,10 +1714,10 @@ async function testExhaustedReducerIsReplacedAtDiscoveryLimit() {
   assert.equal(executor.dedupAttemptsByLabel.get("dedup-0001"), 4);
   assert.equal(executor.dedupAttemptsByLabel.get("dedup-0002"), 1);
   assert.deepEqual(
-    executor.dedupResumeThreadIds.slice(0, 4),
-    [undefined, executor.dedupThreadIds[0], executor.dedupThreadIds[0], executor.dedupThreadIds[0]]
+    executor.dedupResumeContinuationIds.slice(0, 4),
+    [undefined, executor.dedupContinuationIds[0], executor.dedupContinuationIds[0], executor.dedupContinuationIds[0]]
   );
-  assert.equal(executor.dedupResumeThreadIds[4], undefined);
+  assert.equal(executor.dedupResumeContinuationIds[4], undefined);
   const manifest = JSON.parse(await readFile(terminal.manifestPath, "utf8"));
   assert.deepEqual(manifest.findings.map((finding) => finding.provenance.candidateId), ["candidate-1"]);
   assert.equal(store.dedupCommits.length, 1);
@@ -2747,7 +2748,7 @@ async function testForgedCrashResumeRejectsBeforeAdoptionReplacement() {
       promptPath: path.join(workerRoot, "prompt.md"),
       artifactDir,
       attempt: 1,
-      threadId: randomUUID(),
+      continuationId: randomUUID(),
     }],
   };
   const durableBefore = Buffer.from(JSON.stringify(running));
@@ -3022,9 +3023,9 @@ async function testPausedDiscoverySurvivesCoordinatorRestart() {
   ));
   assert.ok(accepted);
 
-  // The waiter detached earlier; an app update now removes its MCP process
+  // The waiter detached earlier; an app update now removes its Pi extension process
   // without canceling or finalizing the persisted scan.
-  original.cancel("mcp server process restarted");
+  original.cancel("native extension restarted");
   await eventually(() => originalExecutor.runningDiscovery === 0);
   const persistedWorkers = [...store.workers.values()].map((worker) => structuredClone(worker));
   const independentReviews = {
@@ -3148,7 +3149,7 @@ async function testResumedDiscoveryDeadlineUsesPersistedCreationTime(
     ))
   ));
 
-  original.cancel("mcp server process restarted");
+  original.cancel("native extension restarted");
   await eventually(() => originalExecutor.runningDiscovery === 0);
   assert.equal(store.run.status, "running");
   assert.equal(store.run.createdAt, createdAt);
@@ -3209,7 +3210,7 @@ async function testResumedManifestPreservesCompletedReducer(includeUnstartedRedu
   });
   original.start();
   await store.dedupCommitPersisted.promise;
-  original.cancel("mcp server process restarted");
+  original.cancel("native extension restarted");
   store.releaseDedupCommitResponse();
   await original.settled();
   await eventually(() => [...store.workers.values()].every((worker) => (
@@ -3782,10 +3783,10 @@ class FakeExecutor {
   discoveryAttempts = new Map();
   discoveryPromptPaths = new Map();
   discoveryWorkingDirectories = new Set();
-  discoveryResumeThreadIds = [];
-  discoveryResumeThreadIdsByWorker = new Map();
+  discoveryResumeContinuationIds = [];
+  discoveryResumeContinuationIdsByWorker = new Map();
   discoveryContinuationPrompts = [];
-  discoveryThreadIds = [];
+  discoveryContinuationIds = [];
   logicalDiscoveryWorkers = new Set();
   runningDiscovery = 0;
   maximumDiscoveryConcurrency = 0;
@@ -3798,8 +3799,8 @@ class FakeExecutor {
   invalidDedupTraceabilityOnce = false;
   dedupCalls = 0;
   dedupAttemptsByLabel = new Map();
-  dedupResumeThreadIds = [];
-  dedupThreadIds = [];
+  dedupResumeContinuationIds = [];
+  dedupContinuationIds = [];
   dedupContinuationPrompts = [];
   dedupPromptPaths = [];
   dedupArtifactContexts = [];
@@ -3811,19 +3812,19 @@ class FakeExecutor {
 
   async run(request) {
     this.calls += 1;
-    const threadId = request.resumeThreadId ?? randomUUID();
+    const continuationId = request.resumeContinuationId ?? randomUUID();
     await request.onPolicyReady?.();
-    if (!request.resumeThreadId) await request.onThreadStarted?.(threadId);
+    if (!request.resumeContinuationId) await request.onContinuationStarted?.(continuationId);
     if (request.kind === "discovery") {
       const workerId = await workerIdFromPrompt(request.promptPath);
       this.logicalDiscoveryWorkers.add(workerId);
       this.discoveryWorkingDirectories.add(request.workingDirectory);
-      this.discoveryResumeThreadIds.push(request.resumeThreadId);
-      const resumeThreadIds = this.discoveryResumeThreadIdsByWorker.get(workerId) ?? [];
-      resumeThreadIds.push(request.resumeThreadId);
-      this.discoveryResumeThreadIdsByWorker.set(workerId, resumeThreadIds);
+      this.discoveryResumeContinuationIds.push(request.resumeContinuationId);
+      const resumeContinuationIds = this.discoveryResumeContinuationIdsByWorker.get(workerId) ?? [];
+      resumeContinuationIds.push(request.resumeContinuationId);
+      this.discoveryResumeContinuationIdsByWorker.set(workerId, resumeContinuationIds);
       this.discoveryContinuationPrompts.push(request.continuationPrompt);
-      this.discoveryThreadIds.push(threadId);
+      this.discoveryContinuationIds.push(continuationId);
       this.discoveryCalls += 1;
       this.discoveryAttempts.set(workerId, (this.discoveryAttempts.get(workerId) ?? 0) + 1);
       const promptPaths = this.discoveryPromptPaths.get(workerId) ?? new Set();
@@ -3897,7 +3898,7 @@ class FakeExecutor {
         if (this.options.blockDiscoveryAfterWrite) await waitForAbort(request.signal);
         return {
           finalResponse: "discovery complete",
-          threadId,
+          continuationId,
           ...(this.options.discoveryDiagnostics ? { diagnostics: this.options.discoveryDiagnostics } : {})
         };
       } finally {
@@ -3907,8 +3908,8 @@ class FakeExecutor {
 
     this.runningDedup += 1;
     this.dedupSignal = request.signal;
-    this.dedupResumeThreadIds.push(request.resumeThreadId);
-    this.dedupThreadIds.push(threadId);
+    this.dedupResumeContinuationIds.push(request.resumeContinuationId);
+    this.dedupContinuationIds.push(continuationId);
     this.dedupContinuationPrompts.push(request.continuationPrompt);
     this.dedupPromptPaths.push(request.promptPath);
     this.dedupArtifactContexts.push(request.artifactContext);
@@ -3925,7 +3926,7 @@ class FakeExecutor {
       if (reducerAttempt <= (this.options.missingDedupResultsByLabel?.[reducerLabel] ?? 0)) {
         return {
           finalResponse: "dedup completed without recording its result",
-          threadId,
+          continuationId,
           ...(this.options.dedupDiagnostics ? { diagnostics: this.options.dedupDiagnostics } : {})
         };
       }
@@ -3955,7 +3956,7 @@ class FakeExecutor {
       if (this.options.blockDedupAfterWrite) await waitForAbort(request.signal);
       return {
         finalResponse: "dedup complete",
-        threadId,
+        continuationId,
         ...(this.options.dedupDiagnostics ? { diagnostics: this.options.dedupDiagnostics } : {})
       };
     } finally {

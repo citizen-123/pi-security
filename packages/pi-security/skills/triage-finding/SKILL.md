@@ -291,7 +291,7 @@ The Markdown result should include:
 - proof gaps
 - owner hint for `confirmed` findings, when available
 - recommended next step
-- `$fix-finding` handoff when verdict is `confirmed`
+- `/fix-finding` handoff when verdict is `confirmed`
 
 When the user requests the raw JSON contract, it must include:
 
@@ -306,16 +306,16 @@ Generate the valid `triage-finding/v0` result internally, then respond with the 
 
 ## Fix-Finding Handoff
 
-For `confirmed` findings, include a concise prompt-ready handoff for `$fix-finding` with:
+For `confirmed` findings, include a concise prompt-ready handoff for `/fix-finding` with:
 
 - vulnerable source, sink, or broken control
 - attacker-controlled input and preconditions
 - exact code references
 - required security invariant
 - recommended fix boundary
-- proof gaps that `$fix-finding` should preserve or validate
+- proof gaps that `/fix-finding` should preserve or validate
 
-Do not invoke `$fix-finding` unless the user explicitly asks to continue into fixing.
+Do not invoke `/fix-finding` unless the user explicitly asks to continue into fixing.
 
 ## Hard Rules
 

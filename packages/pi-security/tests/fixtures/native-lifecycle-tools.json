@@ -3142,6 +3142,7 @@
             "additionalProperties": {},
             "properties": {
               "completeness": {
+                "description": "Use partial if any work is deferred or any surface needs follow-up; use complete only when no such work remains.",
                 "enum": [
                   "complete",
                   "partial",
@@ -3276,6 +3277,7 @@
                   "additionalProperties": {},
                   "properties": {
                     "disposition": {
+                      "description": "The evidence-supported review result for this surface.",
                       "enum": [
                         "reported",
                         "no_issue_found",
@@ -4847,7 +4849,7 @@
                 "type": "string"
               }
             ],
-            "description": "Existing Deep Scan continuation claim. Pass the same token on every scanId resume, including after an MCP server restart."
+            "description": "Existing Deep Scan continuation claim. Pass the same token on every scanId resume, including after a Pi restart."
           },
           "scanId": {
             "description": "Existing app-created or previously returned Deep Scan ID.",
@@ -5377,7 +5379,7 @@
             "type": "string"
           },
           "preflightChecks": {
-            "description": "Current standard or diff scan preflight results. Project every helper results entry to capability, reason, severity, and status only. The server derives the item counts and visible block/warn attention items.",
+            "description": "Current standard or diff scan preflight results. Project every helper results entry to capability, reason, severity, and status only. The workbench derives the item counts and visible block/warn attention items.",
             "items": {
               "additionalProperties": false,
               "properties": {

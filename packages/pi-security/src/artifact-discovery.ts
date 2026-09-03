@@ -3,8 +3,8 @@ import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import type * as z from "zod/v4";
-import discoveryCandidateDefinitions from "../schemas/definitions/discovery-candidate.schema.json";
-import discoveryCandidatesToolSchema from "../schemas/tools/discovery-candidates.schema.json";
+import discoveryCandidateDefinitions from "../schemas/definitions/discovery-candidate.schema.json" with { type: "json" };
+import discoveryCandidatesToolSchema from "../schemas/tools/discovery-candidates.schema.json" with { type: "json" };
 import type { ArtifactContext } from "./artifact-context.js";
 import {
   artifactDestination,

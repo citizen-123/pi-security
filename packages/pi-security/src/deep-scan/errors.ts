@@ -5,11 +5,6 @@ const MAX_PERSISTED_ERROR_LENGTH = 2_400;
 
 const RATE_LIMIT_PATTERN = /\b(?:429|rate[ _-]*limit(?:ed|ing)?|too many requests)\b/iu;
 
-const ARTIFACT_MCP_STARTUP_TIMEOUT_PATTERN =
-  /\b(?:cs_artifacts|pi_security_artifacts)\b[^\r\n]*(?:timed out handshaking with MCP server|timed out after \d+(?:\.\d+)?\s*(?:seconds?|s)\b|request timed out\b)/iu;
-
-const REMOTE_PLUGIN_AUTH_WARNING_PATTERN =
-  /\bchatgpt authentication required (?:for remote plugin catalog|to sync remote plugins)(?:; api key auth is not supported)?/giu;
 
 const STALE_COORDINATOR_GENERATION_MESSAGE =
   "Deep Scan coordinator lease belongs to a newer generation.";
@@ -31,7 +26,7 @@ export class DeepScanNonRetryableError extends Error {
   }
 }
 
-export function isDeepScanNonRetryableError(error: unknown): error is Error {
+export function isDeepScanNonRetryableError(error: unknown): boolean {
   return error instanceof DeepScanNonRetryableError
     || isPolicyEnforcementFailure(error);
 }
@@ -102,13 +97,8 @@ export function classifyPiWorkerError(error: unknown): Error {
   if (code === "ENOENT" || code === "EACCES" || code === "ENOEXEC" || code === "EPERM") {
     return new DeepScanNonRetryableError(normalized.message, { cause: normalized });
   }
-  // API-key workers cannot catalog or sync remote plugins, but those warnings
-  // are unrelated when their local artifact MCP server merely starts too slowly.
-  const configurationMessage = ARTIFACT_MCP_STARTUP_TIMEOUT_PATTERN.test(normalized.message)
-    ? normalized.message.replace(REMOTE_PLUGIN_AUTH_WARNING_PATTERN, "")
-    : normalized.message;
   if (
-    isPiConfigurationFailure(configurationMessage)
+    isPiConfigurationFailure(normalized.message)
     || isPiCybersecurityPolicyRefusal(normalized)
   ) {
     return new DeepScanNonRetryableError(normalized.message, { cause: normalized });
@@ -118,8 +108,8 @@ export function classifyPiWorkerError(error: unknown): Error {
 
 function isPiConfigurationFailure(message: string): boolean {
   return [
-    /Pi Exec exited with code 2:/i,
-    /Pi Exec exited with code 1:[\s\S]*\(os error 2\)/i,
+    /Pi worker exited with code 2:/i,
+    /Pi worker exited with code 1:[\s\S]*\(os error 2\)/i,
     /agents\.max_threads cannot be set when features\.multi_agent_v2 is enabled/i,
     /failed to (?:load|parse|read) (?:the )?(?:Pi )?config(?:uration)?/i,
     /(?:config(?:uration)?|config\.toml).*(?:invalid|parse|syntax|unknown)/i,

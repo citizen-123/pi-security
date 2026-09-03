@@ -54,7 +54,7 @@ export interface DeepScanRunState {
   targetPath: string;
   scope: string;
   userContext?: string;
-  /** Persisted sampling preferences selected by the owning host. */
+  /** Persisted worker preferences selected by the owning host. */
   model?: string;
   reasoningEffort?: string;
   /** Available for coordinators completed in this process. */
@@ -119,7 +119,7 @@ export interface DeepScanWorkerMutation {
   promptPath: string;
   artifactDir: string;
   attempt: number;
-  threadId?: string;
+  continuationId?: string;
   resultManifestPath?: string;
   error?: string;
   policyFailure?: PolicyEnforcementFailureIdentity;
@@ -139,7 +139,7 @@ export interface PersistedDeepScanWorker {
   promptPath: string;
   artifactDir: string;
   attempt: number;
-  threadId?: string;
+  continuationId?: string;
   resultManifestPath?: string;
   completionSequence?: number;
   consecutiveErrors?: number;
@@ -235,7 +235,7 @@ export interface PiWorkerUsageDiagnostics extends PiWorkerTokenUsage {
 
 export interface PiWorkerReasoningDiagnostics {
   requested: string | null;
-  /** Null means the sampling client did not acknowledge one applied effort. */
+  /** Null means the native worker did not report one applied effort. */
   applied: string | null;
   acknowledgedRequestCount: number;
 }
@@ -243,7 +243,7 @@ export interface PiWorkerReasoningDiagnostics {
 export interface PiWorkerNestedDiagnostics {
   taskCount: number;
   failedTaskCount: number;
-  samplingRequestCount: number;
+  requestCount: number;
   toolCallCount: number;
   toolFailureCount: number;
   elapsedMs: number;
@@ -252,11 +252,11 @@ export interface PiWorkerNestedDiagnostics {
 }
 
 /**
- * Observable sampling work for one executor tree. Top-level counts and usage
+ * Observable native work for one executor tree. Top-level counts and usage
  * include nested tasks; `nested` is the nested subset.
  */
 export interface PiWorkerRunDiagnostics {
-  samplingRequestCount: number;
+  requestCount: number;
   toolCallCount: number;
   toolFailureCount: number;
   retryCount: number;
@@ -265,7 +265,7 @@ export interface PiWorkerRunDiagnostics {
   reasoning: PiWorkerReasoningDiagnostics;
   usage: PiWorkerUsageDiagnostics | null;
   nested: PiWorkerNestedDiagnostics;
-  /** Host-observed mechanisms available even when sampling never succeeds. */
+  /** Host-observed mechanisms available even when worker execution never succeeds. */
   enforcementCapabilities?: EnforcementCapabilityReport;
   /** Exact final authority and mechanisms applied by this executor attempt. */
   effectivePolicy?: EffectivePolicyDiagnostics;
@@ -328,7 +328,7 @@ export interface PiWorkerRequest {
   subagents: number;
   signal: AbortSignal;
   /** Opaque application continuation ID persisted by the worker, never a provider thread ID. */
-  resumeThreadId?: string;
+  resumeContinuationId?: string;
   continuationPrompt?: string;
   artifactContext: PiWorkerArtifactContext;
   /**
@@ -338,32 +338,32 @@ export interface PiWorkerRequest {
   executionContext: ExecutionPolicyContext;
   /** Fresh fixed internal writer authority, compared and reissued on resume. */
   artifactWriterContext: ExecutionPolicyContext;
-  /** Present only for a host-created nested sampling task. */
+  /** Present only for a host-created nested worker task. */
   delegation?: PiWorkerDelegationContext;
   /**
    * Confirms that fresh authority and every persisted continuation/delegation
    * policy were reissued successfully. Executors must call this exactly once,
-   * before settling tools, writing artifacts, or starting sampling.
+   * before settling tools, writing artifacts, or starting the worker session.
    */
   onPolicyReady?: () => Promise<void> | void;
-  /** Receives diagnostics even when sampling throws. Callback failures are ignored. */
+  /** Receives diagnostics even when worker execution throws. Callback failures are ignored. */
   onDiagnostics?: (diagnostics: PiWorkerRunDiagnostics) => void;
-  /** Persist the application continuation ID before the first sampling request. */
-  onThreadStarted?: (threadId: string) => Promise<void> | void;
+  /** Persist the application continuation ID before the first native request. */
+  onContinuationStarted?: (continuationId: string) => Promise<void> | void;
 }
 
 export type PiWorkerContinuationValidationRequest = Pick<
   PiWorkerRequest,
   | "kind"
   | "subagents"
-  | "resumeThreadId"
+  | "resumeContinuationId"
   | "artifactContext"
   | "executionContext"
   | "artifactWriterContext"
 >;
 
 export interface PiWorkerResult {
-  threadId?: string;
+  continuationId?: string;
   finalResponse: string;
   diagnostics?: PiWorkerDiagnostic[];
   runDiagnostics?: PiWorkerRunDiagnostics;
@@ -371,7 +371,7 @@ export interface PiWorkerResult {
 }
 
 /**
- * Sanitized sampling evidence that is safe to persist in SQLite and manifests.
+ * Sanitized worker evidence that is safe to persist in SQLite and manifests.
  *
  * Never add raw command text, command output, prompts, or repository paths
  * here. The coordinator only needs stable classifications that explain why a
@@ -400,7 +400,7 @@ export interface DeepScanLogEvent {
   workerId?: string;
   kind?: DeepScanWorkerKind;
   attempt?: number;
-  threadId?: string;
+  continuationId?: string;
   count?: number;
   completed?: number;
   newFindings?: number;

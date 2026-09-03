@@ -994,7 +994,7 @@ export class DeepScanCoordinator {
         resultPath: worker.resultManifestPath,
         completionSequence: worker.completionSequence,
         attempt: worker.attempt,
-        ...(worker.threadId ? { threadId: worker.threadId } : {}),
+        ...(worker.continuationId ? { continuationId: worker.continuationId } : {}),
         ...evidence
       });
     }
@@ -1064,7 +1064,7 @@ export class DeepScanCoordinator {
         resultPath: worker.resultManifestPath,
         newFindings,
         attempt: worker.attempt,
-        ...(worker.threadId ? { threadId: worker.threadId } : {}),
+        ...(worker.continuationId ? { continuationId: worker.continuationId } : {}),
         ...evidence,
         run: { ...this.state, noNewStreak }
       });
@@ -1093,7 +1093,7 @@ export class DeepScanCoordinator {
         kind: worker.kind,
         status,
         attempt: worker.attempt,
-        ...(worker.threadId ? { threadId: worker.threadId } : {}),
+        ...(worker.continuationId ? { continuationId: worker.continuationId } : {}),
         promptPath: worker.promptPath,
         artifactDir: worker.artifactDir,
         ...await persistedWorkerEvidence(worker),

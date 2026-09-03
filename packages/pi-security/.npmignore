@@ -48,6 +48,4 @@
 /requirements-test.txt
 /tsconfig.json
 /scripts-build.mjs
-/main.ts
-/server.ts
-/artifact-writer-main.ts
+/lifecycle.ts

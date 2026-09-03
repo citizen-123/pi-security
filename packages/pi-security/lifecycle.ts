@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 import {
   assertPathInside,
@@ -28,18 +27,18 @@ import {
 } from "./src/enforcement-capabilities.js";
 import { missingPythonHelperMessage, resolvePythonCommand } from "./src/python_command.js";
 import type { ScanResults } from "./src/types.js";
-import { MCP_APP_VERSION } from "./src/version.js";
 import {
   handoffClaimTokenSchema,
   recoveryHandoffClaimTokenSchema,
   registerScanHandoffTools
-} from "./src/server/handoff-tools.js";
-import { registerCompactArtifactTools } from "./src/server/compact-artifact-tools.js";
+} from "./src/lifecycle/handoff-tools.js";
+import { registerCompactArtifactTools } from "./src/lifecycle/compact-artifact-tools.js";
 import {
-  createLifecycleCatalogServer,
-  type LifecycleRegistrationServer,
-  type LifecycleToolCatalog
-} from "./src/server/lifecycle-catalog.js";
+  createLifecycleCatalogCollector,
+  type LifecycleRequestContext,
+  type LifecycleToolCatalog,
+  type LifecycleToolRegistrar,
+} from "./src/lifecycle/catalog.js";
 import { createScanArtifactContext } from "./src/artifact-context.js";
 import { recordPiSecurityScanDraftViaWorkbench } from "./src/artifact-scan-draft.js";
 import {
@@ -49,9 +48,7 @@ import {
   validateResumableWorkerPolicies,
 } from "./src/deep-scan/registry.js";
 import {
-  SamplingWorkerExecutor,
-  supportsSamplingTools,
-  type SamplingClient
+  NativePiWorkerExecutor,
 } from "./src/deep-scan/executor.js";
 import { WorkbenchDeepScanStore } from "./src/deep-scan/store.js";
 import type { DeepScanRunState } from "./src/deep-scan/types.js";
@@ -65,7 +62,6 @@ const MODULE_DIRECTORY = typeof __dirname === "string"
 const PACKAGE_ROOT = basename(MODULE_DIRECTORY) === "dist"
   ? resolve(MODULE_DIRECTORY, "..")
   : MODULE_DIRECTORY;
-const USER_INPUT_WAIT_TIMEOUT_MS = 14 * 60 * 1000;
 const WORKBENCH_COMMANDS_WITHOUT_DATABASE = new Set(["inspect-target", "inspect-setup"]);
 const READ_ONLY_PREFLIGHT_ENV = "PI_SECURITY_WORKBENCH_READ_ONLY_PREFLIGHT";
 const READ_ONLY_PREFLIGHT_NOT_FOUND_EXIT = 66;
@@ -104,7 +100,7 @@ let fallbackWorkbenchStateDir: Promise<string> | undefined;
 let fallbackWorkbenchStateLogged = false;
 let persistentWorkbenchStateSucceeded = false;
 let workbenchStateSelectionTail: Promise<void> = Promise.resolve();
-let trustedServerExecutionContext: Promise<ExecutionPolicyContext> | undefined;
+let trustedLifecycleExecutionContext: Promise<ExecutionPolicyContext> | undefined;
 let trustedPreflightExecutionContext: Promise<ExecutionPolicyContext> | undefined;
 
 const userContextSchema = z.string().trim().min(1);
@@ -118,7 +114,10 @@ async function scanRootPathWithoutCreating(): Promise<string> {
 }
 
 async function scanRoot(): Promise<string> {
-  if (CONFIGURED_SCAN_ROOT) return CONFIGURED_SCAN_ROOT;
+  if (CONFIGURED_SCAN_ROOT) {
+    await fs.mkdir(CONFIGURED_SCAN_ROOT, { recursive: true, mode: 0o700 });
+    return CONFIGURED_SCAN_ROOT;
+  }
   if (!defaultScanRoot) {
     const root = await scanRootPathWithoutCreating();
     defaultScanRoot = fs.mkdir(root, { recursive: true, mode: 0o700 }).then(() => root);
@@ -198,8 +197,8 @@ async function assertPersistedScanRootAuthority(scanDir: string): Promise<void> 
   }
 }
 
-function serverExecutionContext(): Promise<ExecutionPolicyContext> {
-  trustedServerExecutionContext ??= (async () => {
+function lifecycleExecutionContext(): Promise<ExecutionPolicyContext> {
+  trustedLifecycleExecutionContext ??= (async () => {
     const configuredRoot = await scanRoot();
     await fs.mkdir(configuredRoot, { recursive: true, mode: 0o700 });
     const artifactRoot = await canonicalBoundDirectory(
@@ -209,10 +208,10 @@ function serverExecutionContext(): Promise<ExecutionPolicyContext> {
     return createExecutionPolicyContext({
       profile: "security-artifact-writer",
       target: { root: artifactRoot },
-      scan: { id: "pi-security-server", artifactRoot },
+      scan: { id: "pi-security-lifecycle", artifactRoot },
     });
   })();
-  return trustedServerExecutionContext;
+  return trustedLifecycleExecutionContext;
 }
 
 function preflightExecutionContext(): Promise<ExecutionPolicyContext> {
@@ -379,7 +378,7 @@ const startDeepScanSchema = {
   userContext: editableUserContextSchema.optional()
     .describe("Optional security focus supplied by the user."),
   handoffClaimToken: handoffClaimTokenSchema.optional()
-    .describe("Existing Deep Scan continuation claim. Pass the same token on every scanId resume, including after an MCP server restart.")
+    .describe("Existing Deep Scan continuation claim. Pass the same token on every scanId resume, including after a Pi restart.")
 };
 const continuationMutationClaimSchema = {
   handoffClaimToken: handoffClaimTokenSchema.optional().describe("Opaque continuation token returned by the native launcher. Pass it on every progress, completion, or failure update after a resume.")
@@ -414,7 +413,7 @@ const progressSchema = {
   phaseProgressUnit: phaseProgressUnitSchema.optional()
     .describe("What phaseItemsTotal and phaseItemsCompleted count for the current phase."),
   preflightChecks: z.array(currentScanPreflightCheckSchema).max(32).optional()
-    .describe("Current standard or diff scan preflight results. Project every helper results entry to capability, reason, severity, and status only. The server derives the item counts and visible block/warn attention items."),
+    .describe("Current standard or diff scan preflight results. Project every helper results entry to capability, reason, severity, and status only. The workbench derives the item counts and visible block/warn attention items."),
   reportableFindingsCount: z.number().int().nonnegative().optional(),
   reviewItemsCompleted: z.number().int().nonnegative().optional()
     .describe("Cumulative completed reviews or coverage surfaces in the current discovery pass. Increment only after the corresponding review is complete."),
@@ -515,27 +514,17 @@ const repositoryListSchema = {
   ...targetCollectionFiltersSchema,
   status: z.enum(["scanned", "not_scanned", "open_findings"]).optional()
 };
-export function createPiSecurityServer(): McpServer {
-  const server = new McpServer(
-    { name: "pi-security", version: MCP_APP_VERSION },
-    { capabilities: { logging: {} } }
-  );
-  registerPiSecurityLifecycleTools(server as unknown as LifecycleRegistrationServer);
-  return server;
-}
 
 export function createPiSecurityLifecycleCatalog(): LifecycleToolCatalog {
-  const catalog = createLifecycleCatalogServer();
-  registerPiSecurityLifecycleTools(catalog.server);
+  const catalog = createLifecycleCatalogCollector();
+  registerPiSecurityLifecycleTools(catalog.registrar);
   return {
     tools: catalog.registrations,
-    dispose() {
-      catalog.server.server.onclose?.();
-    }
+    dispose: () => catalog.registrar.dispose(),
   };
 }
 
-function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): void {
+function registerPiSecurityLifecycleTools(registrar: LifecycleToolRegistrar): void {
   const deepScanCoordinators = new DeepScanCoordinatorRegistry();
   const deepScanStartLock = new DeepScanStartLock();
   const deepScanExecutionContexts = new Map<string, ExecutionPolicyContext>();
@@ -554,7 +543,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     runWorkbench,
     async (scanId) => (
       deepScanExecutionContexts.get(scanId ?? "")
-      ?? await serverExecutionContext()
+      ?? await lifecycleExecutionContext()
     ),
     runPreflightWorkbench,
   );
@@ -562,11 +551,13 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     claimToken: string;
     threadId: string;
   }>();
-  server.server.onclose = () => deepScanCoordinators.shutdown("mcp_transport_closed");
+  registrar.onDispose(() => {
+    void deepScanCoordinators.shutdown("native_extension_closed");
+  });
   const appMeta = { ui: { visibility: ["app"] as const } };
   const modelActionMeta = { ui: { visibility: ["model"] as const } };
 
-  server.registerTool("start_pi_security_standard_scan", {
+  registrar.registerTool("start_pi_security_standard_scan", {
     title: "Start or Join Pi Security Standard Scan",
     description: "Headless and CLI only. Start or rejoin a Standard security scan. Do not use for desktop scans, Review changes, Deep Scan, or an existing externally managed scan. Use the returned authoritative scanId, scanDir, and handoffClaimToken throughout preflight, reporting, and completion.",
     inputSchema: startHeadlessStandardScanSchema,
@@ -626,7 +617,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     };
   });
 
-  server.registerTool("start_pi_security_prompt_only_scan", {
+  registrar.registerTool("start_pi_security_prompt_only_scan", {
     title: "Start Pi Security Prompt-Only Scan",
     description: "Start or rejoin a Standard or diff Pi Security scan from its owning conversation. Use the returned authoritative scanId and scanDir. Standard and diff scans save progress checkpoints before their final semantic draft; the workbench writes the unsealed canonical artifacts. Complete the same scan once. Deep Scan uses start_pi_security_deep_scan instead.",
     inputSchema: startPromptOnlyScanSchema,
@@ -654,51 +645,43 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     return promptOnlyScanResult(promptOnly);
   });
 
-  server.registerTool("request_pi_security_user_input", {
+  registrar.registerTool("request_pi_security_user_input", {
     title: "Request Pi Security User Input",
-    description: "Fallback for interactive Pi Security workflows when the host-native request_user_input tool is unavailable. Presents one to three non-sensitive multiple-choice questions through standard MCP form elicitation and waits for the user's response. Never call this tool in headless, automation, or other non-interactive sessions.",
+    description: "Present one to three non-sensitive multiple-choice questions through native Pi UI and wait for the user's response. Never call this tool in headless, automation, or other non-interactive sessions.",
     inputSchema: requestUserInputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     _meta: modelActionMeta
   }, async ({ questions }, extra) => {
     const signal = abortSignalFromExtra(extra);
-    if (!server.server.getClientCapabilities()?.elicitation?.form) {
-      return userInputToolResult("unavailable");
-    }
+    if (!extra.requestUserInput) return userInputToolResult("unavailable");
     try {
-      const result = await server.server.elicitInput(
-        buildUserInputElicitation(questions),
-        {
-          timeout: USER_INPUT_WAIT_TIMEOUT_MS,
-          ...(signal ? { signal } : {})
-        }
-      );
-      if (result.action !== "accept") {
-        return userInputToolResult(result.action === "decline" ? "declined" : "cancelled");
+      const result = await extra.requestUserInput(questions, signal);
+      if (result.status !== "accepted") {
+        return userInputToolResult(result.status);
       }
-      if (!isJsonObject(result.content)) {
-        throw new Error("Accepted user input did not contain structured answers.");
-      }
-      const answers: Record<string, string> = {};
+      const answers = result.answers ?? {};
       for (const question of questions) {
-        const answer = result.content[question.id];
+        const answer = answers[question.id];
         if (
-          typeof answer !== "string" ||
-          !question.options.some((option) => option.label === answer)
+          typeof answer !== "string"
+          || !question.options.some((option) => option.label === answer)
         ) {
           throw new Error(`User input did not contain a valid answer for ${question.id}.`);
         }
-        answers[question.id] = answer;
       }
       return userInputToolResult("accepted", answers);
     } catch (error) {
       if (signal?.aborted) throw error;
-      await logUserInputFailure(server, error);
+      console.error(JSON.stringify({
+        component: "pi_security_user_input",
+        event: "native_ui_failed",
+        ...boundedErrorData(error),
+      }));
       return userInputToolResult("unavailable");
     }
   });
 
-  server.registerTool("open_pi_security_workspace", {
+  registrar.registerTool("open_pi_security_workspace", {
     title: "Open Pi Security",
     description: "App-only. Create a native Pi Security workspace with the target and requested standard, diff, or deep mode, or reopen one owned by this thread by passing only sessionId. Scope is inside targetPath; use '.' or omit scope for the whole target.",
     inputSchema: openSchema,
@@ -729,7 +712,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     );
   });
 
-  server.registerTool("inspect_pi_security_target", {
+  registrar.registerTool("inspect_pi_security_target", {
     title: "Inspect Pi Security Target",
     description: "App-only. Validate a local target directory and derive its display and Git metadata without saving setup.",
     inputSchema: targetInspectionSchema,
@@ -743,16 +726,13 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     };
   });
 
-  server.registerTool("inspect_pi_security_setup", {
+  registrar.registerTool("inspect_pi_security_setup", {
     title: "Validate Pi Security Setup",
     description: "App-only. Resolve and validate the complete local target, scope, mode, and exact Git change set without saving setup.",
     inputSchema: setupInspectionSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _meta: appMeta
   }, async ({ targetPath, scope, mode, diffTarget }, extra) => {
-    if (mode === "deep" && !supportsSamplingTools(server.server.getClientCapabilities())) {
-      return toolErrorResult(deepScanSamplingToolsCapabilityMessage());
-    }
     const setup = await runWorkbench([
       "inspect-setup",
       "--target-path",
@@ -769,7 +749,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     };
   });
 
-  server.registerTool("submit_pi_security_setup", {
+  registrar.registerTool("submit_pi_security_setup", {
     title: "Save Pi Security Setup",
     description: "App-only. Validate and save bounded target, scope, mode, and optional context selections.",
     inputSchema: submissionSchema,
@@ -792,7 +772,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     ], userContext) as WorkspaceState);
   });
 
-  server.registerTool("start_pi_security_scan", {
+  registrar.registerTool("start_pi_security_scan", {
     title: "Start Pi Security Scan",
     description: "App-only. Create a scan record and its local artifact directory before Pi analysis begins.",
     inputSchema: startScanSchema,
@@ -832,7 +812,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
         root,
         ...(!CONFIGURED_SCAN_ROOT ? ["--private-scan-root"] : []),
       ], executionContext) as WorkspaceState;
-      await serverExecutionContext();
+      await lifecycleExecutionContext();
       return workspace;
     };
     if (existingWorkspace.mode !== "deep") {
@@ -864,16 +844,6 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
         }));
       }
     }
-    if (!supportsSamplingTools(server.server.getClientCapabilities())) {
-      return unsupportedEnforcementToolResult(describePiEnforcementCapabilities({
-        kind: "availability",
-        piTools: true,
-        samplingTools: false,
-        artifactRoots: true,
-        trustedWorkbench: true,
-        continuationPolicy: true,
-      }));
-    }
     let targetMechanisms: readonly PlatformEnforcementMechanism[] = [];
     let artifactMechanisms: readonly PlatformEnforcementMechanism[] = [];
     try {
@@ -895,7 +865,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
         const enforcementCapabilities = describePiEnforcementCapabilities({
           kind: "availability",
           piTools: true,
-          samplingTools: true,
+          workerSessions: true,
           targetHandles: true,
           artifactRoots: true,
           trustedWorkbench: true,
@@ -917,7 +887,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
       return unsupportedEnforcementToolResult(describePiEnforcementCapabilities({
         kind: "availability",
         piTools: true,
-        samplingTools: true,
+        workerSessions: true,
         targetHandles: targetMechanisms.length > 0,
         artifactRoots: artifactMechanisms.length > 0,
         trustedWorkbench: true,
@@ -938,24 +908,13 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     }
   });
 
-  server.registerTool("start_pi_security_deep_scan", {
+  registrar.registerTool("start_pi_security_deep_scan", {
     title: "Start or Join Pi Security Deep Scan",
     description: "Run or rejoin independent Standard security scans and semantically merge their validated findings. Pass scanId and its handoffClaimToken to resume, or targetPath to start headlessly. The call blocks until the aggregate draft is ready, fails, or is canceled. On success, manifestPath identifies the canonical parent scan-manifest.json; call complete_pi_security_scan once.",
     inputSchema: startDeepScanSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _meta: modelActionMeta
   }, async ({ scanId, targetPath, scope, userContext, handoffClaimToken }, extra) => {
-    const samplingAvailable = supportsSamplingTools(server.server.getClientCapabilities());
-    if (!samplingAvailable) {
-      return unsupportedEnforcementToolResult(describePiEnforcementCapabilities({
-        kind: "availability",
-        piTools: true,
-        samplingTools: false,
-        artifactRoots: true,
-        trustedWorkbench: true,
-        continuationPolicy: true,
-      }));
-    }
     const hasScanId = scanId !== undefined;
     const hasTarget = targetPath !== undefined;
     const normalizedUserContext = userContext || undefined;
@@ -976,9 +935,10 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
       return toolErrorResult("Starting or joining a Deep Scan requires the owning host session context.");
     }
     const modelSettings = piModelSettingsFromExtra(extra);
-    const continuationPolicyValidator = new SamplingWorkerExecutor(
-      server.server as LifecycleRegistrationServer["server"] & SamplingClient,
-    );
+    const continuationPolicyValidator = new NativePiWorkerExecutor({
+      model: extra.model,
+      thinkingLevel: extra.thinkingLevel,
+    });
     let targetMechanisms: readonly PlatformEnforcementMechanism[] = [];
     let artifactMechanisms: readonly PlatformEnforcementMechanism[] = [];
     const preparation = await deepScanStartLock.run(async () => {
@@ -1031,7 +991,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
       const enforcementCapabilities = describePiEnforcementCapabilities({
         kind: "availability",
         piTools: true,
-        samplingTools: true,
+        workerSessions: true,
         targetHandles: true,
         artifactRoots: true,
         trustedWorkbench: true,
@@ -1076,15 +1036,13 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
         registry: deepScanCoordinators,
         options: {
           store: deepScanStore,
-          executor: new SamplingWorkerExecutor(
-            server.server as LifecycleRegistrationServer["server"] & SamplingClient,
-            {
-              ...(begun.run.model ? { model: begun.run.model } : {}),
-              ...(begun.run.reasoningEffort
-                ? { reasoningEffort: begun.run.reasoningEffort }
-                : {})
-            }
-          ),
+          executor: new NativePiWorkerExecutor({
+            model: resolveWorkerModel(extra, begun.run.model),
+            thinkingLevel: nativeThinkingLevel(
+              begun.run.reasoningEffort,
+              extra.thinkingLevel,
+            ),
+          }),
           packageRoot: PACKAGE_ROOT,
           log: logDeepScanEvent,
           handoffClaimToken,
@@ -1125,7 +1083,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
         ? unsupportedEnforcementToolResult(describePiEnforcementCapabilities({
             kind: "availability",
             piTools: true,
-            samplingTools: true,
+            workerSessions: true,
             targetHandles: targetMechanisms.length > 0,
             artifactRoots: artifactMechanisms.length > 0,
             trustedWorkbench: true,
@@ -1180,9 +1138,9 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     return workspaceResult(workspace as unknown as WorkspaceState);
   };
 
-  server.registerTool("cancel_pi_security_scan", {
+  registrar.registerTool("cancel_pi_security_scan", {
     title: "Cancel Pi Security Scan",
-    description: "Stop a running scan from its owning host session, prevent further progress or completion updates, and cancel any active deterministic Deep Scan sampling workers.",
+    description: "Stop a running scan from its owning host session, prevent further progress or completion updates, and cancel any active deterministic Deep Scan workers.",
     inputSchema: scanSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     _meta: modelActionMeta
@@ -1194,15 +1152,15 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     return cancelSecurityScan(scanId, threadId);
   });
 
-  server.registerTool("cancel_pi_security_scan_from_app", {
+  registrar.registerTool("cancel_pi_security_scan_from_app", {
     title: "Cancel Pi Security Scan From App",
-    description: "App-only. Stop a running scan from the native Pi Security workbench, prevent further progress or completion updates, and cancel any active deterministic Deep Scan sampling workers.",
+    description: "App-only. Stop a running scan from the native Pi Security workbench, prevent further progress or completion updates, and cancel any active deterministic Deep Scan workers.",
     inputSchema: scanSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     _meta: appMeta
   }, async ({ scanId }) => cancelSecurityScan(scanId));
 
-  server.registerTool("recover_pi_security_scan_results", {
+  registrar.registerTool("recover_pi_security_scan_results", {
     title: "Recover Pi Security Scan Results",
     description: "App-only. Explicitly validate and republish retained checkpoints for one stopped scan, updating its artifacts, finding index, and counts.",
     inputSchema: scanSchema,
@@ -1213,9 +1171,9 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     "Recovered retained Pi Security scan results."
   ));
 
-  registerScanHandoffTools(server, { appMeta, runWorkbench, workspaceResult });
+  registerScanHandoffTools(registrar, { appMeta, runWorkbench, workspaceResult });
 
-  server.registerTool("get_pi_security_scan", {
+  registrar.registerTool("get_pi_security_scan", {
     title: "Get Pi Security Scan",
     description: "App-only. Read package-owned scan state for local security monitoring without claiming a pending Pi handoff.",
     inputSchema: scanReadSchema,
@@ -1231,7 +1189,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     "Loaded Pi Security scan state."
   ));
 
-  server.registerTool("list_pi_security_scans", {
+  registrar.registerTool("list_pi_security_scans", {
     title: "List Pi Security Scans",
     description: "App-only. Read persisted package-owned scan summaries for local security navigation.",
     inputSchema: scanListSchema,
@@ -1250,7 +1208,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     "Loaded Pi Security scan summaries."
   ));
 
-  server.registerTool("list_pi_security_global_findings", {
+  registrar.registerTool("list_pi_security_global_findings", {
     title: "List Pi Security Global Findings",
     description: "App-only. Read the latest package-owned finding occurrence for each stable repository target and finding identity.",
     inputSchema: globalFindingsPageSchema,
@@ -1269,7 +1227,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     "Loaded Pi Security global findings."
   ));
 
-  server.registerTool("list_pi_security_repositories", {
+  registrar.registerTool("list_pi_security_repositories", {
     title: "List Pi Security Repositories",
     description: "App-only. Read package-owned repository summaries and their latest scan state.",
     inputSchema: repositoryListSchema,
@@ -1287,7 +1245,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     "Loaded Pi Security repositories."
   ));
 
-  server.registerTool("get_pi_security_scan_context", {
+  registrar.registerTool("get_pi_security_scan_context", {
     title: "Get Pi Security Scan Context",
     description: "Load the authoritative target, mode, optional user context, artifact directory, live progress, and optional selected finding for a launched scan. Validated legacy finding details may be migrated.",
     inputSchema: scanContextSchema,
@@ -1358,7 +1316,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     return scanActionResult(updated, "Updated Pi Security scan context.");
   };
 
-  server.registerTool("update_pi_security_scan_context", {
+  registrar.registerTool("update_pi_security_scan_context", {
     title: "Update Pi Security Scan Context",
     description: "Replace the context for a running scan. The next phase uses the new value; workers in the current phase keep their original context.",
     inputSchema: scanContextUpdateSchema,
@@ -1377,7 +1335,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     });
   });
 
-  server.registerTool("update_pi_security_scan_context_from_app", {
+  registrar.registerTool("update_pi_security_scan_context_from_app", {
     title: "Update Pi Security Scan Context From App",
     description: "App-only. Replace the context for the running scan attached to this workspace.",
     inputSchema: appScanContextUpdateSchema,
@@ -1396,7 +1354,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     });
   });
 
-  server.registerTool("update_pi_security_scan_progress", {
+  registrar.registerTool("update_pi_security_scan_progress", {
     title: "Update Pi Security Scan Progress",
     description: "Record a meaningful live scan phase or coverage milestone in the Pi Security workbench.",
     inputSchema: progressSchema,
@@ -1461,7 +1419,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     ], serializedPreflightIssues), "Updated Pi Security scan progress.");
   });
 
-  server.registerTool("complete_pi_security_scan", {
+  registrar.registerTool("complete_pi_security_scan", {
     title: "Complete Pi Security Scan",
     description: "Finalization only: validate and seal already-authored scan-manifest.json, findings.json, and coverage.json, generate report.md, index findings, and mark the scan complete. For an app-backed running scan, scan-manifest.json is an unsealed draft and must omit scan.sealedAt and scan.artifacts; this tool supplies the exact workbench timestamps, seal, artifact digests, and derived finding identities. Call only after those canonical files exist; this tool does not create missing artifacts or run skipped phases. If it fails, surface the exact error and stop the current response without retrying completion or returning a final, no-findings, structured, or benchmark response.",
     inputSchema: completeScanSchema,
@@ -1480,7 +1438,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     }
   });
 
-  server.registerTool("fail_pi_security_scan", {
+  registrar.registerTool("fail_pi_security_scan", {
     title: "Fail Pi Security Scan",
     description: "Permanently mark a launched Pi Security scan as failed only after a confirmed unrecoverable blocker. For explicit user cancellation, use cancel_pi_security_scan instead. This terminal action cannot be resumed; incomplete or otherwise resumable work must remain running.",
     inputSchema: failSchema,
@@ -1499,7 +1457,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     return scanActionResult(failed, "Recorded the Pi Security scan failure.");
   });
 
-  server.registerTool("set_pi_security_finding_triage", {
+  registrar.registerTool("set_pi_security_finding_triage", {
     title: "Update Pi Security Finding Status",
     description: "App-only. Persist a completed finding's local open or closed triage status. Closed findings require one bounded close reason; reopening clears it.",
     inputSchema: findingTriageSchema,
@@ -1515,7 +1473,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     ...definedArg("--note", note)
   ]), "Updated the local Pi Security finding status."));
 
-  server.registerTool("request_pi_security_finding_remediation", {
+  registrar.registerTool("request_pi_security_finding_remediation", {
     title: "Request Pi Security Finding Remediation",
     description: "App-only. Queue a completed finding for Pi remediation before sending the host a generate or regenerate request.",
     inputSchema: findingRemediationRequestSchema,
@@ -1531,7 +1489,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     actionToken
   ]), "Queued the local Pi Security finding remediation request."));
 
-  server.registerTool("request_pi_security_finding_remediation_action", {
+  registrar.registerTool("request_pi_security_finding_remediation_action", {
     title: "Request Pi Security Finding Remediation Action",
     description: "App-only. Durably claim an apply or verify handoff before asking Pi to perform the local working-tree operation.",
     inputSchema: findingRemediationActionRequestSchema,
@@ -1551,7 +1509,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     actionToken
   ]), `Queued the local Pi Security finding remediation ${action} request.`));
 
-  server.registerTool("claim_pi_security_finding_remediation_resend", {
+  registrar.registerTool("claim_pi_security_finding_remediation_resend", {
     title: "Claim Pi Security Finding Remediation Resend",
     description: "App-only. Atomically take ownership of an unowned or stale remediation host request before resending it.",
     inputSchema: findingRemediationClaimSchema,
@@ -1567,7 +1525,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     actionToken
   ]), "Claimed the local Pi Security finding remediation resend."));
 
-  server.registerTool("release_pi_security_finding_remediation_claim", {
+  registrar.registerTool("release_pi_security_finding_remediation_claim", {
     title: "Release Pi Security Finding Remediation Claim",
     description: "App-only. Release a locally owned remediation host request after message delivery fails.",
     inputSchema: findingRemediationClaimSchema,
@@ -1583,7 +1541,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     actionToken
   ]), "Released the local Pi Security finding remediation claim."));
 
-  server.registerTool("cancel_pi_security_finding_remediation_request", {
+  registrar.registerTool("cancel_pi_security_finding_remediation_request", {
     title: "Cancel Pi Security Finding Remediation Request",
     description: "App-only. Roll back an owned remediation request after the user declines its host follow-up.",
     inputSchema: findingRemediationClaimSchema,
@@ -1599,7 +1557,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     actionToken
   ]), "Canceled the local Pi Security finding remediation request."));
 
-  server.registerTool("mark_pi_security_finding_remediation_delivered", {
+  registrar.registerTool("mark_pi_security_finding_remediation_delivered", {
     title: "Mark Pi Security Finding Remediation Delivered",
     description: "App-only. Seal host-message delivery ownership before Pi starts a remediation worker.",
     inputSchema: findingRemediationClaimSchema,
@@ -1615,7 +1573,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     actionToken
   ]), "Marked the local Pi Security finding remediation request as delivered."));
 
-  server.registerTool("set_pi_security_finding_remediation", {
+  registrar.registerTool("set_pi_security_finding_remediation", {
     title: "Update Pi Security Finding Remediation",
     description: "Persist the bounded local remediation workflow state for a completed finding. The UI may mark a request as queued; Pi records generated, applied, verifying, verified, or failed states after performing the corresponding work.",
     inputSchema: findingRemediationSchema,
@@ -1639,7 +1597,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     ...definedArg("--verification-summary", verificationSummary)
   ]), "Updated the local Pi Security finding remediation state."));
 
-  server.registerTool("export_pi_security_findings", {
+  registrar.registerTool("export_pi_security_findings", {
     title: "Export Pi Security Findings",
     description: "App-only. Export retained local findings from completed, failed, or canceled scans as canonical JSON, deterministic SARIF, or a CSV projection. Exported files remain inside the sealed scan directory.",
     inputSchema: findingsExportSchema,
@@ -1653,7 +1611,7 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     format
   ]), `Exported Pi Security findings as ${format.toUpperCase()}.`));
 
-  server.registerTool("list_pi_security_findings", {
+  registrar.registerTool("list_pi_security_findings", {
     title: "List Pi Security Findings",
     description: "App-only. Load one bounded page of indexed findings for a completed local scan, migrating validated legacy finding details when needed.",
     inputSchema: findingsPageSchema,
@@ -1670,12 +1628,12 @@ function registerPiSecurityLifecycleTools(server: LifecycleRegistrationServer): 
     ...optionalNumberArg("--limit", limit)
   ]), "Loaded a local Pi Security findings page."));
 
-  registerCompactArtifactTools(server, {
+  registerCompactArtifactTools(registrar, {
     runWorkbench,
     packageRoot: PACKAGE_ROOT,
     resolveHandoffClaimToken: (scanId, requestContext) => {
       const claim = authenticatedArtifactClaims.get(scanId);
-      return claim && claim.threadId === threadIdFromExtra(requestContext)
+      return claim && requestContext && claim.threadId === threadIdFromExtra(requestContext)
         ? claim.claimToken
         : undefined;
     }
@@ -1901,40 +1859,6 @@ function policyFailureStructuredContent(
   return failure ? { error: { ...failure } } : undefined;
 }
 
-function deepScanSamplingToolsCapabilityMessage(): string {
-  return [
-    "Deep Scan requires an MCP 2025-11-25 client that advertises sampling.tools.",
-    "Basic sampling without tool use cannot inspect the coordinator-bound repository.",
-    "Use a Standard scan or reconnect with sampling tool support."
-  ].join(" ");
-}
-
-function buildUserInputElicitation(
-  questions: z.infer<typeof userInputQuestionsSchema>
-) {
-  const isSingleQuestion = questions.length === 1;
-  return {
-    mode: "form" as const,
-    message: isSingleQuestion
-      ? questions[0]!.question
-      : "Pi Security needs your input before it can continue.",
-    requestedSchema: {
-      type: "object" as const,
-      properties: Object.fromEntries(questions.map((question) => [
-        question.id,
-        {
-          type: "string" as const,
-          title: question.header,
-          oneOf: question.options.map((option) => ({
-            const: option.label,
-            title: option.label
-          }))
-        }
-      ])),
-      required: questions.map((question) => question.id)
-    }
-  };
-}
 
 function userInputToolResult(
   status: "accepted" | "declined" | "cancelled" | "unavailable",
@@ -1956,27 +1880,6 @@ function userInputToolResult(
   };
 }
 
-async function logUserInputFailure(
-  server: Pick<LifecycleRegistrationServer, "sendLoggingMessage">,
-  error: unknown
-): Promise<void> {
-  const errorData = boundedErrorData(error);
-  try {
-    await server.sendLoggingMessage({
-      level: "warning",
-      logger: "pi-security.user-input",
-      data: {
-        event: "elicitation_failed",
-        error: errorData
-      }
-    });
-  } catch {
-    console.warn(
-      "Pi Security user-input elicitation failed:",
-      JSON.stringify(errorData)
-    );
-  }
-}
 
 function boundedErrorData(error: unknown): { message: string; name: string } {
   const name = error instanceof Error && error.name.trim() ? error.name : "UnknownError";
@@ -1984,7 +1887,7 @@ function boundedErrorData(error: unknown): { message: string; name: string } {
     ? error.message
     : typeof error === "string"
       ? error
-      : "Unknown user-input elicitation failure.";
+      : "Unknown user-input UI failure.";
   return {
     name: name.slice(0, 128),
     message: message.slice(0, 1000)
@@ -2120,7 +2023,7 @@ async function runWorkbench(
   args: string[],
   input?: string
 ): Promise<JsonObject> {
-  const executionContext = await serverExecutionContext();
+  const executionContext = await lifecycleExecutionContext();
   let pythonCommand: string | undefined;
   try {
     pythonCommand = await resolvePythonCommand();
@@ -2339,52 +2242,58 @@ function isJsonObject(value: unknown): value is JsonObject {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function threadIdFromExtra(extra: unknown): string | undefined {
-  if (!isJsonObject(extra)) return undefined;
-  if (typeof extra.sessionId === "string" && extra.sessionId.trim()) {
-    return extra.sessionId.trim();
-  }
-  const requestInfo = isJsonObject(extra.requestInfo) ? extra.requestInfo : undefined;
-  const metadata = isJsonObject(requestInfo?._meta)
-    ? requestInfo._meta
-    : isJsonObject(extra._meta)
-      ? extra._meta
-      : undefined;
-  for (const key of ["sessionId", "session_id", "threadId", "thread_id"]) {
-    const value = metadata?.[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  const session = isJsonObject(metadata?.session) ? metadata.session : undefined;
-  if (typeof session?.id === "string" && session.id.trim()) return session.id.trim();
-  return undefined;
+function threadIdFromExtra(extra: LifecycleRequestContext): string | undefined {
+  return extra.sessionId?.trim() || undefined;
 }
 
-function piModelSettingsFromExtra(extra: unknown): {
+function piModelSettingsFromExtra(extra: LifecycleRequestContext): {
   model?: string;
   reasoningEffort?: string;
 } {
-  if (!isJsonObject(extra)) return {};
-  const requestInfo = isJsonObject(extra.requestInfo) ? extra.requestInfo : undefined;
-  const metadata = isJsonObject(requestInfo?._meta)
-    ? requestInfo._meta
-    : isJsonObject(extra._meta)
-      ? extra._meta
-      : undefined;
-  const model = typeof metadata?.model === "string"
-    ? metadata.model.trim()
-    : undefined;
-  const reasoningEffort = typeof metadata?.reasoningEffort === "string"
-    ? metadata.reasoningEffort.trim()
-    : undefined;
   return {
-    ...(model ? { model } : {}),
-    ...(reasoningEffort ? { reasoningEffort } : {})
+    ...(extra.modelId ? { model: extra.modelId } : {}),
+    ...(extra.thinkingLevel ? { reasoningEffort: extra.thinkingLevel } : {}),
   };
 }
 
-function abortSignalFromExtra(extra: unknown): AbortSignal | undefined {
-  if (!isJsonObject(extra)) return undefined;
-  return extra.signal instanceof AbortSignal ? extra.signal : undefined;
+function abortSignalFromExtra(extra: LifecycleRequestContext): AbortSignal | undefined {
+  return extra.signal;
+}
+
+function resolveWorkerModel(
+  context: LifecycleRequestContext,
+  persistedModel: string | undefined,
+): LifecycleRequestContext["model"] {
+  if (!persistedModel) return context.model;
+  const model = context.resolveModel?.(persistedModel)
+    ?? (context.model?.id === persistedModel ? context.model : undefined);
+  if (!model) {
+    throw new PolicyRecoveryRejectedError(
+      "binding_mismatch",
+      `The saved Deep Scan model ${JSON.stringify(persistedModel)} is unavailable in this Pi session.`,
+    );
+  }
+  return model;
+}
+
+function nativeThinkingLevel(
+  persisted: string | undefined,
+  current: LifecycleRequestContext["thinkingLevel"],
+): LifecycleRequestContext["thinkingLevel"] {
+  if (!persisted) return current;
+  switch (persisted) {
+    case "minimal":
+    case "low":
+    case "medium":
+    case "high":
+    case "xhigh":
+      return persisted;
+    default:
+      throw new PolicyRecoveryRejectedError(
+        "binding_mismatch",
+        `The saved Deep Scan thinking level ${JSON.stringify(persisted)} is unsupported by Pi.`,
+      );
+  }
 }
 
 function execErrorExitCode(error: unknown): number | undefined {
@@ -2403,7 +2312,7 @@ function completionFailureMessage(error: unknown): string {
   return [
     "Pi Security scan completion failed.",
     diagnostic,
-    "Stop the current response and surface this exact MCP error.",
+    "Stop the current response and surface this exact Pi Security error.",
     "Do not retry completion or return a final, no-findings, structured, or benchmark response."
   ].join("\n");
 }
@@ -2415,7 +2324,7 @@ function deepScanInvocationFailureMessage(error: unknown): string {
   return [
     "Pi Security Deep Scan discovery did not start or rejoin.",
     diagnostic,
-    "Stop the current response and surface this exact MCP error.",
+    "Stop the current response and surface this exact Pi Security error.",
     "Do not call start_pi_security_deep_scan again in this response.",
     "Do not call get_pi_security_scan_context in this response.",
     "Do not call complete_pi_security_scan in this response.",
@@ -2429,7 +2338,7 @@ function deepScanFailureMessage(run: DeepScanRunState): string {
   return [
     diagnostic,
     "This is a terminal failure of this logical Deep Scan; no successful discovery manifest was returned.",
-    "Stop further scanning and surface this exact stable MCP failure. Read the existing scan context to report saved findings and pending candidates separately, with incomplete coverage.",
+    "Stop further scanning and surface this exact stable Pi Security failure. Read the existing scan context to report saved findings and pending candidates separately, with incomplete coverage.",
     "Do not call start_pi_security_deep_scan again in this response.",
     "Do not call complete_pi_security_scan in this response.",
     "Do not start a replacement Deep Scan, call cancel for this terminal scan, claim a successful or no-findings scan, satisfy a successful-scan output schema, or emit benchmark JSON."

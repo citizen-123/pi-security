@@ -7,7 +7,7 @@ import test from "node:test";
 
 const packageRoot = resolve(import.meta.dirname, "..");
 const contract = JSON.parse(
-  await readFile(resolve(import.meta.dirname, "fixtures/lifecycle-tools.json"), "utf8")
+  await readFile(resolve(import.meta.dirname, "fixtures/native-lifecycle-tools.json"), "utf8")
 );
 
 function normalizeSchema(value, parentKey = "") {
@@ -30,9 +30,11 @@ function extensionHarness() {
   const commands = new Map();
   const events = new Map();
   const tools = new Map();
+  const sentMessages = [];
   return {
     commands,
     events,
+    sentMessages,
     tools,
     api: {
       on(name, handler) {
@@ -47,7 +49,9 @@ function extensionHarness() {
         assert.equal(tools.has(tool.name), false, `duplicate Pi tool ${tool.name}`);
         tools.set(tool.name, tool);
       },
-      sendUserMessage() {}
+      sendUserMessage(message, options) {
+        sentMessages.push({ message, options });
+      }
     }
   };
 }
@@ -86,6 +90,15 @@ test("the Pi extension exposes and executes the managed lifecycle catalog", asyn
     ].sort();
     assert.equal(contract.surfaces.standalone.length, 44);
     assert.deepEqual([...harness.tools.keys()].sort(), expectedNames);
+    assert.deepEqual(
+      [...harness.commands.keys()].sort(),
+      ["deep-security-scan", "security-diff-scan", "security-scan"],
+    );
+    await harness.commands.get("deep-security-scan").handler("focus on auth");
+    assert.deepEqual(harness.sentMessages.at(-1), {
+      message: "/deep-security-scan focus on auth",
+      options: { deliverAs: "followUp" },
+    });
 
     const contractByName = new Map(contract.tools.map((tool) => [tool.name, tool]));
     for (const name of contract.surfaces.standalone) {
@@ -98,10 +111,22 @@ test("the Pi extension exposes and executes the managed lifecycle catalog", asyn
       );
     }
 
-    const sessionId = "fixture-pi-managed-lifecycle";
+    const selectedOptions = [];
+    const sessionId = "native-lifecycle-session";
     const context = {
+      hasUI: true,
       model: undefined,
-      sessionManager: { getSessionId: () => sessionId }
+      modelRegistry: { getAvailable: () => [] },
+      sessionManager: {
+        getEntries: () => [],
+        getSessionId: () => sessionId,
+      },
+      ui: {
+        async select(_title, options) {
+          selectedOptions.push(options);
+          return options[0];
+        },
+      },
     };
     const execute = async (name, params) => {
       const registration = harness.tools.get(name);
@@ -139,6 +164,12 @@ test("the Pi extension exposes and executes the managed lifecycle catalog", asyn
       }),
       /Question IDs must be unique/u
     );
+    const input = await call("request_pi_security_user_input", {
+      questions: [duplicateQuestion],
+    });
+    assert.equal(input.status, "accepted");
+    assert.deepEqual(input.answers, { duplicate_id: "One" });
+    assert.match(selectedOptions[0][0], /^One — Choose one\./u);
     await assert.rejects(
       execute("start_pi_security_prompt_only_scan", {
         mode: "diff",

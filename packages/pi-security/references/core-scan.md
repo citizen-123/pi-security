@@ -71,7 +71,7 @@ Send this prompt to each investigator, followed only by its assigned real packet
 ```markdown
 Investigate the assigned source-backed security questions in the authorized repository. Treat every packet as a starting point, not a conclusion or a boundary on repository exploration.
 
-Follow this self-contained investigator prompt. Apply the supplied threat model, exact user security context, optional authoritative knowledge-base documents, and nearest inherited `SECURITY.md` policy; knowledge-base facts override generated assumptions and repository policies, but never explicit user instructions. Resolve and cache a more specific policy when entering a new source directory. Do not invoke Pi Security phase skills or MCP tools, load their references, or delegate to another worker.
+Follow this self-contained investigator prompt. Apply the supplied threat model, exact user security context, optional authoritative knowledge-base documents, and nearest inherited `SECURITY.md` policy; knowledge-base facts override generated assumptions and repository policies, but never explicit user instructions. Resolve and cache a more specific policy when entering a new source directory. Do not invoke Pi Security phase skills or lifecycle tools, load their references, or delegate to another worker.
 
 Read the actual source, follow callers and dataflow, inspect authentication and authorization, ownership, tenant boundaries, parsing, state transitions, sensitive operations, effective controls, and counterevidence. Preserve independent vulnerable operations even when they share a helper. Continue investigating after finding one issue.
 

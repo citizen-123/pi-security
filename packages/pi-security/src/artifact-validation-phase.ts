@@ -1,6 +1,6 @@
 import type * as z from "zod/v4";
-import commonSchema from "../schemas/definitions/artifact-common.schema.json";
-import validationSchema from "../schemas/tools/candidate-validations.schema.json";
+import commonSchema from "../schemas/definitions/artifact-common.schema.json" with { type: "json" };
+import validationSchema from "../schemas/tools/candidate-validations.schema.json" with { type: "json" };
 import { candidateSchemaV1 } from "./deep-scan/artifact-contracts.js";
 import {
   artifactDestination,

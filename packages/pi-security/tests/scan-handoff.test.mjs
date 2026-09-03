@@ -155,7 +155,7 @@ for (const mode of ["standard", "diff", "deep"]) {
   assert.doesNotMatch(
     compactPrompt,
     /coverage\.(?:mode|inventoryStrategy)\s*(?::|=|as)\s*\w+/u,
-    `${mode} handoff must not assign MCP-owned coverage metadata`
+    `${mode} handoff must not assign workbench-owned coverage metadata`
   );
 }
 const diffPrompt = buildScanHandoffPrompt({ mode: "diff", scanDir, scanId }, claimToken);

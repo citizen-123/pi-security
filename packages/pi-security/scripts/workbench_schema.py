@@ -835,6 +835,13 @@ MIGRATIONS = (
         ALTER TABLE deep_scan_runs ADD COLUMN policy_failure_message TEXT;
         """,
     ),
+    (
+        41,
+        "rename deep scan worker continuations",
+        """
+        ALTER TABLE deep_scan_workers RENAME COLUMN sdk_thread_id TO continuation_id;
+        """,
+    ),
 )
 
 
@@ -1004,6 +1011,8 @@ def apply_migrations(
                         "policy_failure_message",
                         "TEXT",
                     )
+                elif version == 41:
+                    repair_worker_continuation_column(connection)
                 continue
             if version == 6:
                 repair_thread_scoped_workspaces_migration(connection)
@@ -1388,6 +1397,21 @@ def normalize_mirror_lineage_migrations(connection: sqlite3.Connection) -> None:
             "UPDATE schema_migrations SET version = ? WHERE version = ? AND name = ?",
             (new_version, old_version, mirror_names[old_version]),
         )
+
+
+def repair_worker_continuation_column(connection: sqlite3.Connection) -> None:
+    columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(deep_scan_workers)")
+    }
+    if "continuation_id" in columns:
+        return
+    if "sdk_thread_id" not in columns:
+        raise SystemExit(
+            "The Pi Security database has no Deep Scan worker continuation column."
+        )
+    connection.execute(
+        "ALTER TABLE deep_scan_workers RENAME COLUMN sdk_thread_id TO continuation_id"
+    )
 
 
 def repair_deep_scan_migration(connection: sqlite3.Connection) -> None:

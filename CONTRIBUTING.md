@@ -6,7 +6,7 @@ documentation corrections, and pull requests are welcome.
 ## Development
 
 Pi Security is implemented in `packages/pi-security/`. The package contains the
-Pi extension, MCP server, scan workbench, schemas, skills, and tests.
+native Pi extension, scan workbench, schemas, skills, and tests.
 
 Install dependencies and run the project checks from the repository root:
 
@@ -17,7 +17,7 @@ npm test
 npm run test:pack
 ```
 
-Use Node.js 20 or newer, npm 10 or newer, and Python 3.11 or newer. Keep changes
+Use Node.js 22.19 or newer, npm 10 or newer, and Python 3.11 or newer. Keep changes
 focused, follow the existing implementation patterns, and add tests for new or
 changed observable behavior.
 

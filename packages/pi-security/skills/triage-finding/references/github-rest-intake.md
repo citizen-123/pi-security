@@ -1,6 +1,6 @@
 # GitHub REST Intake
 
-Use this reference when `$triage-finding` is invoked with a GitHub repository instead of pasted finding data.
+Use this reference when `/triage-finding` is invoked with a GitHub repository instead of pasted finding data.
 
 GitHub repository intake is a data import step. It discovers existing GitHub security findings, normalizes them into the existing triage input types, and then hands those normalized findings to the normal static triage workflow.
 

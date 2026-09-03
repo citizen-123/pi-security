@@ -141,7 +141,7 @@ def upsert_worker(
         str(artifact_dir),
         *(("--result-manifest-path", str(result_path)) if result_path is not None else ()),
         *(("--attempt", str(attempt)) if attempt is not None else ()),
-        *(("--sdk-thread-id", thread_id) if thread_id is not None else ()),
+        *(("--continuation-id", thread_id) if thread_id is not None else ()),
         *(("--error-message", error) if error is not None else ()),
         *(
             ("--replaceable-failure-kind", replaceable_failure_kind)
@@ -279,7 +279,7 @@ def test_existing_generation_safely_claims_and_reclaims_without_schema_migration
         return claim_deep_scan_coordinator(state_dir, pi_home, scan_id)
 
     with sqlite3.connect(state_dir / "workbench.sqlite3") as connection:
-        assert connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone() == (40,)
+        assert connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone() == (41,)
     assert claim()["deepScan"]["coordinatorGeneration"] == 2
     assert claim()["coordinatorDisposition"] == "observing"
     expire_deep_scan_coordinator(state_dir, scan_id)
@@ -828,7 +828,7 @@ def test_expired_generation_refunds_shutdown_canceled_discovery(
         prompt_path=prompt,
         artifact_dir=artifacts,
         attempt=1,
-        error=None if legacy else "coordinator_shutdown: mcp_transport_closed",
+        error=None if legacy else "coordinator_shutdown: native_extension_closed",
         coordinator_generation=coordinator_generation,
     )
     expire_deep_scan_coordinator(state_dir, scan_id)
@@ -3673,7 +3673,7 @@ def test_running_worker_updates_preserve_identity_and_dispatch_count(tmp_path: P
     assert initial["dispatchedCount"] == repeated["dispatchedCount"] == 1
     assert repeated_worker["startedAt"] == initial_worker["startedAt"]
     assert repeated_worker["attempt"] == initial_worker["attempt"] == 1
-    assert repeated_worker["sdkThreadId"] is None
+    assert repeated_worker["continuationId"] is None
 
     started = upsert_worker(state_dir, pi_home, **update, thread_id="thread-worker")["deepScan"]
     replayed = upsert_worker(state_dir, pi_home, **update, thread_id="thread-worker")["deepScan"]
@@ -3681,7 +3681,7 @@ def test_running_worker_updates_preserve_identity_and_dispatch_count(tmp_path: P
     replayed_worker = next(worker for worker in replayed["workers"] if worker["id"] == worker_id)
 
     assert started["dispatchedCount"] == replayed["dispatchedCount"] == 1
-    assert replayed_worker["sdkThreadId"] == started_worker["sdkThreadId"] == "thread-worker"
+    assert replayed_worker["continuationId"] == started_worker["continuationId"] == "thread-worker"
     assert replayed_worker["startedAt"] == initial_worker["startedAt"]
 
 

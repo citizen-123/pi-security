@@ -19,7 +19,7 @@ export type PlatformEnforcementMechanism =
 
 export type PiEnforcementMechanism =
   | "pi.fixed-profile-tool-dispatch"
-  | "mcp.sampling.tools"
+  | "pi.worker-session.tools"
   | "target.verified-open-handle"
   | "artifact.canonical-root-binding"
   | "workbench.fixed-bundled-command"
@@ -58,7 +58,7 @@ export interface EffectivePolicyDiagnostics {
 export interface PiEnforcementAvailability {
   readonly kind: "availability" | "effective";
   readonly piTools: boolean;
-  readonly samplingTools?: boolean;
+  readonly workerSessions?: boolean;
   readonly targetHandles?: boolean;
   readonly artifactRoots?: boolean;
   readonly trustedWorkbench?: boolean;
@@ -66,15 +66,12 @@ export interface PiEnforcementAvailability {
   readonly platformMechanisms?: readonly PlatformEnforcementMechanism[];
 }
 
-const SAMPLING_TOOLS_UNSUPPORTED = [
-  "Deep Scan requires an MCP 2025-11-25 client that advertises sampling.tools.",
-  "Basic sampling without tool use cannot inspect the coordinator-bound repository.",
-  "Use a Standard scan or reconnect with sampling tool support.",
-].join(" ");
+const WORKER_SESSIONS_UNSUPPORTED =
+  "Deep Scan requires isolated native Pi worker sessions with exact custom-tool allowlists.";
 
 const UNSUPPORTED_REASON = Object.freeze({
   piTools: "Pi Security requires fixed-profile tool registration and direct-dispatch authorization; this host cannot enforce it.",
-  samplingTools: SAMPLING_TOOLS_UNSUPPORTED,
+  workerSessions: WORKER_SESSIONS_UNSUPPORTED,
   targetHandles: "Pi Security requires verified no-follow directory handles for target access; this platform cannot enforce them.",
   artifactRoots: "Pi Security requires canonical scan-bound artifact roots; this host cannot enforce them.",
   trustedWorkbench: "Pi Security requires fixed bundled-workbench dispatch; this host cannot enforce it.",
@@ -87,7 +84,7 @@ export function describePiEnforcementCapabilities(
 ): EnforcementCapabilityReport {
   const mechanisms: PiEnforcementMechanism[] = [];
   if (input.piTools) mechanisms.push("pi.fixed-profile-tool-dispatch");
-  if (input.samplingTools === true) mechanisms.push("mcp.sampling.tools");
+  if (input.workerSessions === true) mechanisms.push("pi.worker-session.tools");
   if (input.targetHandles === true) mechanisms.push("target.verified-open-handle");
   if (input.artifactRoots === true) mechanisms.push("artifact.canonical-root-binding");
   if (input.trustedWorkbench === true) mechanisms.push("workbench.fixed-bundled-command");
@@ -98,8 +95,8 @@ export function describePiEnforcementCapabilities(
 
   const unsupportedReason = input.piTools === false
     ? UNSUPPORTED_REASON.piTools
-    : input.samplingTools === false
-      ? UNSUPPORTED_REASON.samplingTools
+    : input.workerSessions === false
+      ? UNSUPPORTED_REASON.workerSessions
       : input.targetHandles === false
         ? UNSUPPORTED_REASON.targetHandles
         : input.artifactRoots === false

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { delimiter, resolve } from "node:path";
 import { build } from "esbuild";
+process.umask(0o077);
 
 const packageRoot = resolve(import.meta.dirname, "..");
 const resolverBundle = await build({

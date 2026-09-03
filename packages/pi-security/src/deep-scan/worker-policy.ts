@@ -7,57 +7,57 @@ import {
   type ExecutionPolicyContext,
 } from "../execution-policy.js";
 
-export type SamplingPolicyAuthority = "source" | "artifactWriter" | "delegation";
+export type WorkerPolicyAuthority = "source" | "artifactWriter" | "delegation";
 
-export interface SamplingPolicyRequirement {
-  readonly authority: SamplingPolicyAuthority;
+export interface WorkerPolicyRequirement {
+  readonly authority: WorkerPolicyAuthority;
   readonly capability: ExecutionCapability;
 }
 
-export interface SamplingPolicyTool<Definition extends { name: string }> {
+export interface WorkerPolicyTool<Definition extends { name: string }> {
   readonly definition: Definition;
   readonly available: boolean;
-  readonly requirements: readonly SamplingPolicyRequirement[];
+  readonly requirements: readonly WorkerPolicyRequirement[];
 }
 
-export interface BoundMcpSamplingPolicy<Definition extends { name: string }> {
+export interface BoundWorkerPolicy<Definition extends { name: string }> {
   definitions(): Definition[];
   assertAuthorized(name: string): void;
 }
 
 /** Bind advertised definitions and direct dispatch to the same issued authorities. */
-export function bindMcpSamplingPolicy<Definition extends { name: string }>(input: {
+export function bindWorkerPolicy<Definition extends { name: string }>(input: {
   readonly source: () => ExecutionPolicyContext;
   readonly artifactWriter: () => ExecutionPolicyContext;
   readonly delegation: () => ExecutionPolicyContext;
-  readonly tools: readonly SamplingPolicyTool<Definition>[];
-}): BoundMcpSamplingPolicy<Definition> {
-  const known = new Map<string, SamplingPolicyTool<Definition>>();
+  readonly tools: readonly WorkerPolicyTool<Definition>[];
+}): BoundWorkerPolicy<Definition> {
+  const known = new Map<string, WorkerPolicyTool<Definition>>();
   for (const tool of input.tools) {
     if (known.has(tool.definition.name)) {
-      throw new Error(`Duplicate Pi Security sampling tool ${JSON.stringify(tool.definition.name)}.`);
+      throw new Error(`Duplicate Pi Security worker tool ${JSON.stringify(tool.definition.name)}.`);
     }
     if (tool.requirements.length === 0) {
-      throw new Error(`Pi Security sampling tool ${JSON.stringify(tool.definition.name)} has no policy requirement.`);
+      throw new Error(`Pi Security worker tool ${JSON.stringify(tool.definition.name)} has no policy requirement.`);
     }
     known.set(tool.definition.name, tool);
   }
 
-  const contextFor = (authority: SamplingPolicyAuthority): ExecutionPolicyContext => {
+  const contextFor = (authority: WorkerPolicyAuthority): ExecutionPolicyContext => {
     switch (authority) {
       case "source": return input.source();
       case "artifactWriter": return input.artifactWriter();
       case "delegation": return input.delegation();
     }
   };
-  const allowed = (tool: SamplingPolicyTool<Definition>): boolean => tool.available
+  const allowed = (tool: WorkerPolicyTool<Definition>): boolean => tool.available
     && tool.requirements.every((requirement) => hasExecutionCapability(
       contextFor(requirement.authority),
       requirement.capability,
     ));
 
   // Resolve every supplied authority now so a forged context cannot create a
-  // seemingly valid empty surface and fail only after sampling begins.
+  // seemingly valid empty surface and fail only after worker execution begins.
   describeExecutionPolicy(input.source());
   describeExecutionPolicy(input.artifactWriter());
   describeExecutionPolicy(input.delegation());
@@ -72,7 +72,7 @@ export function bindMcpSamplingPolicy<Definition extends { name: string }>(input
       const tool = known.get(name);
       if (!tool || !allowed(tool)) {
         throw new ExecutionPolicyDeniedError(
-          `Unknown or unauthorized Pi Security sampling tool ${JSON.stringify(name)}.`,
+          `Unknown or unauthorized Pi Security worker tool ${JSON.stringify(name)}.`,
         );
       }
     },

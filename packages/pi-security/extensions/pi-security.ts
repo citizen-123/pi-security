@@ -72,10 +72,9 @@ export default function piSecurity(pi: ExtensionAPI): void {
   pi.registerCommand("security-scan", {
     description: "Run a Pi Security scan in the current repository",
     handler: async (args) => {
-      const focus = args.trim() ? ` Focus: ${args.trim()}` : "";
       pi.sendUserMessage(
-        `Use the security-scan skill to audit the current repository.${focus}`,
-        { deliverAs: "followUp" }
+        `/security-scan${args.trim() ? ` ${args.trim()}` : ""}`,
+        { deliverAs: "followUp" },
       );
     }
   });
@@ -83,10 +82,19 @@ export default function piSecurity(pi: ExtensionAPI): void {
   pi.registerCommand("security-diff-scan", {
     description: "Review the current changes for security vulnerabilities",
     handler: async (args) => {
-      const focus = args.trim() ? ` Focus: ${args.trim()}` : "";
       pi.sendUserMessage(
-        `Use the security-diff-scan skill to review the current changes.${focus}`,
-        { deliverAs: "followUp" }
+        `/security-diff-scan${args.trim() ? ` ${args.trim()}` : ""}`,
+        { deliverAs: "followUp" },
+      );
+    }
+  });
+
+  pi.registerCommand("deep-security-scan", {
+    description: "Run a native Pi Security Deep Scan in the current repository",
+    handler: async (args) => {
+      pi.sendUserMessage(
+        `/deep-security-scan${args.trim() ? ` ${args.trim()}` : ""}`,
+        { deliverAs: "followUp" },
       );
     }
   });

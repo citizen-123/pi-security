@@ -1,12 +1,12 @@
 # Pi Security
 
-Pi Security is a local, agent-driven security scanner for [Pi](https://pi.dev) and MCP-compatible clients. It helps an AI coding agent inspect a repository, validate potential vulnerabilities, and produce durable security artifacts without requiring a provider-specific security service, CLI, SDK, account, or API key.
+Pi Security is a local, agent-driven security scanner for [Pi](https://pi.dev). It helps Pi inspect a repository, validate potential vulnerabilities, and produce durable security artifacts without requiring a provider-specific security service, CLI, SDK, account, or API key.
 
 It includes:
 
 - Standard whole-repository security scans
 - Git diff security reviews
-- Tool-enabled, multi-worker Deep Scans over MCP
+- Native, multi-worker Deep Scans
 - Bundled read-only security subagents
 - Threat modeling and evidence-based finding validation
 - Local scan history and finding storage
@@ -32,7 +32,7 @@ After the package is published to npm, it can also be installed with:
 pi install npm:pi-security
 ```
 
-Pi loads the bundled subagent runtime and Pi Security extension automatically. You do not need to configure the MCP server for Standard or Diff scans.
+Pi loads the bundled subagent runtime and Pi Security extension automatically. No separate server configuration is required.
 
 ### 2. Open Pi in the repository you want to review
 
@@ -81,9 +81,17 @@ Reviews an exact Git change set and the supporting code needed to understand it.
 
 ### Deep Scan
 
-Runs server-owned sampling workers with constrained source tools, durable continuations, bounded nested delegation, and schema-validated results. Deep Scan requires an MCP client that advertises MCP 2025-11-25 `sampling.tools`; basic MCP sampling is not sufficient.
+Runs isolated native Pi worker sessions with constrained source tools, durable continuations, bounded nested delegation, and schema-validated results. Start one with:
 
-Deep Scan is available through the optional stdio MCP server described below. Standard and Diff scans do not require MCP sampling.
+```text
+/deep-security-scan
+```
+
+An optional focus uses the same slash-command syntax:
+
+```text
+/deep-security-scan authentication boundaries
+```
 
 ## What gets written
 
@@ -93,7 +101,7 @@ Default locations:
 
 - Workbench database: `$PI_HOME/security/workbench.sqlite3`
 - Deep Scan configuration: `$PI_HOME/pi-security/config.toml`
-- MCP scan output: a private temporary directory unless `PI_SECURITY_SCAN_ROOT` is set
+- Managed scan output: a private temporary directory unless `PI_SECURITY_SCAN_ROOT` is set
 
 `PI_HOME` defaults to `~/.pi`.
 
@@ -129,38 +137,6 @@ Pi Security uses a capability sandbox rather than relying on prompt instructions
 
 This is not a general-purpose OS process sandbox. Pi Security avoids running untrusted target commands altogether. If the host cannot apply a required enforcement mechanism, the operation fails instead of silently using weaker behavior.
 
-## Optional MCP server
-
-Use the stdio server with a generic MCP host or for Deep Scan.
-
-### Build and run
-
-```sh
-npm install
-npm run build
-pi-security-mcp
-```
-
-Example client configuration:
-
-```json
-{
-  "mcpServers": {
-    "pi-security": {
-      "command": "pi-security-mcp",
-      "env": {
-        "PI_SECURITY_STATE_DIR": "/absolute/path/to/private/state",
-        "PI_SECURITY_SCAN_ROOT": "/absolute/path/to/private/scans"
-      }
-    }
-  }
-}
-```
-
-The server exposes target inspection, Standard/Diff/Deep scan lifecycle operations, progress, artifact recording, completion and recovery, finding queries, exports, triage, remediation, feedback, and compact worker/reducer operations.
-
-An MCP host that can call server tools does not necessarily support Deep Scan. It must also accept server-initiated, tool-enabled sampling requests.
-
 ## Configuration
 
 Supported environment variables:
@@ -193,14 +169,14 @@ max_time_hours = 4
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22.19 or newer
 - Python 3.11 or newer
 - Git for Git-aware targets and Diff scans
-- A Pi installation for the native commands, or an MCP-compatible host for the stdio server
+- A Pi installation
 
 ## Development
 
-The package implementation lives in [`packages/pi-security`](packages/pi-security). See its [detailed README](packages/pi-security/README.md) for development environment setup, test commands, direct workbench usage, transport behavior, schemas, packaging checks, and advanced configuration.
+The package implementation lives in [`packages/pi-security`](packages/pi-security). See its [detailed README](packages/pi-security/README.md) for development environment setup, test commands, direct workbench usage, native lifecycle behavior, schemas, packaging checks, and advanced configuration.
 
 The short development flow is:
 

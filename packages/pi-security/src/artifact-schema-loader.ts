@@ -8,7 +8,7 @@ export type SchemaDocument = ArtifactSchemaObject & {
 };
 
 /**
- * Bundle checked-in Draft 2020-12 definitions for the existing MCP registry.
+ * Bundle checked-in Draft 2020-12 definitions for the lifecycle catalog.
  */
 export function bundleArtifactSchema(
   documents: readonly SchemaDocument[],

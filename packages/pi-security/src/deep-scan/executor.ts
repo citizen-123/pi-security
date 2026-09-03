@@ -1,6 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  getAgentDir,
+  SessionManager,
+  type AgentSession,
+  type CreateAgentSessionOptions,
+  type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
+import { Type, type TSchema } from "typebox";
 import { createWorkerArtifactContext } from "../artifact-context.js";
 import {
   artifactDestination,
@@ -39,16 +49,15 @@ import {
 import {
   issueDeepScanArtifactWriterContext,
   issueDeepScanDelegatedChildAuthority,
-} from "./mcp-sampling-policy.js";
+} from "./worker-policy.js";
 import { DeepScanNonRetryableError } from "./errors.js";
 import {
-  createSamplingTools,
-  validateDelegatedSecurityTaskResult,
-  type BoundSamplingTools,
+  createWorkerTools,
+  type BoundWorkerTools,
   type DelegatedSecurityTaskExecution,
-  type SamplingToolDefinition,
-  type SamplingToolResult,
-} from "./sampling-tools.js";
+  type WorkerToolResult,
+  validateDelegatedSecurityTaskResult,
+} from "./worker-tools.js";
 import type {
   DeepScanWorkerKind,
   DelegatedSecurityTaskResult,
@@ -61,82 +70,26 @@ import type {
   PiWorkerUsageDiagnostics,
 } from "./types.js";
 
-interface SamplingContentBlock extends Record<string, unknown> {
-  type: string;
-}
+type NativeMessage = AgentSession["messages"][number];
 
-interface SamplingTextContent extends SamplingContentBlock {
-  type: "text";
-  text: string;
-}
-
-interface SamplingToolUseContent extends SamplingContentBlock {
-  type: "tool_use";
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
-}
-
-interface SamplingToolResultContent extends SamplingContentBlock {
-  type: "tool_result";
-  toolUseId: string;
-  content: SamplingToolResult["content"];
-  isError?: boolean;
-}
-
-export interface SamplingMessage {
-  role: "user" | "assistant";
-  content: SamplingContentBlock | SamplingContentBlock[];
-}
-
-export interface SamplingCreateMessageParams {
-  messages: SamplingMessage[];
-  tools: SamplingToolDefinition[];
-  toolChoice: { mode: "auto" };
-  maxTokens: number;
-  modelPreferences?: { hints?: Array<{ name: string }> };
-  systemPrompt?: string;
-  _meta?: Record<string, unknown>;
-}
-
-export interface SamplingCreateMessageResult {
-  role: "assistant" | "user";
-  content: SamplingContentBlock | SamplingContentBlock[];
-  model: string;
-  stopReason?: string;
-  _meta?: Record<string, unknown>;
-  usage?: Record<string, unknown>;
-}
-
-/** The MCP 2025-11-25 tool-enabled sampling surface used by Deep Scan. */
-export interface SamplingClient {
-  createMessage(
-    params: SamplingCreateMessageParams,
-    options?: { signal?: AbortSignal; timeout?: number },
-  ): Promise<SamplingCreateMessageResult>;
-}
-
-export interface SamplingWorkerSettings {
-  model?: string;
-  reasoningEffort?: string;
+export interface NativeWorkerSettings {
+  model?: CreateAgentSessionOptions["model"];
+  thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
   /** Injectable monotonic-enough clock for deterministic diagnostics. */
   now?: () => number;
 }
 
-interface PersistedToolCall {
-  toolUseId: string;
+interface PersistedWorkerToolCall {
+  id: string;
   name: string;
-  assistantMessageIndex: number;
-  contentIndex: number;
+  input: Record<string, unknown>;
   finalSubmissionAccepted: boolean;
   delegatedChildOrdinal?: number;
-  result:
-    | { location: "pending"; block: SamplingToolResultContent }
-    | { location: "message"; messageIndex: number; contentIndex: number };
+  result: WorkerToolResult;
 }
 
-interface SamplingContinuation {
-  version: 2;
+interface WorkerContinuation {
+  version: 3;
   id: string;
   kind: DeepScanWorkerKind;
   policy: PersistedWorkerExecutionPolicies;
@@ -144,10 +97,11 @@ interface SamplingContinuation {
     version: 1;
     children: DelegationMarker[];
   };
-  messages: SamplingMessage[];
-  toolCalls: PersistedToolCall[];
+  messages: NativeMessage[];
+  toolCalls: PersistedWorkerToolCall[];
   finalSubmissionAccepted: boolean;
 }
+
 interface DelegationMarker {
   ordinal: number;
   task: string;
@@ -166,29 +120,22 @@ interface PersistedDelegatedChildOutcome {
   error?: string;
 }
 
-
-const CONTINUATION_FILE = "sampling-continuation.json";
+const CONTINUATION_FILE = "worker-continuation.json";
+const LEGACY_CONTINUATION_FILE = "sampling-continuation.json";
 const DELEGATED_OUTCOME_FILE = "delegated-outcome.json";
 
-/**
- * Execute a Deep Scan worker with MCP 2025-11-25 sampling tools. The transcript
- * and completed tool results are persisted by the application, so retries do
- * not depend on a model provider's thread or conversation identifier.
- */
-export class SamplingWorkerExecutor implements PiWorkerExecutor {
+/** Execute one Deep Scan worker in an isolated native Pi agent session. */
+export class NativePiWorkerExecutor implements PiWorkerExecutor {
   private readonly now: () => number;
 
-  constructor(
-    private readonly client: SamplingClient,
-    private readonly settings: SamplingWorkerSettings = {},
-  ) {
+  constructor(private readonly settings: NativeWorkerSettings = {}) {
     this.now = settings.now ?? Date.now;
   }
 
   async validateContinuationPolicy(
     request: PiWorkerContinuationValidationRequest,
   ): Promise<void> {
-    if (!request.resumeThreadId) {
+    if (!request.resumeContinuationId) {
       throw new Error("Continuation policy validation requires a continuation ID.");
     }
     await assertExecutionBoundaryTuple({
@@ -199,48 +146,29 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
       workerRoot: request.artifactContext.workerRoot,
       scanId: request.artifactContext.scanId,
     });
-    const continuationContext = await createWorkerArtifactContext({
-      root: request.artifactContext.root,
-      repoRoot: request.artifactContext.repoRoot,
-      layout: request.artifactContext.layout,
-      scanId: request.artifactContext.scanId,
-      scope: request.artifactContext.scope,
-      packageRoot: request.artifactContext.packageRoot,
-      targetContract: request.artifactContext.targetContract,
-      targetRevision: request.artifactContext.targetRevision,
-      targetSnapshotDigest: request.artifactContext.targetSnapshotDigest,
-      mode: "deep",
-      deepReducer: request.artifactContext.deepReducer,
-      executionPolicy: request.artifactWriterContext,
-    });
+    const continuationContext = await continuationArtifactContext(request);
     const continuation = await readContinuation(
       continuationContext,
-      request.resumeThreadId,
+      request.resumeContinuationId,
       request.kind,
     );
     reissueWorkerExecutionPolicies(continuation.policy, {
       source: request.executionContext,
       artifactWriter: request.artifactWriterContext,
     });
-    const {
-      activeChildOrdinals,
-      recoveredDelegationContexts,
-    } = reissueDelegationPolicies(
-      continuation,
-      request,
-      false,
-    );
+    const recovery = reissueDelegationPolicies(continuation, request, false);
     await validateDelegatedContinuationPolicies(
       continuation,
       continuationContext,
       request,
-      activeChildOrdinals,
-      recoveredDelegationContexts,
+      recovery.activeChildOrdinals,
+      recovery.recoveredDelegationContexts,
     );
   }
+
   async run(request: PiWorkerRequest): Promise<PiWorkerResult> {
-    const diagnostics = new SamplingDiagnosticsCollector(
-      this.settings.reasoningEffort,
+    const diagnostics = new NativeDiagnosticsCollector(
+      this.settings.thinkingLevel,
       this.now,
     );
     try {
@@ -256,7 +184,7 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
 
   private async execute(
     request: PiWorkerRequest,
-    diagnostics: SamplingDiagnosticsCollector,
+    diagnostics: NativeDiagnosticsCollector,
   ): Promise<PiWorkerResult> {
     const platformMechanisms = await assertExecutionBoundaryTuple({
       source: request.executionContext,
@@ -267,29 +195,16 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
       scanId: request.artifactContext.scanId,
     });
     request.signal.throwIfAborted();
-    const continuationContext = await createWorkerArtifactContext({
-      root: request.artifactContext.root,
-      repoRoot: request.artifactContext.repoRoot,
-      layout: request.artifactContext.layout,
-      scanId: request.artifactContext.scanId,
-      scope: request.artifactContext.scope,
-      packageRoot: request.artifactContext.packageRoot,
-      targetContract: request.artifactContext.targetContract,
-      targetRevision: request.artifactContext.targetRevision,
-      targetSnapshotDigest: request.artifactContext.targetSnapshotDigest,
-      mode: "deep",
-      deepReducer: request.artifactContext.deepReducer,
-      executionPolicy: request.artifactWriterContext,
-    });
+    const continuationContext = await continuationArtifactContext(request);
 
-    let continuation: SamplingContinuation;
+    let continuation: WorkerContinuation;
     let executionContext = request.executionContext;
     let artifactWriterContext = request.artifactWriterContext;
-    let created = false;
-    if (request.resumeThreadId) {
+    const created = request.resumeContinuationId === undefined;
+    if (request.resumeContinuationId) {
       continuation = await readContinuation(
         continuationContext,
-        request.resumeThreadId,
+        request.resumeContinuationId,
         request.kind,
       );
       const restored = reissueWorkerExecutionPolicies(continuation.policy, {
@@ -299,9 +214,8 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
       executionContext = restored.source;
       artifactWriterContext = restored.artifactWriter;
     } else {
-      const prompt = await readBoundWorkerPrompt(request);
       continuation = {
-        version: 2,
+        version: 3,
         id: randomUUID(),
         kind: request.kind,
         policy: snapshotWorkerExecutionPolicies({
@@ -309,27 +223,16 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
           artifactWriter: artifactWriterContext,
         }),
         delegation: { version: 1, children: [] },
-        messages: [{
-          role: "user",
-          content: {
-            type: "text",
-            text: initialInstruction(prompt, request.delegation !== undefined),
-          },
-        }],
+        messages: [],
         toolCalls: [],
         finalSubmissionAccepted: false,
       };
-      created = true;
     }
 
     const canDelegate = request.kind !== "dedup"
       && request.delegation === undefined
       && request.subagents > 0;
-    const {
-      activeChildOrdinals,
-      recordedChildOrdinals,
-      recoveredDelegationContexts,
-    } = reissueDelegationPolicies(
+    const recovery = reissueDelegationPolicies(
       continuation,
       request,
       request.delegation !== undefined,
@@ -338,18 +241,18 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
       continuation,
       continuationContext,
       request,
-      activeChildOrdinals,
-      recoveredDelegationContexts,
+      recovery.activeChildOrdinals,
+      recovery.recoveredDelegationContexts,
     );
 
     let delegatingExecutionContext = executionContext;
     let recoveryDelegationAuthority = continuation.delegation.children.some(
-      (candidate) => !recordedChildOrdinals.has(candidate.ordinal),
+      (candidate) => !recovery.recordedChildOrdinals.has(candidate.ordinal),
     )
       ? request.executionContext
       : undefined;
-    let tools!: BoundSamplingTools;
-    tools = await createSamplingTools({
+    let tools!: BoundWorkerTools;
+    tools = await createWorkerTools({
       kind: request.kind,
       artifactContext: request.artifactContext,
       executionContext,
@@ -369,7 +272,7 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
         ? {
           delegateSecurityTask: async (task, signal): Promise<DelegatedSecurityTaskExecution> => {
             const existingMarker = continuation.delegation.children.find(
-              (candidate) => !recordedChildOrdinals.has(candidate.ordinal),
+              (candidate) => !recovery.recordedChildOrdinals.has(candidate.ordinal),
             );
             let marker: DelegationMarker;
             let childExecutionContext: ExecutionPolicyContext;
@@ -384,7 +287,7 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
                 );
               }
               marker = existingMarker;
-              const recoveredContext = recoveredDelegationContexts.get(marker.ordinal);
+              const recoveredContext = recovery.recoveredDelegationContexts.get(marker.ordinal);
               if (!recoveredContext) {
                 throw new PolicyRecoveryRejectedError(
                   "invalid_policy",
@@ -420,8 +323,6 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
                 version: 1,
                 children: [...continuation.delegation.children, marker],
               };
-              // Persist the unspent successor and child authority before the
-              // child starts. Recovery never reissues the spent predecessor.
               await writeContinuation(tools.context, continuation);
             }
 
@@ -446,7 +347,7 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
                 error: `Delegated security task ${marker.ordinal} failed: ${message}`,
               };
             }
-            recordedChildOrdinals.add(marker.ordinal);
+            recovery.recordedChildOrdinals.add(marker.ordinal);
             recoveryDelegationAuthority = undefined;
             return outcome.error === undefined
               ? { ordinal: marker.ordinal, result: outcome.result }
@@ -455,13 +356,14 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
         }
         : {}),
     });
+
     const enforcementAvailability = describePiEnforcementCapabilities({
       kind: "availability",
       piTools: true,
-      samplingTools: true,
+      workerSessions: true,
       targetHandles: true,
       artifactRoots: true,
-      ...(request.resumeThreadId ? { continuationPolicy: true } : {}),
+      ...(request.resumeContinuationId ? { continuationPolicy: true } : {}),
       platformMechanisms,
     });
     diagnostics.recordEnforcementCapabilities(enforcementAvailability);
@@ -478,78 +380,116 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
     await request.onPolicyReady?.();
     if (created) {
       await writeContinuation(continuationContext, continuation, true);
-      await request.onThreadStarted?.(continuation.id);
-    } else {
-      await settlePendingToolUses(
-        continuation,
-        tools,
-        request.signal,
-        diagnostics,
-      );
-      if (request.continuationPrompt && canAppendContinuation(continuation)) {
-        continuation.messages.push({
-          role: "user",
-          content: { type: "text", text: request.continuationPrompt },
-        });
-        await writeContinuation(tools.context, continuation);
-      }
+      await request.onContinuationStarted?.(continuation.id);
     }
 
-    for (;;) {
-      request.signal.throwIfAborted();
-      diagnostics.recordSamplingRequest();
-      const response = await this.client.createMessage({
-        messages: continuation.messages,
-        tools: tools.definitions(),
-        toolChoice: { mode: "auto" },
-        maxTokens: 32_000,
-        ...(this.settings.model
-          ? { modelPreferences: { hints: [{ name: this.settings.model }] } }
-          : {}),
-        systemPrompt: systemPrompt(
-          request.kind,
-          request.delegation !== undefined,
-          this.settings.reasoningEffort,
-        ),
-        ...(this.settings.reasoningEffort
-          ? { _meta: { reasoningEffort: this.settings.reasoningEffort } }
-          : {}),
-      }, {
-        signal: request.signal,
-        timeout: 86_400_000,
-      });
-      diagnostics.recordSamplingResponse(response);
-      diagnostics.recordEffectivePolicy(effectivePolicy);
-      request.signal.throwIfAborted();
-      const assistant = requireAssistantResponse(response);
-      continuation.messages.push(assistant);
-      await writeContinuation(tools.context, continuation);
+    const prompt = await readBoundWorkerPrompt(request);
+    const resourceLoader = new DefaultResourceLoader({
+      cwd: request.workingDirectory,
+      agentDir: getAgentDir(),
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+      systemPrompt: systemPrompt(
+        request.kind,
+        request.delegation !== undefined,
+        this.settings.thinkingLevel,
+      ),
+    });
+    await resourceLoader.reload();
 
-      const toolUses = indexedToolUses(assistant.content);
-      if (toolUses.length > 0) {
-        await settlePendingToolUses(
-          continuation,
-          tools,
-          request.signal,
-          diagnostics,
-        );
-        continue;
+    let session: AgentSession | undefined;
+    const customTools = createNativeToolDefinitions(
+      tools,
+      request,
+      continuation,
+      diagnostics,
+    );
+    const createdSession = await createAgentSession({
+      cwd: request.workingDirectory,
+      agentDir: getAgentDir(),
+      ...(this.settings.model ? { model: this.settings.model } : {}),
+      ...(this.settings.thinkingLevel
+        ? { thinkingLevel: this.settings.thinkingLevel }
+        : {}),
+      noTools: "all",
+      tools: customTools.map((tool) => tool.name),
+      customTools,
+      resourceLoader,
+      sessionManager: SessionManager.inMemory(request.workingDirectory),
+    });
+    session = createdSession.session;
+    session.agent.state.messages = [...continuation.messages];
+    diagnostics.recordEffectivePolicy(effectivePolicy);
+
+    let persistenceTail = Promise.resolve();
+    const persistSession = (): void => {
+      continuation.messages = cloneMessages(session!.messages);
+      persistenceTail = persistenceTail.then(
+        () => writeContinuation(tools.context, continuation),
+      );
+    };
+    const unsubscribe = session.subscribe((event) => {
+      diagnostics.recordEvent(event);
+      if (
+        event.type === "tool_execution_end"
+        || event.type === "agent_end"
+        || event.type === "agent_settled"
+      ) {
+        persistSession();
       }
-      if (response.stopReason === "toolUse") {
-        throw protocolError(
-          "MCP sampling stopped for tool use without returning any tool_use content.",
+    });
+    const abortSession = (): void => {
+      void session?.abort();
+    };
+    request.signal.addEventListener("abort", abortSession, { once: true });
+
+    try {
+      request.signal.throwIfAborted();
+      if (created || continuation.messages.length === 0) {
+        await session.prompt(
+          initialInstruction(prompt, request.delegation !== undefined),
+          { expandPromptTemplates: false, source: "extension" },
+        );
+      } else if (request.continuationPrompt) {
+        await session.prompt(request.continuationPrompt, {
+          expandPromptTemplates: false,
+          source: "extension",
+        });
+      } else if (continuation.finalSubmissionAccepted) {
+        // The durable final tool result already completed this worker.
+      } else if (session.messages.at(-1)?.role === "toolResult") {
+        await session.agent.continue();
+      } else {
+        await session.prompt(
+          "Continue the assigned Pi Security worker task and submit its required final result.",
+          { expandPromptTemplates: false, source: "extension" },
         );
       }
-      const finalResponse = textFromContent(assistant.content)
-        || (continuation.finalSubmissionAccepted
-          ? "Deep Scan artifact submission accepted."
-          : "");
+      await session.waitForIdle();
+      request.signal.throwIfAborted();
       const delegatedResult = tools.delegatedResult();
       return {
-        finalResponse,
-        threadId: continuation.id,
+        finalResponse: finalAssistantText(session.messages)
+          || (continuation.finalSubmissionAccepted
+            ? "Deep Scan artifact submission accepted."
+            : ""),
+        continuationId: continuation.id,
         ...(request.delegation && delegatedResult ? { delegatedResult } : {}),
       };
+    } finally {
+      request.signal.removeEventListener("abort", abortSession);
+      unsubscribe();
+      diagnostics.recordSession(session);
+      try {
+        await persistenceTail;
+        continuation.messages = cloneMessages(session.messages);
+        await writeContinuation(tools.context, continuation);
+      } finally {
+        session.dispose();
+      }
     }
   }
 
@@ -559,7 +499,7 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
     executionContext: ExecutionPolicyContext;
     marker: DelegationMarker;
     signal: AbortSignal;
-    diagnostics: SamplingDiagnosticsCollector;
+    diagnostics: NativeDiagnosticsCollector;
   }): Promise<DelegatedChildOutcome> {
     input.signal.throwIfAborted();
     const directory = `delegate-${String(input.marker.ordinal).padStart(2, "0")}`;
@@ -570,10 +510,7 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
       scanId: input.executionContext.scan.id,
       artifactRoot: childRoot,
     });
-    const {
-      deepReducer: _deepReducer,
-      ...inheritedArtifactContext
-    } = input.parent.artifactContext;
+    const { deepReducer: _deepReducer, ...inheritedArtifactContext } = input.parent.artifactContext;
     const childRequestArtifactContext = {
       ...inheritedArtifactContext,
       root: childRoot,
@@ -602,14 +539,11 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
     let childDiagnostics: PiWorkerRunDiagnostics | undefined;
     let nestedRecorded = false;
     try {
-      input.signal.throwIfAborted();
       const persisted = await readDelegatedChildOutcome(
         input.executionContext,
         childArtifactContext,
       );
-      input.signal.throwIfAborted();
       if (persisted) return persisted;
-
       const childContinuation = await delegatedChildContinuation(childArtifactContext);
       if (childContinuation) {
         reissueWorkerExecutionPolicies(childContinuation.policy, {
@@ -623,16 +557,15 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
           delegatedTaskPrompt(input.marker),
         );
       }
-      const resumeThreadId = childContinuation?.id;
       const child = await this.run({
         kind: "discovery",
         promptPath,
         workingDirectory: childRoot,
         subagents: 0,
         signal: input.signal,
-        ...(resumeThreadId
+        ...(childContinuation
           ? {
-            resumeThreadId,
+            resumeContinuationId: childContinuation.id,
             continuationPrompt: "Continue the scoped investigation and record one validated delegated security result.",
           }
           : {}),
@@ -650,7 +583,7 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
       });
       childDiagnostics = child.runDiagnostics ?? childDiagnostics;
       if (!child.delegatedResult) {
-        throw new Error("Nested sampler ended without a validated delegated security result.");
+        throw new Error("Nested worker ended without a validated delegated security result.");
       }
       await writeDelegatedChildOutcome(childArtifactContext, {
         result: child.delegatedResult,
@@ -684,21 +617,76 @@ export class SamplingWorkerExecutor implements PiWorkerExecutor {
   }
 }
 
+function createNativeToolDefinitions(
+  tools: BoundWorkerTools,
+  request: PiWorkerRequest,
+  continuation: WorkerContinuation,
+  diagnostics: NativeDiagnosticsCollector,
+): ToolDefinition[] {
+  return tools.definitions().map((definition) => ({
+    name: definition.name,
+    label: definition.annotations.title,
+    description: definition.description,
+    parameters: Type.Unsafe(definition.inputSchema as TSchema),
+    async execute(toolCallId, params, signal) {
+      diagnostics.recordToolCall();
+      try {
+        const input = params as Record<string, unknown>;
+        const existing = continuation.toolCalls.find((call) => call.id === toolCallId);
+        if (existing) {
+          if (
+            existing.name !== definition.name
+            || JSON.stringify(existing.input) !== JSON.stringify(input)
+          ) {
+            throw new PolicyRecoveryRejectedError(
+              "invalid_policy",
+              "A resumed native tool call does not match its durable ledger.",
+            );
+          }
+          if (existing.result.isError) {
+            throw new Error(toolResultText(existing.result));
+          }
+          return { content: existing.result.content, details: {} };
+        }
+        const executed = await tools.execute(
+          definition.name,
+          input,
+          signal ?? request.signal,
+        );
+        const record: PersistedWorkerToolCall = {
+          id: toolCallId,
+          name: definition.name,
+          input,
+          finalSubmissionAccepted: executed.finalSubmissionAccepted,
+          result: JSON.parse(JSON.stringify(executed.result)) as WorkerToolResult,
+          ...(executed.delegatedChildOrdinal === undefined
+            ? {}
+            : { delegatedChildOrdinal: executed.delegatedChildOrdinal }),
+        };
+        continuation.toolCalls.push(record);
+        continuation.finalSubmissionAccepted ||= executed.finalSubmissionAccepted;
+        if (executed.result.isError) {
+          throw new Error(toolResultText(executed.result));
+        }
+        return { content: executed.result.content, details: {} };
+      } catch (error) {
+        diagnostics.recordToolFailure();
+        throw error;
+      }
+    },
+  }));
+}
+
 function reissueDelegationPolicies(
-  continuation: SamplingContinuation,
-  request: Pick<
-    PiWorkerRequest,
-    "kind" | "subagents" | "artifactContext"
-  >,
+  continuation: WorkerContinuation,
+  request: Pick<PiWorkerRequest, "kind" | "subagents" | "artifactContext">,
   delegatedTask: boolean,
 ): {
   recordedChildOrdinals: Set<number>;
   activeChildOrdinals: Set<number>;
   recoveredDelegationContexts: Map<number, ExecutionPolicyContext>;
 } {
-  const canDelegate = request.kind !== "dedup"
-    && !delegatedTask
-    && request.subagents > 0;
+  const canDelegate = request.kind !== "dedup" && !delegatedTask && request.subagents > 0;
   if (
     continuation.delegation.children.length > request.subagents
     || (!canDelegate && continuation.delegation.children.length > 0)
@@ -708,48 +696,46 @@ function reissueDelegationPolicies(
       "The saved Deep Scan delegation state exceeds the authoritative worker policy.",
     );
   }
-  assertWorkerPolicyLedger(
-    continuation.policy,
-    continuation.delegation.children.length,
+  assertWorkerPolicyLedger(continuation.policy, continuation.delegation.children.length);
+  const markers = new Map(
+    continuation.delegation.children.map((marker) => [marker.ordinal, marker]),
   );
   const recordedChildOrdinals = new Set<number>();
+  const callIds = new Set<string>();
   for (const call of continuation.toolCalls) {
-    if (call.delegatedChildOrdinal === undefined) continue;
-    if (!continuation.delegation.children.some(
-      (marker) => marker.ordinal === call.delegatedChildOrdinal,
-    )) {
+    if (callIds.has(call.id)) {
       throw new PolicyRecoveryRejectedError(
         "invalid_policy",
-        "A persisted delegated tool call has no matching child-started marker.",
+        "The saved Deep Scan continuation contains a duplicate tool call.",
       );
     }
-    if (recordedChildOrdinals.has(call.delegatedChildOrdinal)) {
+    callIds.add(call.id);
+    if (call.delegatedChildOrdinal === undefined) continue;
+    const marker = markers.get(call.delegatedChildOrdinal);
+    if (!marker || call.name !== "delegate_security_task") {
+      throw new PolicyRecoveryRejectedError(
+        "invalid_policy",
+        "A persisted delegated child is not bound to a delegation tool call.",
+      );
+    }
+    if (recordedChildOrdinals.has(marker.ordinal)) {
       throw new PolicyRecoveryRejectedError(
         "invalid_policy",
         "The saved Deep Scan delegation state assigns one child marker to multiple tool calls.",
       );
     }
-    recordedChildOrdinals.add(call.delegatedChildOrdinal);
+    assertDelegationMarkerInput(marker, call.input);
+    recordedChildOrdinals.add(marker.ordinal);
   }
   const recoveredDelegationContexts = new Map<number, ExecutionPolicyContext>();
   for (const [index, marker] of continuation.delegation.children.entries()) {
-    if (marker.ordinal !== index + 1) {
+    if (marker.ordinal !== index + 1 || recoveredDelegationContexts.has(marker.ordinal)) {
       throw new PolicyRecoveryRejectedError(
         "invalid_policy",
-        "The saved Deep Scan delegation state has a non-canonical child ordinal.",
+        "The saved Deep Scan delegation state has non-canonical child ordinals.",
       );
     }
-    if (recoveredDelegationContexts.has(marker.ordinal)) {
-      throw new PolicyRecoveryRejectedError(
-        "invalid_policy",
-        "The saved Deep Scan delegation state contains a duplicate child marker.",
-      );
-    }
-    assertExactPolicySuccessor(
-      marker.policy,
-      0,
-      "delegated child",
-    );
+    assertExactPolicySuccessor(marker.policy, 0, "delegated child");
     recoveredDelegationContexts.set(
       marker.ordinal,
       reissueExecutionPolicyState(
@@ -762,27 +748,25 @@ function reissueDelegationPolicies(
       ),
     );
   }
-  const activeChildOrdinals = reconcileActiveDelegationMarkers(
-    continuation,
-    recordedChildOrdinals,
+  const activeChildOrdinals = new Set(
+    continuation.delegation.children
+      .map((marker) => marker.ordinal)
+      .filter((ordinal) => !recordedChildOrdinals.has(ordinal)),
   );
-  return {
-    activeChildOrdinals,
-    recordedChildOrdinals,
-    recoveredDelegationContexts,
-  };
+  if (activeChildOrdinals.size > 1) {
+    throw new PolicyRecoveryRejectedError(
+      "invalid_policy",
+      "The saved Deep Scan delegation state contains multiple active children.",
+    );
+  }
+  return { recordedChildOrdinals, activeChildOrdinals, recoveredDelegationContexts };
 }
-
 
 function assertWorkerPolicyLedger(
   policy: PersistedWorkerExecutionPolicies,
   delegatedChildren: number,
 ): void {
-  assertExactPolicySuccessor(
-    policy.source,
-    delegatedChildren,
-    "worker source",
-  );
+  assertExactPolicySuccessor(policy.source, delegatedChildren, "worker source");
   assertExactPolicySuccessor(policy.artifactWriter, 0, "artifact writer");
 }
 
@@ -795,8 +779,7 @@ function assertExactPolicySuccessor(
   if (
     expectedBudget < 0
     || state.effective.delegation.remainingBudget !== expectedBudget
-    || state.effective.delegation.remainingDepth
-      !== state.authority.delegation.remainingDepth
+    || state.effective.delegation.remainingDepth !== state.authority.delegation.remainingDepth
   ) {
     throw new PolicyRecoveryRejectedError(
       "delegation_mismatch",
@@ -805,178 +788,31 @@ function assertExactPolicySuccessor(
   }
 }
 
-function reconcileActiveDelegationMarkers(
-  continuation: SamplingContinuation,
-  recordedChildOrdinals: ReadonlySet<number>,
-): Set<number> {
-  const markersByOrdinal = new Map(
-    continuation.delegation.children.map((marker) => [marker.ordinal, marker]),
-  );
-  const callsById = new Map<string, PersistedToolCall>();
-  const activeChildOrdinals = new Set<number>();
-  for (const call of continuation.toolCalls) {
-    if (callsById.has(call.toolUseId)) {
-      throw new PolicyRecoveryRejectedError(
-        "invalid_policy",
-        "The saved Deep Scan transcript contains a duplicate tool call.",
-      );
-    }
-    callsById.set(call.toolUseId, call);
-    if (
-      call.name === "delegate_security_task"
-      && call.delegatedChildOrdinal === undefined
-    ) {
-      throw new PolicyRecoveryRejectedError(
-        "invalid_policy",
-        "A persisted delegation tool call has no child marker.",
-      );
-    }
-    if (call.delegatedChildOrdinal === undefined) continue;
-    const marker = markersByOrdinal.get(call.delegatedChildOrdinal);
-    if (!marker || call.name !== "delegate_security_task") {
-      throw new PolicyRecoveryRejectedError(
-        "invalid_policy",
-        "A persisted delegated child is not bound to a delegation tool call.",
-      );
-    }
-    const message = continuation.messages[call.assistantMessageIndex];
-    const use = message?.role === "assistant"
-      ? indexedToolUses(message.content).find(
-        (candidate) => candidate.contentIndex === call.contentIndex,
-      )
-      : undefined;
-    if (
-      !use
-      || use.block.id !== call.toolUseId
-      || use.block.name !== "delegate_security_task"
-    ) {
-      throw new PolicyRecoveryRejectedError(
-        "delegation_mismatch",
-        "A persisted delegated tool call does not match its transcript entry.",
-      );
-    }
-    assertDelegationMarkerInput(marker, use.block.input);
-    if (call.result.location === "pending") {
-      if (call.assistantMessageIndex !== continuation.messages.length - 1) {
-        throw new PolicyRecoveryRejectedError(
-          "invalid_policy",
-          "A pending delegated tool call is not in the active assistant message.",
-        );
-      }
-      activeChildOrdinals.add(marker.ordinal);
-    } else {
-      assertDelegatedToolResultMessage(continuation, call);
-    }
-  }
-
-
-function assertDelegatedToolResultMessage(
-  continuation: SamplingContinuation,
-  call: PersistedToolCall,
-): void {
-  if (call.result.location !== "message") {
-    throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "A completed delegated tool call has invalid result state.",
-    );
-  }
-  if (
-    call.assistantMessageIndex === continuation.messages.length - 1
-    || call.result.messageIndex !== call.assistantMessageIndex + 1
-  ) {
-    throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "A delegated tool call claims completion while its assistant request is still active.",
-    );
-  }
-  const resultMessage = continuation.messages[call.result.messageIndex];
-  const resultBlock = resultMessage?.role === "user"
-    && Array.isArray(resultMessage.content)
-    ? resultMessage.content[call.result.contentIndex]
-    : undefined;
-  if (
-    !resultBlock
-    || resultBlock.type !== "tool_result"
-    || !("toolUseId" in resultBlock)
-    || resultBlock.toolUseId !== call.toolUseId
-  ) {
-    throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "A persisted delegated tool call has no matching tool-result message.",
-    );
-  }
-}
-  const unrecordedMarkers = continuation.delegation.children.filter(
-    (marker) => !recordedChildOrdinals.has(marker.ordinal),
-  );
-  if (unrecordedMarkers.length > 1) {
-    throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "The saved Deep Scan delegation state contains multiple unrecorded active children.",
-    );
-  }
-  const unrecordedMarker = unrecordedMarkers[0];
-  if (!unrecordedMarker) return activeChildOrdinals;
-  const latest = continuation.messages.at(-1);
-  const firstUnpersistedUse = latest?.role === "assistant"
-    ? indexedToolUses(latest.content).find(
-      (candidate) => !callsById.has(candidate.block.id),
-    )
-    : undefined;
-  if (
-    !firstUnpersistedUse
-    || firstUnpersistedUse.block.name !== "delegate_security_task"
-  ) {
-    throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "An active delegated child has no pending delegation transcript entry.",
-    );
-  }
-  assertDelegationMarkerInput(
-    unrecordedMarker,
-    firstUnpersistedUse.block.input,
-  );
-  activeChildOrdinals.add(unrecordedMarker.ordinal);
-  return activeChildOrdinals;
-}
-
 function assertDelegationMarkerInput(
   marker: DelegationMarker,
   input: Record<string, unknown>,
 ): void {
   const keys = Object.keys(input).sort();
   const task = typeof input.task === "string" ? input.task.trim() : "";
-  const context = typeof input.context === "string"
-    ? input.context.trim()
-    : undefined;
+  const context = typeof input.context === "string" ? input.context.trim() : undefined;
   if (
     !task
     || (input.context !== undefined && !context)
     || keys.some((key) => key !== "context" && key !== "task")
-  ) {
-    throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "A pending delegation transcript entry has invalid task input.",
-    );
-  }
-  if (
-    marker.task !== task
+    || marker.task !== task
     || (marker.context ?? undefined) !== context
   ) {
     throw new PolicyRecoveryRejectedError(
       "delegation_mismatch",
-      "An active delegated child does not match its persisted task marker.",
+      "A delegated child does not match its persisted task marker.",
     );
   }
 }
 
 async function validateDelegatedContinuationPolicies(
-  continuation: SamplingContinuation,
+  continuation: WorkerContinuation,
   parentContext: ArtifactContext,
-  request: Pick<
-    PiWorkerRequest,
-    "artifactContext" | "executionContext"
-  >,
+  request: Pick<PiWorkerRequest, "artifactContext" | "executionContext">,
   activeChildOrdinals: ReadonlySet<number>,
   recoveredDelegationContexts: ReadonlyMap<number, ExecutionPolicyContext>,
 ): Promise<void> {
@@ -1005,10 +841,7 @@ async function validateDelegatedContinuationPolicies(
       scanId: childExecutionContext.scan.id,
       artifactRoot: childRoot,
     });
-    const {
-      deepReducer: _deepReducer,
-      ...inheritedArtifactContext
-    } = request.artifactContext;
+    const { deepReducer: _deepReducer, ...inheritedArtifactContext } = request.artifactContext;
     const childArtifactContext = await createWorkerArtifactContext({
       ...inheritedArtifactContext,
       root: childRoot,
@@ -1020,9 +853,7 @@ async function validateDelegatedContinuationPolicies(
       childArtifactContext,
     );
     if (persistedOutcome) continue;
-    const childContinuation = await delegatedChildContinuation(
-      childArtifactContext,
-    );
+    const childContinuation = await delegatedChildContinuation(childArtifactContext);
     if (!childContinuation) continue;
     reissueWorkerExecutionPolicies(childContinuation.policy, {
       source: childExecutionContext,
@@ -1044,355 +875,241 @@ async function validateDelegatedContinuationPolicies(
   }
 }
 
-const TOKEN_USAGE_KEYS = [
-  "inputTokens",
-  "cachedInputTokens",
-  "cacheWriteInputTokens",
-  "outputTokens",
-  "reasoningOutputTokens",
-  "totalTokens",
-] as const;
-
-
-class SamplingDiagnosticsCollector {
+class NativeDiagnosticsCollector {
   private readonly startedAt: number;
-  private samplingRequestCount = 0;
+  private requestCount = 0;
   private toolCallCount = 0;
   private toolFailureCount = 0;
   private retryCount = 0;
-  private readonly reportedModels = new Set<string>();
-  private readonly appliedReasoning = new Set<string>();
-  private appliedReasoningConflict = false;
-  private acknowledgedReasoningCount = 0;
-  private usageReportCount = 0;
-  private readonly usage: PiWorkerTokenUsage = {};
+  private readonly models = new Set<string>();
+  private usage: PiWorkerTokenUsage = {};
+  private usageRecorded = false;
+  private usageRequestCount = 0;
   private nestedTaskCount = 0;
   private nestedFailedTaskCount = 0;
-  private nestedSamplingRequestCount = 0;
+  private nestedRequestCount = 0;
   private nestedToolCallCount = 0;
   private nestedToolFailureCount = 0;
   private nestedElapsedMs = 0;
-  private readonly nestedReportedModels = new Set<string>();
-  private nestedUsageReportCount = 0;
-  private readonly nestedUsage: PiWorkerTokenUsage = {};
-  private finished: PiWorkerRunDiagnostics | undefined;
-  private effectivePolicy: (() => EffectivePolicyDiagnostics) | undefined;
-  private enforcementCapabilities: EnforcementCapabilityReport | undefined;
+  private readonly nestedModels = new Set<string>();
+  private nestedUsage: PiWorkerTokenUsage = {};
+  private nestedReportedRequestCount = 0;
+  private nestedMissingRequestCount = 0;
+  private enforcementCapabilities?: EnforcementCapabilityReport;
+  private effectivePolicy?: EffectivePolicyDiagnostics;
+  private appliedThinkingLevel: string | undefined;
 
   constructor(
-    private readonly requestedReasoning: string | undefined,
+    private readonly thinkingLevel: NativeWorkerSettings["thinkingLevel"],
     private readonly now: () => number,
   ) {
     this.startedAt = now();
   }
 
-  recordEnforcementCapabilities(report: EnforcementCapabilityReport): void {
-    this.enforcementCapabilities = report;
+  recordEvent(event: { type: string; message?: unknown }): void {
+    if (event.type === "turn_start") this.requestCount += 1;
+    if (event.type === "auto_retry_start") this.retryCount += 1;
+    const model = isObject(event.message) && typeof event.message.model === "string"
+      ? event.message.model
+      : undefined;
+    if (model) this.models.add(model);
   }
 
-  recordEffectivePolicy(describe: () => EffectivePolicyDiagnostics): void {
-    this.effectivePolicy ??= describe;
-  }
-
-  recordSamplingRequest(): void {
-    this.samplingRequestCount += 1;
-  }
-
-  recordSamplingResponse(response: SamplingCreateMessageResult): void {
-    if (typeof response.model === "string" && response.model.trim()) {
-      this.reportedModels.add(response.model.trim());
-    }
-    const usage = clientReportedUsage(response);
-    if (usage) {
-      this.usageReportCount += 1;
-      addTokenUsage(this.usage, usage);
-    }
-    const appliedReasoning = acknowledgedReasoningEffort(response);
-    if (appliedReasoning) {
-      this.acknowledgedReasoningCount += 1;
-      this.appliedReasoning.add(appliedReasoning);
-    }
-  }
-
-  recordToolExecution(failed: boolean): void {
+  recordToolCall(): void {
     this.toolCallCount += 1;
-    if (failed) this.toolFailureCount += 1;
   }
 
-  recordNested(diagnostics: PiWorkerRunDiagnostics | undefined, failed: boolean): void {
+  recordToolFailure(): void {
+    this.toolFailureCount += 1;
+  }
+
+  recordSession(session: AgentSession): void {
+    const stats = session.getSessionStats();
+    this.usage = {
+      inputTokens: stats.tokens.input,
+      cachedInputTokens: stats.tokens.cacheRead,
+      cacheWriteInputTokens: stats.tokens.cacheWrite,
+      outputTokens: stats.tokens.output,
+      totalTokens: stats.tokens.total,
+    };
+    this.usageRecorded = true;
+    this.usageRequestCount = session.messages.filter(
+      (message) => message.role === "assistant",
+    ).length;
+    if (session.model?.id) this.models.add(session.model.id);
+    if (this.requestCount > 0) this.appliedThinkingLevel = session.thinkingLevel;
+  }
+
+  recordNested(value: PiWorkerRunDiagnostics | undefined, failed: boolean): void {
     this.nestedTaskCount += 1;
     if (failed) this.nestedFailedTaskCount += 1;
-    if (!diagnostics) return;
+    if (!value) return;
+    this.nestedRequestCount += value.requestCount;
+    this.nestedToolCallCount += value.toolCallCount;
+    this.nestedToolFailureCount += value.toolFailureCount;
+    this.nestedElapsedMs += value.elapsedMs;
+    value.reportedModels.forEach((model) => this.nestedModels.add(model));
+    if (value.usage) {
+      addTokenUsage(this.nestedUsage, value.usage);
+      this.nestedReportedRequestCount += value.usage.reportedRequestCount;
+      this.nestedMissingRequestCount += value.usage.missingRequestCount;
+    }
+  }
 
-    this.samplingRequestCount += diagnostics.samplingRequestCount;
-    this.toolCallCount += diagnostics.toolCallCount;
-    this.toolFailureCount += diagnostics.toolFailureCount;
-    this.retryCount += diagnostics.retryCount;
-    this.nestedSamplingRequestCount += diagnostics.samplingRequestCount;
-    this.nestedToolCallCount += diagnostics.toolCallCount;
-    this.nestedToolFailureCount += diagnostics.toolFailureCount;
-    this.nestedElapsedMs += diagnostics.elapsedMs;
-    for (const model of diagnostics.reportedModels) this.reportedModels.add(model);
-    for (const model of diagnostics.reportedModels) this.nestedReportedModels.add(model);
-    if (diagnostics.reasoning.acknowledgedRequestCount > 0) {
-      this.acknowledgedReasoningCount += diagnostics.reasoning.acknowledgedRequestCount;
-      if (diagnostics.reasoning.applied) {
-        this.appliedReasoning.add(diagnostics.reasoning.applied);
-      } else {
-        this.appliedReasoningConflict = true;
-      }
-    }
-    if (diagnostics.usage) {
-      this.usageReportCount += diagnostics.usage.reportedRequestCount;
-      addTokenUsage(this.usage, diagnostics.usage);
-      this.nestedUsageReportCount += diagnostics.usage.reportedRequestCount;
-      addTokenUsage(this.nestedUsage, diagnostics.usage);
-    }
+  recordEnforcementCapabilities(value: EnforcementCapabilityReport): void {
+    this.enforcementCapabilities = value;
+  }
+
+  recordEffectivePolicy(value: () => EffectivePolicyDiagnostics): void {
+    this.effectivePolicy = value();
   }
 
   finish(): PiWorkerRunDiagnostics {
-    if (this.finished) return this.finished;
-    const applied = !this.appliedReasoningConflict && this.appliedReasoning.size === 1
-      ? [...this.appliedReasoning][0] ?? null
+    const elapsedMs = Math.max(0, this.now() - this.startedAt);
+    const ownUsage = this.usageRecorded
+      ? projectedUsage(this.usage, this.usageRequestCount, 0)
       : null;
-    this.finished = {
-      samplingRequestCount: this.samplingRequestCount,
-      toolCallCount: this.toolCallCount,
-      toolFailureCount: this.toolFailureCount,
+    const combinedUsage = ownUsage ? { ...ownUsage } : null;
+    if (combinedUsage && (this.nestedReportedRequestCount || this.nestedMissingRequestCount)) {
+      addTokenUsage(combinedUsage, this.nestedUsage);
+      combinedUsage.reportedRequestCount += this.nestedReportedRequestCount;
+      combinedUsage.missingRequestCount += this.nestedMissingRequestCount;
+      combinedUsage.coverage = combinedUsage.missingRequestCount === 0 ? "complete" : "partial";
+    }
+    return {
+      requestCount: this.requestCount + this.nestedRequestCount,
+      toolCallCount: this.toolCallCount + this.nestedToolCallCount,
+      toolFailureCount: this.toolFailureCount + this.nestedToolFailureCount,
       retryCount: this.retryCount,
-      elapsedMs: Math.max(0, this.now() - this.startedAt),
-      reportedModels: [...this.reportedModels],
+      elapsedMs,
+      reportedModels: [...new Set([...this.models, ...this.nestedModels])].sort(),
       reasoning: {
-        requested: this.requestedReasoning?.trim() || null,
-        applied,
-        acknowledgedRequestCount: this.acknowledgedReasoningCount,
+        requested: this.thinkingLevel ?? null,
+        applied: this.appliedThinkingLevel ?? null,
+        acknowledgedRequestCount: this.appliedThinkingLevel ? this.requestCount : 0,
       },
-      usage: projectedUsage(
-        this.usage,
-        this.usageReportCount,
-        this.samplingRequestCount,
-      ),
+      usage: combinedUsage,
       nested: {
         taskCount: this.nestedTaskCount,
         failedTaskCount: this.nestedFailedTaskCount,
-        samplingRequestCount: this.nestedSamplingRequestCount,
+        requestCount: this.nestedRequestCount,
         toolCallCount: this.nestedToolCallCount,
         toolFailureCount: this.nestedToolFailureCount,
         elapsedMs: this.nestedElapsedMs,
-        reportedModels: [...this.nestedReportedModels],
-        usage: projectedUsage(
-          this.nestedUsage,
-          this.nestedUsageReportCount,
-          this.nestedSamplingRequestCount,
-        ),
+        reportedModels: [...this.nestedModels].sort(),
+        usage: this.nestedReportedRequestCount || this.nestedMissingRequestCount
+          ? {
+            ...this.nestedUsage,
+            coverage: this.nestedMissingRequestCount === 0 ? "complete" : "partial",
+            reportedRequestCount: this.nestedReportedRequestCount,
+            missingRequestCount: this.nestedMissingRequestCount,
+          }
+          : null,
       },
-      ...(this.enforcementCapabilities
-        ? { enforcementCapabilities: this.enforcementCapabilities }
-        : {}),
-      ...(this.effectivePolicy
-        ? { effectivePolicy: this.effectivePolicy() }
-        : {}),
+      ...(this.enforcementCapabilities ? { enforcementCapabilities: this.enforcementCapabilities } : {}),
+      ...(this.effectivePolicy ? { effectivePolicy: this.effectivePolicy } : {}),
     };
-    return this.finished;
-  }
-}
-
-function clientReportedUsage(
-  response: SamplingCreateMessageResult,
-): PiWorkerTokenUsage | undefined {
-  const metadataUsage = isObject(response._meta?.usage) ? response._meta.usage : undefined;
-  const raw = isObject(response.usage) ? response.usage : metadataUsage;
-  if (!raw) return undefined;
-  const usage: PiWorkerTokenUsage = {};
-  let present = false;
-  for (const key of TOKEN_USAGE_KEYS) {
-    const value = raw[key];
-    if (value === undefined) continue;
-    if (!isNonnegativeInteger(value)) return undefined;
-    usage[key] = value;
-    present = true;
-  }
-  return present ? usage : undefined;
-}
-
-function acknowledgedReasoningEffort(
-  response: SamplingCreateMessageResult,
-): string | undefined {
-  const metadata = response._meta;
-  if (!isObject(metadata)) return undefined;
-  const reasoning = isObject(metadata.reasoning) ? metadata.reasoning : undefined;
-  for (const value of [
-    metadata.reasoningEffortApplied,
-    metadata.reasoningEffort,
-    reasoning?.applied,
-  ]) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return undefined;
-}
-
-function addTokenUsage(
-  destination: PiWorkerTokenUsage,
-  source: PiWorkerTokenUsage,
-): void {
-  for (const key of TOKEN_USAGE_KEYS) {
-    const value = source[key];
-    if (value !== undefined) destination[key] = (destination[key] ?? 0) + value;
   }
 }
 
 function projectedUsage(
   usage: PiWorkerTokenUsage,
   reportedRequestCount: number,
-  samplingRequestCount: number,
-): PiWorkerUsageDiagnostics | null {
-  if (reportedRequestCount === 0) return null;
-  const missingRequestCount = Math.max(0, samplingRequestCount - reportedRequestCount);
+  missingRequestCount: number,
+): PiWorkerUsageDiagnostics {
   return {
+    ...usage,
     coverage: missingRequestCount === 0 ? "complete" : "partial",
     reportedRequestCount,
     missingRequestCount,
-    ...usage,
   };
 }
 
-function notifyDiagnostics(
-  request: PiWorkerRequest,
-  diagnostics: PiWorkerRunDiagnostics,
+function addTokenUsage(
+  destination: PiWorkerTokenUsage,
+  source: PiWorkerTokenUsage,
 ): void {
+  for (const key of [
+    "inputTokens",
+    "cachedInputTokens",
+    "cacheWriteInputTokens",
+    "outputTokens",
+    "reasoningOutputTokens",
+    "totalTokens",
+  ] as const) {
+    if (source[key] !== undefined) destination[key] = (destination[key] ?? 0) + source[key];
+  }
+}
+
+function notifyDiagnostics(request: PiWorkerRequest, diagnostics: PiWorkerRunDiagnostics): void {
   try {
     request.onDiagnostics?.(diagnostics);
   } catch {
-    // Diagnostics are optional evidence and must not change worker execution.
+    // Diagnostics are optional and cannot stop the worker.
   }
 }
 
 function delegatedTaskPrompt(input: { task: string; context?: string }): string {
   return [
-    "Perform one scoped investigation for a parent Pi Security Deep Scan worker.",
-    "",
-    "Task:",
+    "Investigate this bounded repository-security task for the parent worker:",
     input.task,
-    ...(input.context ? ["", "Parent context:", input.context] : []),
-    "",
-    "The coordinator-bound repository target and scope are authoritative. Return source-backed observations for parent synthesis; do not create or submit a scan draft.",
+    ...(input.context ? ["", "Shared context:", input.context] : []),
   ].join("\n");
 }
-
 
 async function readDelegatedChildOutcome(
   executionContext: ExecutionPolicyContext,
   context: ArtifactContext,
 ): Promise<DelegatedChildOutcome | undefined> {
-  let value: Record<string, unknown> | undefined;
-  try {
-    value = await readOptionalArtifactJson(
-      context,
-      [DELEGATED_OUTCOME_FILE],
-      "Deep Scan delegated child outcome",
-    );
-  } catch (error) {
-    if (isPolicyEnforcementFailure(error)) throw error;
-    throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "The saved delegated child outcome is unavailable or malformed.",
-      { cause: error },
-    );
-  }
-  if (!value) return undefined;
-  if (value.version !== 1) {
-    throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "The saved delegated child outcome has an invalid version.",
-    );
-  }
-  if (value.status === "failed" && typeof value.error === "string" && value.error) {
-    return { error: value.error };
-  }
-  if (value.status === "succeeded" && isObject(value.result)) {
-    try {
-      return {
-        result: await validateDelegatedSecurityTaskResult(
-          executionContext,
-          context,
-          value.result,
-        ),
-      };
-    } catch (error) {
-      if (isPolicyEnforcementFailure(error)) throw error;
-      throw new PolicyRecoveryRejectedError(
-        "invalid_policy",
-        "The saved delegated child result is malformed or violates its bound policy.",
-        { cause: error },
-      );
-    }
-  }
-  throw new PolicyRecoveryRejectedError(
-    "invalid_policy",
-    "The saved delegated child outcome has an invalid envelope.",
+  const value = await readOptionalArtifactJson(
+    context,
+    [DELEGATED_OUTCOME_FILE],
+    "delegated security task outcome",
   );
+  if (!value) return undefined;
+  if (value.version !== 1 || (value.status !== "succeeded" && value.status !== "failed")) {
+    throw new DeepScanNonRetryableError("Delegated security task outcome is invalid.");
+  }
+  if (value.status === "succeeded") {
+    return {
+      result: await validateDelegatedSecurityTaskResult(
+        executionContext,
+        context,
+        value.result,
+      ),
+    };
+  }
+  if (typeof value.error !== "string" || !value.error.trim()) {
+    throw new DeepScanNonRetryableError("Failed delegated security task outcome has no error.");
+  }
+  return { error: value.error };
 }
 
 async function writeDelegatedChildOutcome(
   context: ArtifactContext,
   outcome: DelegatedChildOutcome,
 ): Promise<void> {
-  const destination = await artifactDestination(
-    context,
-    [DELEGATED_OUTCOME_FILE],
-    "Deep Scan delegated child outcome",
-  );
-  const persisted: PersistedDelegatedChildOutcome = outcome.error === undefined
-    ? {
-      version: 1,
-      status: "succeeded",
-      result: outcome.result,
-    }
-    : {
-      version: 1,
-      status: "failed",
-      error: outcome.error,
-    };
-  await replaceArtifactJson(context, destination, persisted);
+  const value: PersistedDelegatedChildOutcome = outcome.error === undefined
+    ? { version: 1, status: "succeeded", result: outcome.result }
+    : { version: 1, status: "failed", error: outcome.error };
+  await replaceArtifactJson(context, DELEGATED_OUTCOME_FILE, value);
 }
 
 async function delegatedChildContinuation(
   context: ArtifactContext,
-): Promise<SamplingContinuation | undefined> {
-  let value: Record<string, unknown> | undefined;
-  try {
-    value = await readOptionalArtifactJson(
-      context,
-      [CONTINUATION_FILE],
-      "Deep Scan delegated child continuation",
-    );
-  } catch (error) {
-    if (isPolicyEnforcementFailure(error)) throw error;
-    throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "The saved delegated child continuation is unavailable or malformed.",
-      { cause: error },
-    );
-  }
-  if (!value) return undefined;
-  let continuation: SamplingContinuation;
-  try {
-    continuation = parseContinuation(value);
-  } catch (error) {
-    if (isPolicyEnforcementFailure(error)) throw error;
-    throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "The saved delegated child continuation is unavailable or malformed.",
-      { cause: error },
-    );
-  }
-  if (continuation.kind !== "discovery") {
-    throw new PolicyRecoveryRejectedError(
-      "delegation_mismatch",
-      "The saved delegated child continuation has an invalid worker kind.",
-    );
-  }
-  return continuation;
+): Promise<WorkerContinuation | undefined> {
+  const value = await readOptionalArtifactJson(
+    context,
+    [CONTINUATION_FILE],
+    "delegated worker continuation",
+  );
+  if (value) return parseContinuation(value);
+  const legacy = await readOptionalArtifactJson(
+    context,
+    [LEGACY_CONTINUATION_FILE],
+    "legacy delegated worker continuation",
+  );
+  return legacy ? migrateLegacyContinuation(legacy) : undefined;
 }
 
 async function readOptionalArtifactJson(
@@ -1400,182 +1117,21 @@ async function readOptionalArtifactJson(
   components: readonly string[],
   label: string,
 ): Promise<Record<string, unknown> | undefined> {
-  const destination = await artifactDestination(context, components, label);
-  const metadata = await fs.lstat(destination).catch((error: NodeJS.ErrnoException) => {
+  const path = await artifactDestination(context, components, label);
+  const exists = await fs.lstat(path).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return undefined;
     throw error;
   });
-  if (!metadata) return undefined;
-  return await readArtifactJsonObject(context, components, label);
-}
-
-/** Only sampling.tools, not basic sampling, permits Deep Scan source access. */
-export function supportsSamplingTools(value: unknown): boolean {
-  if (!isObject(value)) return false;
-  const sampling = value.sampling;
-  return isObject(sampling) && isObject(sampling.tools);
-}
-
-async function settlePendingToolUses(
-  continuation: SamplingContinuation,
-  tools: BoundSamplingTools,
-  signal: AbortSignal,
-  diagnostics: SamplingDiagnosticsCollector,
-): Promise<void> {
-  const assistantMessageIndex = continuation.messages.length - 1;
-  const message = continuation.messages[assistantMessageIndex];
-  if (!message || message.role !== "assistant") return;
-  const uses = indexedToolUses(message.content);
-  if (uses.length === 0) return;
-  const ids = new Set<string>();
-  for (const { block } of uses) {
-    if (ids.has(block.id)) {
-      throw protocolError(`MCP sampling repeated tool_use id ${JSON.stringify(block.id)} in one response.`);
-    }
-    ids.add(block.id);
-  }
-
-  const results: SamplingToolResultContent[] = [];
-  const calls: PersistedToolCall[] = [];
-  for (const use of uses) {
-    signal.throwIfAborted();
-    let call = continuation.toolCalls.find((candidate) => candidate.toolUseId === use.block.id);
-    if (call) {
-      if (
-        call.assistantMessageIndex !== assistantMessageIndex
-        || call.contentIndex !== use.contentIndex
-        || call.name !== use.block.name
-      ) {
-        if (
-          use.block.name === "delegate_security_task"
-          || call.name === "delegate_security_task"
-          || call.delegatedChildOrdinal !== undefined
-        ) {
-          throw new PolicyRecoveryRejectedError(
-            "delegation_mismatch",
-            "A persisted delegated tool call does not match its pending transcript entry.",
-          );
-        }
-        throw protocolError(`MCP sampling reused tool_use id ${JSON.stringify(use.block.id)}.`);
-      }
-      if (call.result.location !== "pending") {
-        if (call.delegatedChildOrdinal !== undefined) {
-          throw new PolicyRecoveryRejectedError(
-            "invalid_policy",
-            "A completed delegated tool call is not followed by its persisted result message.",
-          );
-        }
-        throw continuationError("A completed sampling tool call is not followed by its persisted result message.");
-      }
-    } else {
-      const executed = await tools.execute(use.block.name, use.block.input, signal);
-      diagnostics.recordToolExecution(Boolean(executed.result.isError));
-      const resultBlock: SamplingToolResultContent = {
-        type: "tool_result",
-        toolUseId: use.block.id,
-        content: executed.result.content,
-        ...(executed.result.isError ? { isError: true } : {}),
-      };
-      call = {
-        toolUseId: use.block.id,
-        name: use.block.name,
-        assistantMessageIndex,
-        contentIndex: use.contentIndex,
-        finalSubmissionAccepted: executed.finalSubmissionAccepted,
-        ...(executed.delegatedChildOrdinal === undefined
-          ? {}
-          : { delegatedChildOrdinal: executed.delegatedChildOrdinal }),
-        result: { location: "pending", block: resultBlock },
-      };
-      continuation.toolCalls.push(call);
-      if (executed.finalSubmissionAccepted) {
-        continuation.finalSubmissionAccepted = true;
-      }
-      await writeContinuation(tools.context, continuation);
-    }
-    if (call.result.location !== "pending") {
-      if (call.delegatedChildOrdinal !== undefined) {
-        throw new PolicyRecoveryRejectedError(
-          "invalid_policy",
-          "A delegated tool call lost its pending result before replay.",
-        );
-      }
-      throw continuationError("A sampling tool call lost its pending result before replay.");
-    }
-    results.push(call.result.block);
-    calls.push(call);
-  }
-
-  const resultMessageIndex = continuation.messages.length;
-  continuation.messages.push({ role: "user", content: results });
-  for (const [contentIndex, call] of calls.entries()) {
-    call.result = {
-      location: "message",
-      messageIndex: resultMessageIndex,
-      contentIndex,
-    };
-  }
-  await writeContinuation(tools.context, continuation);
-}
-
-function requireAssistantResponse(response: SamplingCreateMessageResult): SamplingMessage {
-  if (response.role !== "assistant") {
-    throw protocolError("MCP sampling returned a non-assistant response to sampling/createMessage.");
-  }
-  requireContent(response.content, "MCP sampling response");
-  return { role: "assistant", content: response.content };
-}
-
-function indexedToolUses(content: SamplingMessage["content"]): Array<{
-  block: SamplingToolUseContent;
-  contentIndex: number;
-}> {
-  const blocks = Array.isArray(content) ? content : [content];
-  const uses: Array<{ block: SamplingToolUseContent; contentIndex: number }> = [];
-  for (const [contentIndex, block] of blocks.entries()) {
-    if (!isObject(block) || block.type !== "tool_use") continue;
-    if (
-      typeof block.id !== "string"
-      || !block.id
-      || typeof block.name !== "string"
-      || !block.name
-      || !isObject(block.input)
-    ) {
-      throw protocolError("MCP sampling returned malformed tool_use content.");
-    }
-    uses.push({
-      block: block as SamplingToolUseContent,
-      contentIndex,
-    });
-  }
-  return uses;
-}
-
-function textFromContent(content: SamplingMessage["content"]): string {
-  const blocks = Array.isArray(content) ? content : [content];
-  return blocks
-    .filter((block): block is SamplingTextContent => (
-      isObject(block) && block.type === "text" && typeof block.text === "string"
-    ))
-    .map((block) => block.text)
-    .join("\n");
-}
-
-function canAppendContinuation(continuation: SamplingContinuation): boolean {
-  const last = continuation.messages.at(-1);
-  return Boolean(
-    last
-    && last.role === "assistant"
-    && indexedToolUses(last.content).length === 0,
-  );
+  if (!exists) return undefined;
+  return readArtifactJsonObject(context, components, label);
 }
 
 function initialInstruction(prompt: string, delegatedTask: boolean): string {
   return [
     prompt,
     "",
-    delegatedTask ? "MCP DELEGATED SAMPLING TOOL CONTRACT" : "MCP SAMPLING TOOL CONTRACT",
-    "Use only the supplied Pi Security sampling tools to inspect source and scan context.",
+    delegatedTask ? "NATIVE PI DELEGATED WORKER CONTRACT" : "NATIVE PI WORKER CONTRACT",
+    "Use only the supplied Pi Security worker tools to inspect source and scan context.",
     "Do not attempt direct filesystem access or a shell. Paths accepted by source tools are relative to the coordinator-bound target.",
     "Call get_pi_security_scan_context before analysis; it supplies the bundled Standard scan guide and any existing threat-model context.",
     delegatedTask
@@ -1588,253 +1144,330 @@ function initialInstruction(prompt: string, delegatedTask: boolean): string {
 function systemPrompt(
   kind: DeepScanWorkerKind,
   delegatedTask: boolean,
-  reasoningEffort: string | undefined,
+  thinkingLevel: NativeWorkerSettings["thinkingLevel"],
 ): string {
   const purpose = delegatedTask
     ? "Investigate the assigned scoped repository-security task for a parent worker. Use only the supplied target-bound tools and return validated evidence for parent synthesis."
     : kind === "dedup"
       ? "Semantically reduce the assigned Pi Security scan drafts. Use only the supplied reducer tools and obey their schemas."
       : "Perform the requested repository security analysis. Use only the supplied target-bound tools and obey the semantic scan-draft schema.";
-  if (!reasoningEffort) return purpose;
-  return `${purpose} The host requests reasoning effort ${JSON.stringify(reasoningEffort)}. This is an execution preference, not confirmation that the sampling client applied it.`;
+  return thinkingLevel
+    ? `${purpose} The host selected Pi thinking level ${JSON.stringify(thinkingLevel)}.`
+    : purpose;
+}
+
+async function continuationArtifactContext(
+  request: Pick<PiWorkerRequest, "artifactContext" | "artifactWriterContext">,
+): Promise<ArtifactContext> {
+  return createWorkerArtifactContext({
+    root: request.artifactContext.root,
+    repoRoot: request.artifactContext.repoRoot,
+    layout: request.artifactContext.layout,
+    scanId: request.artifactContext.scanId,
+    scope: request.artifactContext.scope,
+    packageRoot: request.artifactContext.packageRoot,
+    targetContract: request.artifactContext.targetContract,
+    targetRevision: request.artifactContext.targetRevision,
+    targetSnapshotDigest: request.artifactContext.targetSnapshotDigest,
+    mode: "deep",
+    deepReducer: request.artifactContext.deepReducer,
+    executionPolicy: request.artifactWriterContext,
+  });
 }
 
 async function readContinuation(
   context: ArtifactContext,
   expectedId: string,
   expectedKind: DeepScanWorkerKind,
-): Promise<SamplingContinuation> {
-  let value: Record<string, unknown>;
-  try {
-    value = await readArtifactJsonObject(
+): Promise<WorkerContinuation> {
+  let continuation: WorkerContinuation;
+  const native = await readOptionalArtifactJson(
+    context,
+    [CONTINUATION_FILE],
+    "native worker continuation",
+  );
+  if (native) {
+    continuation = parseContinuation(native);
+  } else {
+    const legacy = await readOptionalArtifactJson(
       context,
-      [CONTINUATION_FILE],
-      "Deep Scan sampling continuation",
+      [LEGACY_CONTINUATION_FILE],
+      "legacy worker continuation",
     );
-  } catch (error) {
-    if (isPolicyEnforcementFailure(error)) throw error;
-    throw new DeepScanNonRetryableError(
-      "Deep Scan sampling continuation is unavailable or invalid; it cannot be resumed.",
-      { cause: error },
+    if (!legacy) {
+      throw continuationError("Worker continuation does not exist.");
+    }
+    continuation = migrateLegacyContinuation(legacy);
+    await writeContinuation(context, continuation, true);
+    const legacyPath = await artifactDestination(
+      context,
+      [LEGACY_CONTINUATION_FILE],
+      "legacy worker continuation",
     );
+    await fs.unlink(legacyPath);
   }
-  const continuation = parseContinuation(value);
-  if (continuation.id !== expectedId) {
-    throw new PolicyRecoveryRejectedError(
-      "binding_mismatch",
-      "The saved Deep Scan sampling continuation has a different identity.",
-    );
-  }
-  if (continuation.kind !== expectedKind) {
-    throw new PolicyRecoveryRejectedError(
-      "binding_mismatch",
-      "The saved Deep Scan sampling continuation belongs to a different worker phase.",
-    );
+  if (continuation.id !== expectedId || continuation.kind !== expectedKind) {
+    throw continuationError("Worker continuation identity does not match the requested worker.");
   }
   return continuation;
 }
 
 async function writeContinuation(
   context: ArtifactContext,
-  continuation: SamplingContinuation,
+  continuation: WorkerContinuation,
   createOnly = false,
 ): Promise<void> {
+  if (!createOnly) {
+    await replaceArtifactJson(context, CONTINUATION_FILE, continuation);
+    return;
+  }
   const destination = await artifactDestination(
     context,
     [CONTINUATION_FILE],
-    "Deep Scan sampling continuation",
+    "native worker continuation",
   );
-  if (createOnly) {
-    const existing = await fs.lstat(destination).catch(() => undefined);
-    if (existing) {
-      throw continuationError("A new Deep Scan worker found an existing sampling continuation.");
-    }
-  }
-  await replaceArtifactJson(context, destination, continuation);
+  await fs.mkdir(dirname(destination), { recursive: true });
+  await fs.writeFile(destination, `${JSON.stringify(continuation, null, 2)}\n`, {
+    encoding: "utf8",
+    flag: "wx",
+    mode: 0o600,
+  });
 }
 
 async function readBoundWorkerPrompt(request: PiWorkerRequest): Promise<string> {
-  const prompt = resolve(request.promptPath);
-  const workerRoot = resolve(request.artifactContext.workerRoot);
-  const relativePrompt = relative(workerRoot, prompt);
-  const retryPrompt = relativePrompt.startsWith(`prompts${sep}`)
-    && /^prompts[/\\]attempt-[0-9]{2}\.md$/u.test(relativePrompt);
-  const basePrompt = prompt === join(workerRoot, "prompt.md");
-  const delegatedPrompt = request.delegation !== undefined
-    && prompt === join(resolve(request.artifactContext.root), "prompt.md");
-  if (!basePrompt && !retryPrompt && !delegatedPrompt) {
-    throw new DeepScanNonRetryableError(
-      "Deep Scan prompt is not one of the coordinator-created worker prompts.",
-    );
-  }
-  const opened = await openExecutionWorkerInput(
+  const prompt = await openExecutionWorkerInput(
     request.executionContext,
-    prompt,
+    request.promptPath,
     "file",
     "Deep Scan worker prompt",
   );
   try {
-    return await opened.handle.readFile("utf8");
+    const workerRoot = resolve(request.artifactContext.workerRoot);
+    const promptPath = resolve(prompt.absolute);
+    const relativePrompt = relative(workerRoot, promptPath);
+    if (
+      relativePrompt === ""
+      || relativePrompt === ".."
+      || relativePrompt.startsWith(`..${sep}`)
+      || resolve(workerRoot, relativePrompt) !== promptPath
+    ) {
+      throw new Error("Deep Scan worker prompt escaped its host-created worker directory.");
+    }
+    const source = await prompt.handle.readFile({ encoding: "utf8" });
+    if (!source.trim()) throw new Error("Deep Scan worker prompt is empty.");
+    return source;
   } finally {
-    await opened.handle.close();
+    await prompt.handle.close();
   }
 }
 
-function parseContinuation(value: Record<string, unknown>): SamplingContinuation {
-  if (value.version === 1) {
-    throw new PolicyRecoveryRejectedError(
-      "legacy_continuation",
-      "Legacy Deep Scan continuation v1 has no enforceable saved policy and cannot be resumed; Pi Security will not downgrade to pathname-only or unbound tool enforcement.",
-    );
+function parseContinuation(value: Record<string, unknown>): WorkerContinuation {
+  if (
+    value.version !== 3
+    || typeof value.id !== "string"
+    || !value.id
+    || (value.kind !== "setup" && value.kind !== "discovery" && value.kind !== "dedup")
+    || !Array.isArray(value.messages)
+    || !Array.isArray(value.toolCalls)
+    || !isObject(value.delegation)
+    || value.delegation.version !== 1
+    || !Array.isArray(value.delegation.children)
+    || typeof value.finalSubmissionAccepted !== "boolean"
+  ) {
+    throw continuationError("Native worker continuation is invalid.");
   }
+  const messages = value.messages.map(parseNativeMessage);
+  const toolCalls = value.toolCalls.map(parsePersistedToolCall);
+  const children = value.delegation.children.map(parseDelegationMarker);
+  return {
+    version: 3,
+    id: value.id,
+    kind: value.kind,
+    policy: parseWorkerExecutionPolicies(value.policy),
+    delegation: { version: 1, children },
+    messages,
+    toolCalls,
+    finalSubmissionAccepted: value.finalSubmissionAccepted,
+  };
+}
+
+function migrateLegacyContinuation(value: Record<string, unknown>): WorkerContinuation {
   if (
     value.version !== 2
     || typeof value.id !== "string"
     || !value.id
     || (value.kind !== "setup" && value.kind !== "discovery" && value.kind !== "dedup")
     || !Array.isArray(value.messages)
+    || value.messages.length !== 1
     || !Array.isArray(value.toolCalls)
-    || typeof value.finalSubmissionAccepted !== "boolean"
-  ) {
-    throw continuationError("The saved Deep Scan sampling continuation has an invalid envelope.");
-  }
-  if (
-    !isObject(value.delegation)
+    || value.toolCalls.length !== 0
+    || !isObject(value.delegation)
     || value.delegation.version !== 1
     || !Array.isArray(value.delegation.children)
+    || value.delegation.children.length !== 0
+    || value.finalSubmissionAccepted !== false
   ) {
     throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "The saved Deep Scan delegation state has an invalid envelope.",
+      "legacy_continuation",
+      "The saved pre-native worker continuation cannot be migrated safely.",
     );
   }
-  let policy: PersistedWorkerExecutionPolicies;
-  try {
-    policy = parseWorkerExecutionPolicies(value.policy);
-  } catch (error) {
+  const legacyMessage = value.messages[0];
+  if (!isObject(legacyMessage) || legacyMessage.role !== "user") {
     throw new PolicyRecoveryRejectedError(
-      "invalid_policy",
-      "The saved Deep Scan execution policy is unavailable, forged, or stale.",
-      { cause: error },
+      "legacy_continuation",
+      "The saved pre-native worker message history cannot be restored safely.",
     );
   }
-  const children: DelegationMarker[] = [];
-  for (const [index, rawMarker] of value.delegation.children.entries()) {
-    if (
-      !isObject(rawMarker)
-      || rawMarker.ordinal !== index + 1
-      || typeof rawMarker.task !== "string"
-      || !rawMarker.task
-      || (
-        rawMarker.context !== undefined
-        && (typeof rawMarker.context !== "string" || !rawMarker.context)
-      )
-    ) {
-      throw new PolicyRecoveryRejectedError(
-        "invalid_policy",
-        "The saved Deep Scan delegation state has an invalid child marker.",
-      );
-    }
-    let childPolicy: PersistedExecutionPolicyState;
-    try {
-      childPolicy = parseExecutionPolicyState(rawMarker.policy);
-    } catch (error) {
-      throw new PolicyRecoveryRejectedError(
-        "invalid_policy",
-        "The saved Deep Scan delegated child policy is unavailable, forged, or spent.",
-        { cause: error },
-      );
-    }
-    children.push({
-      ordinal: rawMarker.ordinal,
-      task: rawMarker.task,
-      ...(typeof rawMarker.context === "string" ? { context: rawMarker.context } : {}),
-      policy: childPolicy,
-    });
+  const blocks = Array.isArray(legacyMessage.content)
+    ? legacyMessage.content
+    : [legacyMessage.content];
+  if (
+    blocks.length !== 1
+    || !isObject(blocks[0])
+    || blocks[0].type !== "text"
+    || typeof blocks[0].text !== "string"
+  ) {
+    throw new PolicyRecoveryRejectedError(
+      "legacy_continuation",
+      "The saved pre-native worker message history cannot be restored safely.",
+    );
   }
-  for (const message of value.messages) {
-    if (!isObject(message) || (message.role !== "user" && message.role !== "assistant")) {
-      throw continuationError("The saved Deep Scan sampling continuation has an invalid message role.");
-    }
-    requireContent(message.content, "Saved Deep Scan sampling message");
+  const contract = "\n\nMCP SAMPLING TOOL CONTRACT";
+  const delegatedContract = "\n\nMCP DELEGATED SAMPLING TOOL CONTRACT";
+  const marker = blocks[0].text.includes(delegatedContract)
+    ? delegatedContract
+    : contract;
+  const markerIndex = blocks[0].text.indexOf(marker);
+  if (markerIndex < 1) {
+    throw new PolicyRecoveryRejectedError(
+      "legacy_continuation",
+      "The saved pre-native worker message history cannot be restored safely.",
+    );
   }
-  for (const rawCall of value.toolCalls) {
-    if (!isObject(rawCall) || !validPersistedToolCall(rawCall)) {
-      if (
-        isObject(rawCall)
-        && (
-          rawCall.name === "delegate_security_task"
-          || rawCall.delegatedChildOrdinal !== undefined
-        )
-      ) {
-        throw new PolicyRecoveryRejectedError(
-          "invalid_policy",
-          "The saved Deep Scan delegation state has an invalid tool-call record.",
-        );
-      }
-      throw continuationError("The saved Deep Scan sampling continuation has an invalid tool-call record.");
-    }
-  }
+  const prompt = blocks[0].text.slice(0, markerIndex);
+  const delegatedTask = marker === delegatedContract;
   return {
-    version: 2,
+    version: 3,
     id: value.id,
     kind: value.kind,
-    policy,
-    delegation: { version: 1, children },
-    messages: value.messages as SamplingMessage[],
-    toolCalls: value.toolCalls as PersistedToolCall[],
-    finalSubmissionAccepted: value.finalSubmissionAccepted,
+    policy: parseWorkerExecutionPolicies(value.policy),
+    delegation: { version: 1, children: [] },
+    messages: [{
+      role: "user",
+      content: [{ type: "text", text: initialInstruction(prompt, delegatedTask) }],
+      timestamp: 0,
+    }],
+    toolCalls: [],
+    finalSubmissionAccepted: false,
   };
 }
 
-function validPersistedToolCall(value: Record<string, unknown>): boolean {
+function parseDelegationMarker(value: unknown): DelegationMarker {
   if (
-    typeof value.toolUseId !== "string"
-    || !value.toolUseId
+    !isObject(value)
+    || !isNonnegativeInteger(value.ordinal)
+    || value.ordinal < 1
+    || typeof value.task !== "string"
+    || !value.task.trim()
+    || (value.context !== undefined && (typeof value.context !== "string" || !value.context.trim()))
+  ) {
+    throw continuationError("Worker continuation has invalid delegation state.");
+  }
+  return {
+    ordinal: value.ordinal,
+    task: value.task,
+    ...(typeof value.context === "string" ? { context: value.context } : {}),
+    policy: parseExecutionPolicyState(value.policy),
+  };
+}
+
+function parsePersistedToolCall(value: unknown): PersistedWorkerToolCall {
+  if (
+    !isObject(value)
+    || typeof value.id !== "string"
+    || !value.id
     || typeof value.name !== "string"
     || !value.name
-    || !isNonnegativeInteger(value.assistantMessageIndex)
-    || !isNonnegativeInteger(value.contentIndex)
+    || !isObject(value.input)
     || typeof value.finalSubmissionAccepted !== "boolean"
-    || !isObject(value.result)
+    || (value.delegatedChildOrdinal !== undefined && !isNonnegativeInteger(value.delegatedChildOrdinal))
   ) {
-    return false;
+    throw continuationError("Native worker continuation has an invalid tool ledger.");
   }
+  const result = parsePersistedWorkerToolResult(value.result);
+  return {
+    id: value.id,
+    name: value.name,
+    input: value.input,
+    finalSubmissionAccepted: value.finalSubmissionAccepted,
+    result,
+    ...(typeof value.delegatedChildOrdinal === "number"
+      ? { delegatedChildOrdinal: value.delegatedChildOrdinal }
+      : {}),
+  };
+}
+
+function parsePersistedWorkerToolResult(value: unknown): WorkerToolResult {
   if (
-    value.delegatedChildOrdinal !== undefined
-    && (
-      value.name !== "delegate_security_task"
-      || !isNonnegativeInteger(value.delegatedChildOrdinal)
-      || value.delegatedChildOrdinal < 1
-    )
+    !isObject(value)
+    || !Array.isArray(value.content)
+    || value.content.some((block) => (
+      !isObject(block)
+      || block.type !== "text"
+      || typeof block.text !== "string"
+    ))
+    || (value.isError !== undefined && typeof value.isError !== "boolean")
   ) {
-    return false;
+    throw continuationError("Native worker continuation has an invalid tool result.");
   }
-  if (value.result.location === "pending") {
-    return isToolResultContent(value.result.block);
-  }
-  return value.result.location === "message"
-    && isNonnegativeInteger(value.result.messageIndex)
-    && isNonnegativeInteger(value.result.contentIndex);
+  return {
+    content: value.content as Array<{ type: "text"; text: string }>,
+    ...(value.isError === true ? { isError: true } : {}),
+  };
 }
 
-function requireContent(value: unknown, label: string): asserts value is SamplingMessage["content"] {
-  const blocks = Array.isArray(value) ? value : [value];
-  if (blocks.length === 0 || blocks.some((block) => !isObject(block) || typeof block.type !== "string")) {
-    throw continuationError(`${label} has invalid content.`);
+function parseNativeMessage(value: unknown): NativeMessage {
+  if (
+    !isObject(value)
+    || (value.role !== "user" && value.role !== "assistant" && value.role !== "toolResult")
+    || !isSafeJson(value)
+  ) {
+    throw continuationError("Native worker continuation has an invalid message transcript.");
   }
+  return value as unknown as NativeMessage;
 }
 
-function isToolResultContent(value: unknown): value is SamplingToolResultContent {
-  return Boolean(
-    isObject(value)
-    && value.type === "tool_result"
-    && typeof value.toolUseId === "string"
-    && Array.isArray(value.content)
-    && value.content.every((block) => (
+function cloneMessages(messages: readonly NativeMessage[]): NativeMessage[] {
+  return JSON.parse(JSON.stringify(messages)) as NativeMessage[];
+}
+
+function finalAssistantText(messages: readonly NativeMessage[]): string {
+  const assistant = [...messages].reverse().find((message) => message.role === "assistant");
+  if (!assistant || !Array.isArray(assistant.content)) return "";
+  return assistant.content
+    .filter((block): block is { type: "text"; text: string } => (
       isObject(block) && block.type === "text" && typeof block.text === "string"
-    )),
-  );
+    ))
+    .map((block) => block.text)
+    .join("\n");
+}
+
+function toolResultText(result: WorkerToolResult): string {
+  return result.content.map((item) => item.text).join("\n");
+}
+
+function isSafeJson(value: unknown, seen = new Set<object>()): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object" || seen.has(value)) return false;
+  seen.add(value);
+  const valid = Array.isArray(value)
+    ? value.every((item) => isSafeJson(item, seen))
+    : Object.getPrototypeOf(value) === Object.prototype
+      && Object.values(value).every((item) => isSafeJson(item, seen));
+  seen.delete(value);
+  return valid;
 }
 
 function isNonnegativeInteger(value: unknown): value is number {
@@ -1843,10 +1476,6 @@ function isNonnegativeInteger(value: unknown): value is number {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-function protocolError(message: string): DeepScanNonRetryableError {
-  return new DeepScanNonRetryableError(message);
 }
 
 function continuationError(message: string): DeepScanNonRetryableError {

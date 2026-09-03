@@ -48,6 +48,4 @@
 /packages/pi-security/requirements-test.txt
 /packages/pi-security/tsconfig.json
 /packages/pi-security/scripts-build.mjs
-/packages/pi-security/main.ts
-/packages/pi-security/server.ts
-/packages/pi-security/artifact-writer-main.ts
+/packages/pi-security/lifecycle.ts

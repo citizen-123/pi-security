@@ -1,6 +1,7 @@
 import type {
   AgentToolResult,
-  ExtensionAPI
+  ExtensionAPI,
+  CreateAgentSessionOptions,
 } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
 import type { ExecutionPolicyContext } from "../src/execution-policy.js";
@@ -8,11 +9,11 @@ import {
   assertPiPermissionSurface,
   piPermissionSurfaceAllowed
 } from "../src/pi-permission-profile.js";
-import { createPiSecurityLifecycleCatalog } from "../server.js";
+import { createPiSecurityLifecycleCatalog } from "../lifecycle.js";
 import {
   lifecycleToolJsonSchema,
   parseLifecycleToolInput
-} from "../src/server/lifecycle-catalog.js";
+} from "../src/lifecycle/catalog.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -38,10 +39,36 @@ export function registerPiSecurityLifecycleTools(
         const result = await tool.handler(input, {
           sessionId,
           signal,
-          _meta: {
-            sessionId,
-            ...(context.model ? { model: context.model.id } : {})
-          }
+          model: context.model,
+          modelId: context.model?.id,
+          thinkingLevel: currentThinkingLevel(context.sessionManager.getEntries()),
+          resolveModel: (modelId) => context.modelRegistry
+            .getAvailable()
+            .find((model) => model.id === modelId),
+          requestUserInput: context.hasUI
+            ? async (questions, requestSignal) => {
+              const answers: Record<string, string> = {};
+              for (const question of questions) {
+                const options = question.options.map(
+                  (option) => `${option.label} — ${option.description}`,
+                );
+                const selected = await context.ui.select(
+                  `${question.header}: ${question.question}`,
+                  options,
+                  { signal: requestSignal },
+                );
+                if (!selected) {
+                  return {
+                    status: requestSignal?.aborted ? "cancelled" : "declined",
+                  };
+                }
+                const index = options.indexOf(selected);
+                if (index < 0) return { status: "unavailable" };
+                answers[question.id] = question.options[index]!.label;
+              }
+              return { status: "accepted", answers };
+            }
+            : undefined,
         });
         return piToolResult(result);
       }
@@ -50,6 +77,25 @@ export function registerPiSecurityLifecycleTools(
   pi.on("session_shutdown", () => {
     catalog.dispose();
   });
+}
+
+function currentThinkingLevel(
+  entries: readonly unknown[],
+): CreateAgentSessionOptions["thinkingLevel"] {
+  for (const entry of [...entries].reverse()) {
+    if (!isJsonObject(entry) || entry.type !== "thinking_level_change") continue;
+    switch (entry.thinkingLevel) {
+      case "off":
+        return undefined;
+      case "minimal":
+      case "low":
+      case "medium":
+      case "high":
+      case "xhigh":
+        return entry.thinkingLevel;
+    }
+  }
+  return undefined;
 }
 
 function piToolResult(result: unknown): AgentToolResult<unknown> {

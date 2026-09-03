@@ -186,13 +186,13 @@ def _scan_root_thread_ids(
         candidates.append(workspace["thread_id"])
     if scan["mode"] == "deep":
         candidates.extend(
-            row["sdk_thread_id"]
+            row["continuation_id"]
             for row in connection.execute(
                 """
-                SELECT DISTINCT sdk_thread_id
+                SELECT DISTINCT continuation_id
                 FROM deep_scan_workers
-                WHERE scan_id = ? AND sdk_thread_id IS NOT NULL
-                ORDER BY sdk_thread_id
+                WHERE scan_id = ? AND continuation_id IS NOT NULL
+                ORDER BY continuation_id
                 """,
                 (scan["id"],),
             )

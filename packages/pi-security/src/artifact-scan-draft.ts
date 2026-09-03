@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import type * as z from "zod/v4";
-import commonSchema from "../schemas/definitions/artifact-common.schema.json";
-import scanDraftDocument from "../schemas/tools/scan-draft.schema.json";
+import commonSchema from "../schemas/definitions/artifact-common.schema.json" with { type: "json" };
+import scanDraftDocument from "../schemas/tools/scan-draft.schema.json" with { type: "json" };
 import type { ArtifactContext } from "./artifact-context.js";
 import type { RunArtifactWorkbench } from "./artifact-context.js";
 import {
@@ -16,6 +16,7 @@ import {
   loadArtifactZodSchema,
   type SchemaDocument,
 } from "./artifact-schema-loader.js";
+import { issueDeepScanArtifactWriterContext } from "./deep-scan/worker-policy.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -600,6 +601,15 @@ async function readArchivedWorkerCheckpoints(
     if (!attemptRoot.startsWith(canonicalAttemptsRoot + sep)) {
       throw new Error("scan checkpoint: archived attempt escaped its worker directory.");
     }
+    const attemptContext: ArtifactContext = {
+      ...context,
+      root: attemptRoot,
+      executionPolicy: issueDeepScanArtifactWriterContext({
+        targetRoot: context.repoRoot,
+        scanId: context.scanId,
+        artifactRoot: attemptRoot,
+      }),
+    };
     const drafts: Array<{
       input: ScanDraftInput;
       modifiedMs: number;
@@ -614,7 +624,7 @@ async function readArchivedWorkerCheckpoints(
         throw new Error("scan checkpoint: archived checkpoint head is not a safe file.");
       }
       const head = parseJsonObject(await readArtifactText(
-        { ...context, root: attemptRoot },
+        attemptContext,
         ["checkpoint-head.json"],
         "archived scan checkpoint head",
       ), "archived scan checkpoint head");
@@ -626,7 +636,7 @@ async function readArchivedWorkerCheckpoints(
       }
       checkpointHeadName = head.checkpoint;
       checkpointHead = parsePersistedScanDraft(parseJsonObject(await readArtifactText(
-        { ...context, root: attemptRoot },
+        attemptContext,
         ["checkpoints", checkpointHeadName],
         "archived scan checkpoint head",
       ), "archived scan checkpoint head"));
@@ -638,7 +648,7 @@ async function readArchivedWorkerCheckpoints(
         throw new Error("scan checkpoint: archived result is not a safe file.");
       }
       const contents = await readArtifactText(
-        { ...context, root: attemptRoot },
+        attemptContext,
         ["result.json"],
         "archived scan result",
       );
@@ -680,7 +690,7 @@ async function readArchivedWorkerCheckpoints(
           throw new Error("scan checkpoint: archived checkpoint is not a safe file.");
         }
         const contents = await readArtifactText(
-          { ...context, root: attemptRoot },
+          attemptContext,
           ["checkpoints", checkpoint.name],
           "archived scan checkpoint",
         );

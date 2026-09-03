@@ -845,9 +845,16 @@ def scan_target_root(scan_root: str | None, target: Path) -> Path:
     return target_root
 
 
+def create_owned_scan_target_root(target_root: Path) -> None:
+    target_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    metadata = target_root.lstat()
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise SystemExit("The scan target output root must be a non-symlink directory.")
+
+
 def create_scan_target_root(args: argparse.Namespace, target_root: Path) -> None:
     if not getattr(args, "private_scan_root", False):
-        target_root.mkdir(parents=True, exist_ok=True)
+        create_owned_scan_target_root(target_root)
         return
     if not args.scan_root:
         raise SystemExit("A private generated scan root requires --scan-root.")
@@ -1122,7 +1129,7 @@ def _start_prompt_driven_scan(
                 **scan_context(connection, existing["id"]),
                 "startDisposition": "joined",
             }
-        target_root.mkdir(parents=True, exist_ok=True)
+        create_owned_scan_target_root(target_root)
         workspace_id = str(uuid.uuid4())
         scan_id = str(uuid.uuid4())
         timestamp = now()

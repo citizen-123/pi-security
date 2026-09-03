@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import sqlite3
+import stat
 import sys
 import tempfile
 import uuid
@@ -37,7 +38,7 @@ DEEP_SCAN_REPLACEABLE_FAILURE_KINDS = (
     "invalid_discovery_artifacts",
 )
 DEEP_SCAN_TERMINAL_REASONS = ("saturated", "capped")
-DEEP_SCAN_WORKFLOW_VERSION = "deep-security-scan/v1"
+DEEP_SCAN_WORKFLOW_VERSION = "deep-scan-native/v1"
 DEEP_SCAN_COORDINATOR_LEASE_SECONDS = 30
 DEEP_SCAN_LEGACY_COORDINATOR_GRACE_SECONDS = 120
 DEEP_SCAN_MAX_ERROR_LENGTH = 2400
@@ -110,7 +111,7 @@ def register_subcommands(subparsers: Any, positive_int: Callable[[str], int]) ->
     upsert_deep_worker.add_argument("--artifact-dir", required=True)
     upsert_deep_worker.add_argument("--result-manifest-path")
     upsert_deep_worker.add_argument("--attempt", type=non_negative_int)
-    upsert_deep_worker.add_argument("--sdk-thread-id")
+    upsert_deep_worker.add_argument("--continuation-id")
     upsert_deep_worker.add_argument("--error-message")
     upsert_deep_worker.add_argument(
         "--replaceable-failure-kind", choices=DEEP_SCAN_REPLACEABLE_FAILURE_KINDS
@@ -636,7 +637,7 @@ def deep_scan_worker_state(row: sqlite3.Row) -> dict[str, Any]:
         "artifactDir": row["artifact_dir"],
         "resultManifestPath": row["result_manifest_path"],
         "attempt": row["attempt"],
-        "sdkThreadId": row["sdk_thread_id"],
+        "continuationId": row["continuation_id"],
         "completionSequence": row["completion_sequence"],
         "error": row["error_message"],
         "createdAt": row["created_at"],
@@ -683,6 +684,19 @@ def ensure_deep_scan_run(
         "SELECT * FROM deep_scan_runs WHERE scan_id = ?", (scan["id"],)
     ).fetchone()
     if existing is not None:
+        if (
+            existing["workflow_version"] == "deep-scan-mcp/v1"
+            and workflow_version == DEEP_SCAN_WORKFLOW_VERSION
+        ):
+            connection.execute(
+                "UPDATE deep_scan_runs SET workflow_version = ?, updated_at = ? WHERE scan_id = ?",
+                (workflow_version, timestamp, scan["id"]),
+            )
+            return require_deep_scan_run(connection, scan["id"])
+        if existing["workflow_version"] != workflow_version:
+            raise SystemExit(
+                "The saved Deep Scan workflow is incompatible with this native runtime."
+            )
         return existing
     if scan["mode"] != "deep":
         raise SystemExit("Deep Scan orchestration requires a scan in deep mode.")
@@ -835,16 +849,6 @@ def begin_deep_scan_for_scan(
     )
     if scan["mode"] != "deep":
         raise SystemExit("Deep Scan orchestration requires a scan in deep mode.")
-    existing = connection.execute(
-        "SELECT scan_id FROM deep_scan_runs WHERE scan_id = ?", (scan_id,)
-    ).fetchone()
-    if existing is not None:
-        return deep_scan_result(
-            connection,
-            scan_id,
-            start_disposition="joined",
-            artifact_write_authorization="owning_thread_live_rejoin",
-        )
     model = optional_text(args.model, maximum=200)
     reasoning_effort = optional_text(args.reasoning_effort, maximum=32)
     config = effective_deep_scan_config(args)
@@ -873,8 +877,8 @@ def begin_deep_scan_for_scan(
                     """,
                     (model, reasoning_effort, scan_id),
                 )
-            ensure_deep_scan_run(connection, scan, config, workflow_version, now())
             disposition = "created"
+        ensure_deep_scan_run(connection, scan, config, workflow_version, now())
         connection.commit()
     except BaseException:
         connection.rollback()
@@ -975,7 +979,13 @@ def begin_deep_scan_for_target(
         target_root = (root / safe_segment(target.name)).resolve()
         if target_root == target or target in target_root.parents:
             raise SystemExit("The scan artifact directory must be outside the selected target.")
-        target_root.mkdir(parents=True, exist_ok=True)
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        target_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        target_root_metadata = target_root.lstat()
+        if stat.S_ISLNK(target_root_metadata.st_mode) or not stat.S_ISDIR(
+            target_root_metadata.st_mode
+        ):
+            raise SystemExit("The scan target output root must be a non-symlink directory.")
         user_context = user_context_argument(args)
         model = optional_text(args.model, maximum=200)
         reasoning_effort = optional_text(args.reasoning_effort, maximum=32)
@@ -1093,7 +1103,7 @@ def deep_scan_preflight_payload(
                 SELECT *
                 FROM deep_scan_workers
                 WHERE scan_id = ? AND status = 'running'
-                    AND sdk_thread_id IS NOT NULL
+                    AND continuation_id IS NOT NULL
                     AND kind IN ('discovery', 'dedup')
                 ORDER BY created_at, id
                 """,
@@ -1563,7 +1573,7 @@ def upsert_deep_scan_worker(
                 """
                 INSERT INTO deep_scan_workers (
                     id, scan_id, kind, status, prompt_path, artifact_dir, attempt,
-                    sdk_thread_id, error_message, created_at, started_at, updated_at
+                    continuation_id, error_message, created_at, started_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -1574,7 +1584,7 @@ def upsert_deep_scan_worker(
                     prompt_path,
                     artifact_dir,
                     attempt,
-                    optional_text(args.sdk_thread_id, maximum=512),
+                    optional_text(args.continuation_id, maximum=512),
                     optional_text(args.error_message, maximum=2400),
                     timestamp,
                     timestamp if args.status == "running" else None,
@@ -1591,15 +1601,15 @@ def upsert_deep_scan_worker(
         require_worker_transition(existing["status"], args.status)
         if terminal_repeat:
             repeated_attempt = args.attempt if args.attempt is not None else existing["attempt"]
-            repeated_thread_id = optional_text(args.sdk_thread_id, maximum=512)
+            repeated_continuation_id = optional_text(args.continuation_id, maximum=512)
             repeated_error = optional_text(args.error_message, maximum=2400)
             repeated_result_path = result_manifest_path or existing["result_manifest_path"]
             if (
                 repeated_attempt != existing["attempt"]
                 or repeated_result_path != existing["result_manifest_path"]
                 or (
-                    repeated_thread_id is not None
-                    and repeated_thread_id != existing["sdk_thread_id"]
+                    repeated_continuation_id is not None
+                    and repeated_continuation_id != existing["continuation_id"]
                 )
                 or repeated_error is not None
                 and repeated_error != existing["error_message"]
@@ -1682,7 +1692,7 @@ def upsert_deep_scan_worker(
             """
             UPDATE deep_scan_workers
             SET status = ?, result_manifest_path = ?, attempt = ?,
-                sdk_thread_id = COALESCE(?, sdk_thread_id),
+                continuation_id = COALESCE(?, continuation_id),
                 completion_sequence = ?, merge_state = ?,
                 error_message = ?,
                 started_at = ?, completed_at = ?, updated_at = ?
@@ -1692,7 +1702,7 @@ def upsert_deep_scan_worker(
                 args.status,
                 result_manifest_path or existing["result_manifest_path"],
                 attempt,
-                optional_text(args.sdk_thread_id, maximum=512),
+                optional_text(args.continuation_id, maximum=512),
                 completion_sequence,
                 merge_state,
                 error_message,

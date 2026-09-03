@@ -583,7 +583,7 @@ def test_completion_counts_deep_sdk_workers_and_descendants(tmp_path: Path) -> N
         str(prompt),
         "--artifact-dir",
         str(artifact),
-        "--sdk-thread-id",
+        "--continuation-id",
         "sdk-worker",
         environment=environment,
     )

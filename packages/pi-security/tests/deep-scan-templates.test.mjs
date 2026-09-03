@@ -58,7 +58,8 @@ const withFeedback = renderDiscoveryPrompt({
   subagents: 3
 }, feedbackPath);
 assert.deepEqual(firstJsonBlock(withFeedback), discoveryContext);
-assert.equal(withFeedback.includes(JSON.stringify(feedbackPath)), true);
+assert.match(withFeedback, /reviewer false-positive feedback/u);
+assert.equal(withFeedback.includes(JSON.stringify(feedbackPath)), false);
 
 const dedup = renderDedupPrompt({
   reducerLabel: "dedup-0001",
