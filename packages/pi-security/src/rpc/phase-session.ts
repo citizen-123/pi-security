@@ -26,8 +26,8 @@ export interface PhaseInputPackage {
   runId: string;
   role: {
     instructions: string;
-    model: string;
-    provider: string;
+    model?: string;
+    provider?: string;
     thinking: PhaseRoleSettings["thinking"];
   };
   scanId: string;
@@ -45,8 +45,8 @@ export interface PhaseCredential {
 export interface PhaseRoleSettings {
   credential?: PhaseCredential;
   instructions: string;
-  model: string;
-  provider: string;
+  model?: string;
+  provider?: string;
   thinking: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 }
 
@@ -390,11 +390,14 @@ function buildPiArguments(base: string[], request: LaunchPhaseSessionInput): str
   const toolArguments = capability.tools.length > 0
     ? ["--tools", capability.tools.join(",")]
     : ["--no-tools"];
+  const modelArguments = [
+    ...(request.role.provider ? ["--provider", request.role.provider] : []),
+    ...(request.role.model ? ["--model", request.role.model] : []),
+  ];
   return [
     ...base,
     "--mode", "rpc",
-    "--provider", request.role.provider,
-    "--model", request.role.model,
+    ...modelArguments,
     "--thinking", request.role.thinking,
     "--name", `${request.input.runId}:${request.input.phaseId}:${request.ordinal}`,
     "--session-dir", request.input.artifactRoot,

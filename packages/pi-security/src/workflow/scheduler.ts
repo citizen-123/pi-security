@@ -27,7 +27,19 @@ export type PhaseExecutor = (
 
 export interface WorkflowSchedulerOptions {
   executors: Readonly<Record<string, PhaseExecutor>>;
+  initialOutputs?: Readonly<Record<string, unknown>>;
+  initialStates?: Readonly<Record<string, WorkflowPhaseState>>;
   maxParallel: number;
+  onPhaseSettled?: (
+    phase: WorkflowPhaseDefinition,
+    state: "completed" | "failed" | "canceled",
+    output?: unknown,
+    error?: unknown
+  ) => Promise<void> | void;
+  onPhaseStarted?: (
+    phase: WorkflowPhaseDefinition,
+    inputs: Record<string, unknown>
+  ) => Promise<void> | void;
   onStateChange?: (phaseId: string, state: WorkflowPhaseState) => void;
   registry: ClosedPhaseRegistry;
   runId: string;
@@ -90,9 +102,12 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
     throw new Error("Workflow maxParallel must be a positive integer.");
   }
   const states: Record<string, WorkflowPhaseState> = Object.fromEntries(
-    options.workflow.definition.phases.map((phase) => [phase.id, "pending"])
+    options.workflow.definition.phases.map((phase) => [
+      phase.id,
+      options.initialStates?.[phase.id] ?? "pending",
+    ])
   );
-  const outputs: Record<string, unknown> = {};
+  const outputs: Record<string, unknown> = { ...(options.initialOutputs ?? {}) };
   const errors: Record<string, string> = {};
   const running = new Map<string, Promise<SettledExecution>>();
   const admission = new PhaseResultAdmission();
@@ -115,10 +130,11 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
         const phase = phaseById(options.workflow, phaseId);
         const executor = options.executors[phase.type];
         if (!executor) throw new Error(`No workflow executor is registered for ${phase.type}.`);
-        setState(states, phase.id, "running", options.onStateChange);
         const inputs = Object.fromEntries(
           Object.entries(phase.bindings ?? {}).map(([name, binding]) => [name, outputs[binding.from]])
         );
+        setState(states, phase.id, "running", options.onStateChange);
+        await options.onPhaseStarted?.(phase, inputs);
         const execution = executor({ inputs, phase, runId: options.runId, signal })
           .then((result): SettledExecution => ({
             deliveries: Array.isArray(result) ? result : [result],
@@ -148,11 +164,21 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
     const settled = await Promise.race(running.values());
     running.delete(settled.phaseId);
     if (signal.aborted) {
+      await options.onPhaseSettled?.(
+        phaseById(options.workflow, settled.phaseId),
+        "canceled"
+      );
       setState(states, settled.phaseId, "canceled", options.onStateChange);
       continue;
     }
     if (settled.error !== undefined) {
       errors[settled.phaseId] = errorMessage(settled.error);
+      await options.onPhaseSettled?.(
+        phaseById(options.workflow, settled.phaseId),
+        "failed",
+        undefined,
+        settled.error
+      );
       setState(states, settled.phaseId, "failed", options.onStateChange);
       continue;
     }
@@ -172,9 +198,16 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
       }
       if (!accepted) throw new Error("Phase execution produced no admissible structured result.");
       setState(states, phase.id, "completed", options.onStateChange);
+      await options.onPhaseSettled?.(phase, "completed", outputs[phase.id]);
     } catch (error) {
       errors[settled.phaseId] = errorMessage(error);
       setState(states, settled.phaseId, "failed", options.onStateChange);
+      await options.onPhaseSettled?.(
+        phaseById(options.workflow, settled.phaseId),
+        "failed",
+        undefined,
+        error
+      );
     }
   }
 
