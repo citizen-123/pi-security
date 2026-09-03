@@ -8,9 +8,17 @@ import hashlib
 import json
 import re
 import sys
-import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+# Some hosts launch Python with safe-path isolation enabled.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from finalize_scan_contract import (
+    ContractError,
+    _require_portable_relative_path,
+    external_output_path,
+    write_external_output_bytes,
+)
 
 CWE = re.compile(r"(?i)CWE-(\d+)")
 ROLES = {
@@ -63,6 +71,12 @@ def relative_file(value: Any, repo_root: Path) -> tuple[str, Path]:
     raw = value
     if sys.platform == "win32":
         raw = raw.replace("\\", "/")
+        try:
+            _require_portable_relative_path(raw, "path")
+        except ContractError as error:
+            raise ValueError(
+                "path: expected a repository-relative path without traversal"
+            ) from error
     path = PurePosixPath(raw)
     if (
         path.is_absolute()
@@ -268,6 +282,17 @@ def combine(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return combined
 
 
+def write_combined_candidates(output: Path, rows: list[dict[str, Any]]) -> None:
+    payload = "".join(
+        json.dumps(row, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+        for row in rows
+    ).encode("utf-8")
+    try:
+        write_external_output_bytes(output, payload)
+    except ContractError as error:
+        raise ValueError(f"--out: {error}") from error
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", nargs="+", required=True, help="Candidate JSONL inputs.")
@@ -284,7 +309,7 @@ def main() -> None:
         repo_root = Path(args.repo_root).expanduser().resolve(strict=True)
         if not repo_root.is_dir():
             raise ValueError("--repo-root: expected a directory")
-        output = Path(args.out).expanduser().resolve(strict=False)
+        output = external_output_path(Path(args.out))
         scope_path = Path(args.in_scope_files).expanduser().resolve(strict=True)
         inputs = sorted({Path(value).expanduser().resolve(strict=True) for value in args.input})
         if output in inputs:
@@ -307,27 +332,7 @@ def main() -> None:
                     except (ValueError, TypeError, OSError) as error:
                         raise ValueError(f"{source} row {number}: {error}") from error
         combined = combine(rows)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        temporary: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=output.parent,
-                prefix=f".{output.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as handle:
-                temporary = Path(handle.name)
-                for row in combined:
-                    handle.write(
-                        json.dumps(row, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-                        + "\n"
-                    )
-            temporary.replace(output)
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
+        write_combined_candidates(output, combined)
         print(f"Combined {len(rows)} candidate rows into {len(combined)} rows in {output}")
     except (OSError, ValueError) as error:
         print(f"normalize_candidates: {error}", file=sys.stderr)

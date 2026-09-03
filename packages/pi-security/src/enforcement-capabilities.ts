@@ -17,6 +17,13 @@ export type PlatformEnforcementMechanism =
   | "platform.posix-dev-fd"
   | "platform.windows-reparse-identity";
 
+const PLATFORM_ENFORCEMENT_MECHANISMS = Object.freeze([
+  "platform.posix-open-no-follow",
+  "platform.linux-proc-self-fd",
+  "platform.posix-dev-fd",
+  "platform.windows-reparse-identity",
+] as const);
+
 export type PiEnforcementMechanism =
   | "pi.fixed-profile-tool-dispatch"
   | "pi.worker-session.tools"
@@ -76,39 +83,90 @@ const UNSUPPORTED_REASON = Object.freeze({
   artifactRoots: "Pi Security requires canonical scan-bound artifact roots; this host cannot enforce them.",
   trustedWorkbench: "Pi Security requires fixed bundled-workbench dispatch; this host cannot enforce it.",
   continuationPolicy: "Pi Security requires exact continuation-policy reissue; this host cannot enforce it.",
+  invalid: "Pi Security received an invalid host enforcement capability report.",
 });
 
 /** Describe only closed, host-observed mechanisms in deterministic order. */
 export function describePiEnforcementCapabilities(
   input: PiEnforcementAvailability,
 ): EnforcementCapabilityReport {
+  const candidate = input as unknown;
+  const record = candidate !== null
+    && typeof candidate === "object"
+    && !Array.isArray(candidate)
+    ? candidate as Record<string, unknown>
+    : undefined;
+  const kindValue = record?.kind;
+  const kind = kindValue === "effective" ? "effective" : "availability";
+  const piTools = record?.piTools;
+  const workerSessions = record?.workerSessions;
+  const targetHandles = record?.targetHandles;
+  const artifactRoots = record?.artifactRoots;
+  const trustedWorkbench = record?.trustedWorkbench;
+  const continuationPolicy = record?.continuationPolicy;
+  const platformMechanisms = record?.platformMechanisms;
+  const optionalBooleans = [
+    workerSessions,
+    targetHandles,
+    artifactRoots,
+    trustedWorkbench,
+    continuationPolicy,
+  ];
+  if (
+    !record
+    || (kindValue !== "availability" && kindValue !== "effective")
+    || typeof piTools !== "boolean"
+    || optionalBooleans.some(
+      (value) => value !== undefined && typeof value !== "boolean",
+    )
+    || (
+      platformMechanisms !== undefined
+      && (
+        !Array.isArray(platformMechanisms)
+        || !platformMechanisms.every(isPlatformEnforcementMechanism)
+      )
+    )
+  ) {
+    return Object.freeze({
+      schemaVersion: 1 as const,
+      kind,
+      supported: false,
+      mechanisms: Object.freeze([]),
+      unsupportedReason: UNSUPPORTED_REASON.invalid,
+    });
+  }
+  const verifiedPlatformMechanisms = (
+    platformMechanisms ?? []
+  ) as readonly PlatformEnforcementMechanism[];
+
+
   const mechanisms: PiEnforcementMechanism[] = [];
-  if (input.piTools) mechanisms.push("pi.fixed-profile-tool-dispatch");
-  if (input.workerSessions === true) mechanisms.push("pi.worker-session.tools");
-  if (input.targetHandles === true) mechanisms.push("target.verified-open-handle");
-  if (input.artifactRoots === true) mechanisms.push("artifact.canonical-root-binding");
-  if (input.trustedWorkbench === true) mechanisms.push("workbench.fixed-bundled-command");
-  if (input.continuationPolicy === true) mechanisms.push("continuation.exact-policy-reissue");
-  for (const mechanism of input.platformMechanisms ?? []) {
+  if (piTools) mechanisms.push("pi.fixed-profile-tool-dispatch");
+  if (workerSessions === true) mechanisms.push("pi.worker-session.tools");
+  if (targetHandles === true) mechanisms.push("target.verified-open-handle");
+  if (artifactRoots === true) mechanisms.push("artifact.canonical-root-binding");
+  if (trustedWorkbench === true) mechanisms.push("workbench.fixed-bundled-command");
+  if (continuationPolicy === true) mechanisms.push("continuation.exact-policy-reissue");
+  for (const mechanism of verifiedPlatformMechanisms) {
     if (!mechanisms.includes(mechanism)) mechanisms.push(mechanism);
   }
 
-  const unsupportedReason = input.piTools === false
+  const unsupportedReason = piTools === false
     ? UNSUPPORTED_REASON.piTools
-    : input.workerSessions === false
+    : workerSessions === false
       ? UNSUPPORTED_REASON.workerSessions
-      : input.targetHandles === false
+      : targetHandles === false
         ? UNSUPPORTED_REASON.targetHandles
-        : input.artifactRoots === false
+        : artifactRoots === false
           ? UNSUPPORTED_REASON.artifactRoots
-          : input.trustedWorkbench === false
+          : trustedWorkbench === false
             ? UNSUPPORTED_REASON.trustedWorkbench
-            : input.continuationPolicy === false
+            : continuationPolicy === false
               ? UNSUPPORTED_REASON.continuationPolicy
               : null;
   return Object.freeze({
     schemaVersion: 1 as const,
-    kind: input.kind,
+    kind,
     supported: unsupportedReason === null,
     mechanisms: Object.freeze(mechanisms),
     unsupportedReason,
@@ -153,6 +211,13 @@ function publicPolicyProjection(
     capabilities: policy.capabilities,
     delegation: policy.delegation,
   });
+}
+
+function isPlatformEnforcementMechanism(
+  value: unknown,
+): value is PlatformEnforcementMechanism {
+  return typeof value === "string"
+    && PLATFORM_ENFORCEMENT_MECHANISMS.includes(value as PlatformEnforcementMechanism);
 }
 
 export class EnforcementUnsupportedError extends Error {

@@ -201,6 +201,24 @@ def test_writes_empty_output_when_no_guidance_exists(tmp_path: Path) -> None:
     assert output.read_text(encoding="utf-8") == ""
 
 
+
+def test_rejects_symlinked_output_parent(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    output_parent = tmp_path / "artifacts"
+    try:
+        output_parent.symlink_to(outside, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"creating a symbolic link requires host support: {error}")
+
+    result = run_resolver(root, ".", out=output_parent / "security_guidance.md", check=False)
+
+    assert result.returncode == 2
+    assert "external output path" in result.stderr
+    assert not (outside / "security_guidance.md").exists()
+
 @pytest.mark.parametrize("scope", ["missing", "../outside"])
 def test_rejects_invalid_scope(tmp_path: Path, scope: str) -> None:
     root = tmp_path / "project"

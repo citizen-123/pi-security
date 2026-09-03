@@ -3,6 +3,7 @@ import type {
   ExtensionAPI,
   CreateAgentSessionOptions,
 } from "@earendil-works/pi-coding-agent";
+import { deepScanToolRenderer } from "./deep-scan-renderer.js";
 import { Type, type TSchema } from "typebox";
 import type { ExecutionPolicyContext } from "../src/execution-policy.js";
 import {
@@ -32,13 +33,24 @@ export function registerPiSecurityLifecycleTools(
       parameters: Type.Unsafe(
         lifecycleToolJsonSchema(tool.config.inputSchema) as TSchema
       ),
-      async execute(_toolCallId, params, signal, _onUpdate, context) {
+      ...deepScanToolRenderer(tool.name),
+      async execute(toolCallId, params, signal, onUpdate, context) {
         assertPiPermissionSurface(executionContext, "lifecycle", tool.name);
         const sessionId = context.sessionManager.getSessionId();
         const input = parseLifecycleToolInput(tool.config.inputSchema, params);
         const result = await tool.handler(input, {
           sessionId,
           signal,
+          onUpdate: (update) => onUpdate?.(piToolResult(update)),
+          deepScanProgressKey: tool.name === "start_pi_security_deep_scan"
+            ? `pi-security-deep-scan:${toolCallId}`
+            : undefined,
+          setStatus: context.hasUI
+            ? (key, text) => context.ui.setStatus(key, text)
+            : undefined,
+          setWidget: context.hasUI
+            ? (key, lines) => context.ui.setWidget(key, lines)
+            : undefined,
           model: context.model,
           modelId: context.model?.id,
           thinkingLevel: currentThinkingLevel(context.sessionManager.getEntries()),
@@ -78,6 +90,7 @@ export function registerPiSecurityLifecycleTools(
     catalog.dispose();
   });
 }
+
 
 function currentThinkingLevel(
   entries: readonly unknown[],

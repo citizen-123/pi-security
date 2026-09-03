@@ -494,7 +494,7 @@ def stream_matches_payload(stream: BinaryIO, payload: bytes) -> bool:
     return stream.read(1) == b""
 
 
-def _write_all(handle: int, payload: bytes) -> None:
+def _write_chunk(handle: int, payload: bytes) -> None:
     view = memoryview(payload)
     offset = 0
     while offset < len(view):
@@ -506,6 +506,10 @@ def _write_all(handle: int, payload: bytes) -> None:
         if written.value == 0:
             raise WindowsScanLocalFileError(errno.EIO, "WriteFile made no progress")
         offset += written.value
+
+
+def _write_all(handle: int, payload: bytes) -> None:
+    _write_chunk(handle, payload)
     if not _FlushFileBuffers(handle):
         _raise_last_error("FlushFileBuffers")
 
@@ -660,6 +664,122 @@ def atomic_write(
                 raise
 
 
+
+def copy_file(
+    scan_dir: Path,
+    source_relative_path: str,
+    destination_relative_path: str,
+    *,
+    expected_root_identity: tuple[int, int] | None = None,
+) -> None:
+    """Copy a regular scan-local file to a new name without following reparse points."""
+
+    with _locked_parent(
+        scan_dir,
+        source_relative_path,
+        create=False,
+        expected_root_identity=expected_root_identity,
+    ) as (source_parent, source_name):
+        with _locked_parent(
+            scan_dir,
+            destination_relative_path,
+            create=False,
+            expected_root_identity=expected_root_identity,
+        ) as (destination_parent, destination_name):
+            source_path = source_parent / source_name
+            destination_path = destination_parent / destination_name
+            source_handle = _create_file(
+                source_path,
+                access=_GENERIC_READ | _FILE_READ_ATTRIBUTES,
+                share=_FILE_SHARE_READ,
+                disposition=_OPEN_EXISTING,
+                flags=_FILE_FLAG_OPEN_REPARSE_POINT,
+            )
+            assert source_handle is not None
+            with source_handle:
+                assert source_handle.value is not None
+                _verify_regular_file(source_handle.value, source_path)
+                raw_source_handle = source_handle.detach()
+                try:
+                    assert _msvcrt is not None
+                    source_fd = _msvcrt.open_osfhandle(
+                        raw_source_handle, os.O_RDONLY | os.O_BINARY
+                    )
+                except BaseException:
+                    _close_handle(raw_source_handle)
+                    raise
+                destination_handle: _OwnedHandle | None = None
+                try:
+                    destination_handle = _create_file(
+                        destination_path,
+                        access=_GENERIC_WRITE | _DELETE | _FILE_READ_ATTRIBUTES,
+                        share=0,
+                        disposition=_CREATE_NEW,
+                        flags=_FILE_ATTRIBUTE_NORMAL,
+                    )
+                    assert destination_handle is not None and destination_handle.value is not None
+                    with destination_handle:
+                        _verify_regular_file(destination_handle.value, destination_path)
+                        try:
+                            with os.fdopen(source_fd, "rb") as source_stream:
+                                source_fd = -1
+                                for chunk in iter(
+                                    lambda: source_stream.read(_MAX_WRITE_CHUNK), b""
+                                ):
+                                    _write_chunk(destination_handle.value, chunk)
+                            if not _FlushFileBuffers(destination_handle.value):
+                                _raise_last_error("FlushFileBuffers")
+                        except BaseException:
+                            try:
+                                _mark_handle_for_deletion(destination_handle.value)
+                            except OSError:
+                                pass
+                            raise
+                finally:
+                    if source_fd >= 0:
+                        os.close(source_fd)
+
+
+def replace_file(
+    scan_dir: Path,
+    source_relative_path: str,
+    destination_relative_path: str,
+    *,
+    missing_ok: bool,
+    expected_root_identity: tuple[int, int] | None = None,
+) -> bool:
+    """Atomically move a regular scan-local file without following reparse points."""
+
+    with _locked_parent(
+        scan_dir,
+        source_relative_path,
+        create=False,
+        expected_root_identity=expected_root_identity,
+    ) as (source_parent, source_name):
+        with _locked_parent(
+            scan_dir,
+            destination_relative_path,
+            create=False,
+            expected_root_identity=expected_root_identity,
+        ) as (destination_parent, destination_name):
+            source_path = source_parent / source_name
+            destination_path = destination_parent / destination_name
+            source_handle = _create_file(
+                source_path,
+                access=_DELETE | _FILE_READ_ATTRIBUTES,
+                share=_FILE_SHARE_READ | _FILE_SHARE_WRITE,
+                disposition=_OPEN_EXISTING,
+                flags=_FILE_FLAG_OPEN_REPARSE_POINT,
+                missing_ok=missing_ok,
+            )
+            if source_handle is None:
+                return False
+            with source_handle:
+                assert source_handle.value is not None
+                _verify_regular_file(source_handle.value, source_path)
+                _rename_handle(source_handle.value, destination_path)
+                _verify_regular_file(source_handle.value, destination_path)
+                return True
 def unlink_if_exists(scan_dir: Path, relative_path: str) -> None:
     """Delete a scan-local regular file or reparse-point leaf without following it."""
 

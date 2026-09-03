@@ -19,9 +19,12 @@ interface ScanHandoffToolDependencies {
 }
 
 export const recoveryHandoffClaimTokenSchema = z.string().regex(
-  /^recovery_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-);
-export const handoffClaimTokenSchema = z.union([z.string().uuid(), recoveryHandoffClaimTokenSchema]);
+  /^recovery_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+).overwrite((token) => token.toLowerCase());
+export const handoffClaimTokenSchema = z.union([
+  z.string().uuid().overwrite((token) => token.toLowerCase()),
+  recoveryHandoffClaimTokenSchema
+]);
 const handoffClaimSchema = { claimToken: handoffClaimTokenSchema, scanId: z.string().uuid() };
 const handoffTakeoverSchema = { ...handoffClaimSchema, takeOverStale: z.boolean().optional() };
 const scanContinuationThreadSchema = {

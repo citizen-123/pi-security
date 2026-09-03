@@ -179,6 +179,46 @@ try {
     "raw and reconciled drafts remain immutable while the head selects the accepted result",
   );
 
+  if (process.platform !== "win32") {
+    const checkpointRaceRoot = path.join(root, "checkpoint-read-race");
+    await mkdir(checkpointRaceRoot);
+    const checkpointRaceContext = bindContext(workerContext, checkpointRaceRoot);
+    await saveScanDraftCheckpoint(checkpointRaceContext, checkpoint, false);
+    const [checkpointName] = await readdir(path.join(checkpointRaceRoot, "checkpoints"));
+    const checkpointPath = path.join(checkpointRaceRoot, "checkpoints", checkpointName);
+    const checkpointBytes = await readFile(checkpointPath);
+    const checkpointDirectory = path.dirname(checkpointPath);
+    const originalDirectory = checkpointDirectory + "-original";
+    const outsideDirectory = path.join(root, "outside-checkpoint-read-race");
+    await mkdir(outsideDirectory);
+    await writeFile(path.join(outsideDirectory, checkpointName), checkpointBytes);
+
+    const originalLstat = fsPromises.lstat;
+    let swapped = false;
+    fsPromises.lstat = async (...arguments_) => {
+      const metadata = await originalLstat(...arguments_);
+      if (!swapped && arguments_[0] === checkpointPath) {
+        swapped = true;
+        await rename(checkpointDirectory, originalDirectory);
+        await symlink(outsideDirectory, checkpointDirectory);
+      }
+      return metadata;
+    };
+    try {
+      await assert.rejects(
+        saveScanDraftCheckpoint(checkpointRaceContext, checkpoint, false),
+        /safe regular file/u,
+      );
+    } finally {
+      fsPromises.lstat = originalLstat;
+    }
+    assert.equal(swapped, true);
+    assert.deepEqual(
+      await readFile(path.join(outsideDirectory, checkpointName)),
+      checkpointBytes,
+    );
+  }
+
   const interruptedRoot = path.join(root, "interrupted-checkpoint-worker");
   await mkdir(interruptedRoot);
   const interruptedContext = bindContext(workerContext, interruptedRoot);

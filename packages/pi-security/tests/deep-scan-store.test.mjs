@@ -53,6 +53,9 @@ await testHeartbeatBypassesBlockedWriteQueue();
 await testOwnershipReadClearsStaleLease();
 await testWorkerResponseParsing();
 await testPerScanExecutionContextsRemainBound();
+await testReturnedRunRootAllowsOnlyScanDir();
+await testMutationResponsesRemainArtifactBound();
+await testMutationResponsesMatchRequestedScan();
 await testReplaceableDiscoveryFailureProtocol();
 await testAtomicWorkerPolicyFailureProtocol();
 await testTransientIdempotentPersistenceRetries();
@@ -433,8 +436,11 @@ async function testPerScanExecutionContextsRemainBound() {
     assert.deepEqual(requestedScanIds, [
       firstScanId,
       firstScanId,
+      firstScanId,
       secondScanId,
       secondScanId,
+      secondScanId,
+      firstScanId,
       firstScanId,
       firstScanId,
     ], "joining a second root must not replace the first scan's store authority");
@@ -443,6 +449,182 @@ async function testPerScanExecutionContextsRemainBound() {
       rm(firstRoot, { recursive: true, force: true }),
       rm(secondRoot, { recursive: true, force: true }),
     ]);
+  }
+}
+
+async function testReturnedRunRootAllowsOnlyScanDir() {
+  const root = await mkdtemp(join(tmpdir(), "pi-security-store-run-root-"));
+  const scanId = randomUUID();
+  const workerId = randomUUID();
+  const executionContext = createExecutionPolicyContext({
+    profile: "security-artifact-writer",
+    target: { root: "/" },
+    scan: { id: scanId, artifactRoot: root },
+  });
+  let response = stateResult(scanId, { deepScan: { scanDir: root } });
+  const store = new WorkbenchDeepScanStore(
+    async () => response,
+    async () => executionContext,
+  );
+
+  try {
+    const run = await store.get(scanId, "thread-fixture");
+    assert.equal(run.scanDir, root);
+
+    response = stateResult(scanId, {
+      deepScan: { scanDir: root, manifestPath: root },
+    });
+    await assert.rejects(
+      store.get(scanId, "thread-fixture"),
+      /Deep Scan store artifact path/,
+      "a returned manifest must remain a child of the issued artifact root",
+    );
+
+    response = stateResult(scanId, {
+      deepScan: {
+        scanDir: root,
+        workers: [{
+          id: workerId,
+          kind: "discovery",
+          status: "queued",
+          mergeState: "none",
+          promptPath: join(root, "prompt.md"),
+          artifactDir: root,
+          attempt: 1,
+        }],
+      },
+    });
+    await assert.rejects(
+      store.get(scanId, "thread-fixture"),
+      /Deep Scan store artifact path/,
+      "returned worker paths must remain children of the issued artifact root",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function testMutationResponsesRemainArtifactBound() {
+  const [root, outside] = await Promise.all([
+    mkdtemp(join(tmpdir(), "pi-security-store-response-root-")),
+    mkdtemp(join(tmpdir(), "pi-security-store-response-outside-")),
+  ]);
+  const scanId = randomUUID();
+  const executionContext = createExecutionPolicyContext({
+    profile: "security-artifact-writer",
+    target: { root: "/" },
+    scan: { id: scanId, artifactRoot: root },
+  });
+  const store = new WorkbenchDeepScanStore(
+    async () => stateResult(scanId, { deepScan: { scanDir: outside } }),
+    async () => executionContext,
+  );
+  const resultPath = join(root, "result.json");
+
+  try {
+    await assert.rejects(
+      store.commitDedup({
+        id: randomUUID(),
+        scanId,
+        newFindings: 0,
+        resultManifestPath: resultPath,
+      }),
+      /Deep Scan store artifact path/,
+    );
+    await assert.rejects(
+      store.finish({
+        scanId,
+        reason: "capped",
+        manifestPath: join(root, "scan-manifest.json"),
+        omittedWorkerIds: [],
+      }),
+      /Deep Scan store artifact path/,
+    );
+    await assert.rejects(
+      store.fail(scanId, "fixture failure"),
+      /Deep Scan store artifact path/,
+    );
+    await assert.rejects(
+      store.recordStoppedPublicationFailure(scanId, "fixture publication failure"),
+      /Deep Scan store artifact path/,
+    );
+    const workerId = randomUUID();
+    const workerStore = new WorkbenchDeepScanStore(
+      async () => stateResult(scanId, {
+        deepScan: {
+          scanDir: root,
+          workers: [{
+            id: workerId,
+            kind: "discovery",
+            status: "running",
+            mergeState: "none",
+            promptPath: join(outside, "prompt.md"),
+            artifactDir: join(outside, "output"),
+            attempt: 1,
+          }],
+        },
+      }),
+      async () => executionContext,
+    );
+    await assert.rejects(
+      workerStore.updateWorker({
+        id: workerId,
+        scanId,
+        kind: "discovery",
+        status: "running",
+        promptPath: join(root, "prompt.md"),
+        artifactDir: join(root, "output"),
+        attempt: 1,
+      }),
+      /Deep Scan store artifact path/,
+    );
+  } finally {
+    await Promise.all([
+      rm(root, { recursive: true, force: true }),
+      rm(outside, { recursive: true, force: true }),
+    ]);
+  }
+}
+
+async function testMutationResponsesMatchRequestedScan() {
+  const requestedScanId = randomUUID();
+  const foreignScanId = randomUUID();
+  const store = createStore(async () => stateResult(foreignScanId));
+  const workerId = randomUUID();
+  const requests = [
+    () => store.begin({ scanId: requestedScanId, threadId: "thread-fixture" }),
+    () => store.get(requestedScanId, "thread-fixture"),
+    () => store.claimCoordinator({ scanId: requestedScanId, threadId: "thread-fixture" }),
+    () => store.updateWorker({
+      id: workerId,
+      scanId: requestedScanId,
+      kind: "discovery",
+      status: "running",
+      promptPath: "/fixture/prompt.md",
+      artifactDir: "/fixture/output",
+      attempt: 1,
+    }),
+    () => store.commitDedup({
+      id: workerId,
+      scanId: requestedScanId,
+      newFindings: 0,
+      resultManifestPath: "/fixture/output/result.json",
+    }),
+    () => store.finish({
+      scanId: requestedScanId,
+      reason: "capped",
+      manifestPath: "/fixture/scan-manifest.json",
+      omittedWorkerIds: [],
+    }),
+    () => store.fail(requestedScanId, "fixture failure"),
+    () => store.recordStoppedPublicationFailure(
+      requestedScanId,
+      "fixture publication failure",
+    ),
+  ];
+
+  for (const request of requests) {
+    await assert.rejects(request(), /different Deep Scan identity/);
   }
 }
 

@@ -10,6 +10,12 @@ import stat
 import sys
 from pathlib import Path
 
+# Some hosts launch Python with safe-path isolation enabled.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from finalize_scan_contract import ContractError, write_external_output_bytes
+
+
+
 MAX_SECURITY_MD_BYTES = 1024 * 1024
 
 
@@ -146,9 +152,8 @@ def main() -> int:
         if args.out == Path("-"):
             sys.stdout.buffer.write(guidance.encode("utf-8"))
         else:
-            args.out.parent.mkdir(parents=True, exist_ok=True)
-            args.out.write_text(guidance, encoding="utf-8")
-    except (OSError, ResolutionError) as exc:
+            write_external_output_bytes(args.out, guidance.encode("utf-8"))
+    except (OSError, ResolutionError, ContractError) as exc:
         print(f"resolve_security_md.py: error: {exc}", file=sys.stderr)
         return 2
     return 0

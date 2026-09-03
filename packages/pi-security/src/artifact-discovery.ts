@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
-import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import type * as z from "zod/v4";
 import discoveryCandidateDefinitions from "../schemas/definitions/discovery-candidate.schema.json" with { type: "json" };
@@ -118,8 +119,8 @@ export interface ListPiSecurityCandidatesResult {
 }
 
 /**
- * Invoke the shared discovery normalizer. Only its canonical output persists;
- * raw candidate input is kept in a private temporary directory and always removed.
+ * Invoke the shared discovery normalizer. Its candidate and inventory inputs
+ * are copied into a private temporary directory before the subprocess runs.
  */
 export async function recordPiSecurityDiscoveryCandidates(
   input: DiscoveryCandidatesInput,
@@ -137,18 +138,18 @@ export async function recordPiSecurityDiscoveryCandidates(
   const inventoryComponents = [...discoveryComponents, "in_scope_files.txt"];
   const candidateComponents = [...discoveryComponents, "candidate_ledger.jsonl"];
 
-  // Verify the inventory is a context-bound regular file before passing it to Python.
-  await readArtifactText(context, inventoryComponents, "discovery review inventory");
-  const inventoryPath = await artifactDestination(
+  // Snapshot the context-bound inventory before passing it to the subprocess.
+  const inventory = await readArtifactText(
     context,
     inventoryComponents,
     "discovery review inventory"
   );
   const destination = await artifactDestination(context, candidateComponents, discoveryLabel);
   const temporaryDirectory = await fs.mkdtemp(
-    join(dirname(destination), ".discovery-candidates-")
+    join(tmpdir(), "pi-security-discovery-candidates-")
   );
   const temporaryInput = join(temporaryDirectory, "candidates.jsonl");
+  const temporaryInventory = join(temporaryDirectory, "in_scope_files.txt");
 
   try {
     await fs.chmod(temporaryDirectory, 0o700);
@@ -156,6 +157,11 @@ export async function recordPiSecurityDiscoveryCandidates(
       ? ""
       : `${candidates.map((candidate) => JSON.stringify(candidate)).join("\n")}\n`;
     await fs.writeFile(temporaryInput, content, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600
+    });
+    await fs.writeFile(temporaryInventory, inventory, {
       encoding: "utf8",
       flag: "wx",
       mode: 0o600
@@ -174,7 +180,7 @@ export async function recordPiSecurityDiscoveryCandidates(
           "--repo-root",
           context.repoRoot,
           "--in-scope-files",
-          inventoryPath,
+          temporaryInventory,
           ...(context.mode === "diff" ? ["--allow-missing-in-scope"] : [])
         ],
         {
@@ -187,7 +193,7 @@ export async function recordPiSecurityDiscoveryCandidates(
       throw discoveryNormalizationError(error, pythonCommand, [
         [temporaryInput, "candidate input"],
         [temporaryDirectory, "private candidate input"],
-        [inventoryPath, "the assigned review inventory"],
+        [temporaryInventory, "the assigned review inventory"],
         [destination, "the candidate set"],
         [context.repoRoot, "the repository"],
         [packageRoot, "the package runtime"]

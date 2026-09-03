@@ -34,6 +34,11 @@ export interface LifecycleUserInputQuestion {
 export interface LifecycleRequestContext {
   sessionId?: string;
   signal?: AbortSignal;
+  onUpdate?: (result: unknown) => void;
+  setStatus?: (key: string, text: string | undefined) => void;
+  setWidget?: (key: string, lines: string[] | undefined) => void;
+  /** UI key scoped to one native Deep Scan tool invocation. */
+  deepScanProgressKey?: string;
   model?: CreateAgentSessionOptions["model"];
   modelId?: string;
   thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];

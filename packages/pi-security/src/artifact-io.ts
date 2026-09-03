@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { constants as fsConstants, promises as fs } from "node:fs";
-import { dirname, join } from "node:path";
+import { constants as fsConstants, promises as fs, type Stats } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   assertPathInside,
   assertTrustedArtifactContext,
@@ -55,6 +55,13 @@ export interface ArtifactRowSchema<Row> {
     | { success: false; error?: unknown };
 }
 
+interface ArtifactWriteTarget {
+  root: string;
+  destination: string;
+  directory: string;
+  handle: fs.FileHandle;
+}
+
 /**
  * Components are fixed, internal operation constants, not model-facing paths.
  */
@@ -82,15 +89,34 @@ export async function readArtifactText(
     }
   }
 
-  const canonical = await fs.realpath(current).catch(() => undefined);
-  if (!canonical) {
-    throw new Error(label + ": the requested artifact escaped its bound context.");
-  }
-  assertPathInside(root, canonical, label);
+  let handle: fs.FileHandle;
   try {
-    return await fs.readFile(canonical, "utf8");
-  } catch {
-    throw new Error(label + ": the requested artifact cannot be read.");
+    handle = await fs.open(
+      current,
+      fsConstants.O_RDONLY
+      | (process.platform === "win32" ? 0 : fsConstants.O_NOFOLLOW)
+      | (process.platform === "win32" ? 0 : (fsConstants.O_NONBLOCK ?? 0))
+    );
+  } catch (error) {
+    throw new Error(label + ": the requested artifact cannot be read.", { cause: error });
+  }
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile()) {
+      throw new Error(label + ": the requested artifact is not a safe regular file.");
+    }
+    const canonical = await canonicalOpenedArtifactFile(handle, metadata, current);
+    if (!canonical) {
+      throw new Error(label + ": the requested artifact escaped its bound context.");
+    }
+    assertPathInside(root, canonical, label);
+    try {
+      return await handle.readFile({ encoding: "utf8" });
+    } catch (error) {
+      throw new Error(label + ": the requested artifact cannot be read.", { cause: error });
+    }
+  } finally {
+    await handle.close();
   }
 }
 
@@ -227,20 +253,26 @@ export async function replaceArtifactText(
   path: string,
   content: string
 ): Promise<void> {
-  await requireArtifactWritePath(context, path);
-  await withArtifactLock(path, async () => {
-    const temporary = join(dirname(path), "." + randomUUID() + ".tmp");
-    try {
-      await fs.writeFile(temporary, content, {
-        encoding: "utf8",
-        mode: 0o600,
-        flag: "wx"
-      });
-      await fs.rename(temporary, path);
-    } finally {
-      await fs.rm(temporary, { force: true });
-    }
-  });
+  const target = await openArtifactWritePath(context, path);
+  try {
+    await assertArtifactWriteTargetInside(target);
+    await withArtifactLock(target.destination, async () => {
+      await assertArtifactWriteTargetInside(target);
+      const temporary = join(target.directory, "." + randomUUID() + ".tmp");
+      try {
+        await fs.writeFile(temporary, content, {
+          encoding: "utf8",
+          mode: 0o600,
+          flag: "wx"
+        });
+        await fs.rename(temporary, target.destination);
+      } finally {
+        await fs.rm(temporary, { force: true });
+      }
+    });
+  } finally {
+    await target.handle.close();
+  }
 }
 
 export async function replaceArtifactJson(
@@ -267,34 +299,40 @@ export async function appendArtifactJsonl(
   path: string,
   rows: readonly unknown[]
 ): Promise<void> {
-  await requireArtifactWritePath(context, path);
   if (rows.length === 0) return;
   const content = rows.map((row) => JSON.stringify(row)).join("\n") + "\n";
-  await withArtifactLock(path, async () => {
-    const handle = await fs.open(
-      path,
-      fsConstants.O_RDWR
-      | fsConstants.O_CREAT
-      | fsConstants.O_APPEND
-      | fsConstants.O_NOFOLLOW,
-      0o600
-    );
-    try {
-      const metadata = await handle.stat();
-      if (!metadata.isFile()) {
-        throw new Error("Artifact append requires a regular file.");
+  const target = await openArtifactWritePath(context, path);
+  try {
+    await assertArtifactWriteTargetInside(target);
+    await withArtifactLock(target.destination, async () => {
+      await assertArtifactWriteTargetInside(target);
+      const handle = await fs.open(
+        target.destination,
+        fsConstants.O_RDWR
+        | fsConstants.O_CREAT
+        | fsConstants.O_APPEND
+        | fsConstants.O_NOFOLLOW
+        | (process.platform === "win32" ? 0 : (fsConstants.O_NONBLOCK ?? 0)),
+      );
+      try {
+        const metadata = await handle.stat();
+        if (!metadata.isFile()) {
+          throw new Error("Artifact append requires a regular file.");
+        }
+        let prefix = "";
+        if (metadata.size > 0) {
+          const finalByte = Buffer.alloc(1);
+          await handle.read(finalByte, 0, 1, metadata.size - 1);
+          if (finalByte[0] !== 0x0a) prefix = "\n";
+        }
+        await handle.appendFile(prefix + content, "utf8");
+      } finally {
+        await handle.close();
       }
-      let prefix = "";
-      if (metadata.size > 0) {
-        const finalByte = Buffer.alloc(1);
-        await handle.read(finalByte, 0, 1, metadata.size - 1);
-        if (finalByte[0] !== 0x0a) prefix = "\n";
-      }
-      await handle.appendFile(prefix + content, "utf8");
-    } finally {
-      await handle.close();
-    }
-  });
+    });
+  } finally {
+    await target.handle.close();
+  }
 }
 
 async function withArtifactLock(
@@ -339,12 +377,15 @@ function validateArtifactComponents(
   }
   for (const component of components) {
     if (
-      !component
+      typeof component !== "string"
+      || !component
       || component === "."
       || component === ".."
       || component.includes("/")
       || component.includes("\\")
-      || component.includes("\0")
+      || /[:<>|"?*\u0000-\u001f\u007f]/u.test(component)
+      || /[. ]$/u.test(component)
+      || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(component)
     ) {
       throw new Error(label + ": the artifact destination is unsafe.");
     }
@@ -368,32 +409,133 @@ async function requireArtifactRoot(
   });
 }
 
-async function requireArtifactWritePath(
+async function openArtifactWritePath(
   context: ArtifactContext,
   path: string
-): Promise<void> {
+): Promise<ArtifactWriteTarget> {
   const root = await requireArtifactRoot(context, "Artifact write");
-  assertPathInside(root, path, "Artifact write");
-  const parent = dirname(path);
-  const parentMetadata = await fs.lstat(parent).catch(() => undefined);
-  if (!parentMetadata || parentMetadata.isSymbolicLink() || !parentMetadata.isDirectory()) {
-    throw new Error("Artifact write destination directory is not safe.");
-  }
-  const canonicalParent = await fs.realpath(parent).catch(() => undefined);
-  if (!canonicalParent) {
-    throw new Error("Artifact write destination directory cannot be resolved.");
-  }
-  assertPathInside(root, canonicalParent, "Artifact write", true);
-  const metadata = await fs.lstat(path).catch(() => undefined);
-  if (metadata && (metadata.isSymbolicLink() || !metadata.isFile())) {
+  const requested = resolve(path);
+  assertPathInside(root, requested, "Artifact write");
+  validateArtifactComponents(relative(root, requested).split(sep), "Artifact write");
+  const parent = dirname(requested);
+  const name = basename(requested);
+  if (!name || name === "." || name === "..") {
     throw new Error("Artifact write destination is not a regular file.");
   }
+
+  let handle: fs.FileHandle;
+  try {
+    handle = await fs.open(
+      parent,
+      fsConstants.O_RDONLY
+      | (process.platform === "win32" ? 0 : fsConstants.O_NOFOLLOW)
+      | (fsConstants.O_DIRECTORY ?? 0)
+    );
+  } catch (error) {
+    throw new Error("Artifact write destination directory is not safe.", { cause: error });
+  }
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isDirectory()) {
+      throw new Error("Artifact write destination directory is not safe.");
+    }
+    const directory = await artifactDirectoryDescriptorPath(handle, metadata, parent);
+    const canonicalParent = await fs.realpath(directory).catch(() => undefined);
+    if (!canonicalParent) {
+      throw new Error("Artifact write destination directory cannot be resolved.");
+    }
+    assertPathInside(root, canonicalParent, "Artifact write", true);
+    const destination = join(directory, name);
+    const destinationMetadata = await inspectOptionalPath(destination, "Artifact write");
+    if (
+      destinationMetadata
+      && (destinationMetadata.isSymbolicLink() || !destinationMetadata.isFile())
+    ) {
+      throw new Error("Artifact write destination is not a regular file.");
+    }
+    return { root, destination, directory, handle };
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
+
+async function assertArtifactWriteTargetInside(
+  target: ArtifactWriteTarget
+): Promise<void> {
+  const canonicalDirectory = await fs.realpath(target.directory).catch(() => undefined);
+  if (!canonicalDirectory) {
+    throw new Error("Artifact write destination directory cannot be resolved.");
+  }
+  assertPathInside(
+    target.root,
+    canonicalDirectory,
+    "Artifact write",
+    true
+  );
+}
+
+async function artifactDirectoryDescriptorPath(
+  handle: fs.FileHandle,
+  metadata: Stats,
+  fallback: string
+): Promise<string> {
+  const candidates = process.platform === "linux"
+    ? [`/proc/self/fd/${handle.fd}`]
+    : process.platform === "win32"
+      ? []
+      : [`/dev/fd/${handle.fd}`];
+  for (const candidate of candidates) {
+    const current = await fs.stat(candidate).catch(() => undefined);
+    if (
+      current?.isDirectory()
+      && current.dev === metadata.dev
+      && current.ino === metadata.ino
+    ) {
+      return candidate;
+    }
+  }
+  if (process.platform === "win32") return fallback;
+  throw new Error("Artifact write destination directory cannot be held securely.");
+}
+
+async function canonicalOpenedArtifactFile(
+  handle: fs.FileHandle,
+  metadata: Stats,
+  fallback: string
+): Promise<string | undefined> {
+  const candidates = process.platform === "linux"
+    ? [`/proc/self/fd/${handle.fd}`]
+    : process.platform === "win32"
+      ? []
+      : [`/dev/fd/${handle.fd}`];
+  for (const candidate of candidates) {
+    const current = await fs.stat(candidate).catch(() => undefined);
+    if (
+      !current
+      || current.dev !== metadata.dev
+      || current.ino !== metadata.ino
+    ) {
+      continue;
+    }
+    const canonical = await fs.realpath(candidate).catch(() => undefined);
+    if (canonical) return canonical;
+  }
+
+  const canonical = await fs.realpath(fallback).catch(() => undefined);
+  if (!canonical) return undefined;
+  const current = await fs.stat(canonical).catch(() => undefined);
+  return current
+    && current.dev === metadata.dev
+    && current.ino === metadata.ino
+    ? canonical
+    : undefined;
 }
 
 async function inspectOptionalPath(
   path: string,
   label: string
-): Promise<Awaited<ReturnType<typeof fs.lstat>> | undefined> {
+): Promise<Stats | undefined> {
   try {
     return await fs.lstat(path);
   } catch (error) {

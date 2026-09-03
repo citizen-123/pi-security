@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
@@ -9,7 +10,9 @@ import {
   symlink,
   writeFile
 } from "node:fs/promises";
+import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
+import { promisify } from "node:util";
 import path from "node:path";
 import { build } from "esbuild";
 
@@ -43,6 +46,7 @@ const fixture = await realpath(
 const artifactScanId = "61a20957-1be8-4ccf-8de8-eab4061e8cc3";
 
 async function boundArtifactContext(root, repoRoot, layout = "scan", extra = {}) {
+  await mkdir(root, { recursive: true });
   const executionPolicy = createExecutionPolicyContext({
     profile: "security-artifact-writer",
     target: { root: repoRoot },
@@ -75,6 +79,10 @@ try {
   await testArtifactDestinationSwap();
   await testSafeJsonAndJsonl();
   await testAtomicReplaceAndAppend();
+  await testArtifactParentSwapDuringWrite();
+  await testArtifactDirectoryMoveDuringWrite();
+  await testArtifactParentSwapDuringRead();
+  await testArtifactFifoSwapDuringRead();
   await testBoundedPagination();
   await testUnsafeArtifacts();
 } finally {
@@ -118,6 +126,7 @@ async function testSchemaSourceOfTruth() {
   );
   for (const repositoryPath of [
     "src/index.ts",
+    ".",
     "./src/index.ts",
     "scope with spaces/café.ts",
     ".hidden/config.ts"
@@ -135,7 +144,19 @@ async function testSchemaSourceOfTruth() {
     "src/./outside.ts",
     "src//outside.ts",
     "C:\\outside.ts",
-    "src/\0outside.ts"
+    "src/\0outside.ts",
+    "src/config.ts:private",
+    "src/NUL",
+    "src/result.json.",
+    "src/result.json ",
+    "./.",
+    "./..",
+    "././outside.ts",
+    "./../outside.ts",
+    "./CON",
+    "./COM¹",
+    "./LPT³.txt",
+    "src/COM².txt",
   ]) {
     assert.equal(
       validator.safeParse({ path: repositoryPath, candidateId: "candidate-1" }).success,
@@ -150,6 +171,69 @@ async function testSchemaSourceOfTruth() {
       candidateId
     );
   }
+  const siblingReferenceDocument = {
+    $id: "pi-security://schemas/tools/artifact-reference-siblings.schema.json",
+    $defs: {
+      requiresA: {
+        type: "object",
+        properties: { a: {} },
+        required: ["a"]
+      },
+      request: {
+        $ref: "#/$defs/requiresA",
+        properties: { b: {} },
+        required: ["b"]
+      }
+    }
+  };
+  const siblingBundled = schemas.bundleArtifactSchema(
+    [siblingReferenceDocument],
+    siblingReferenceDocument.$id,
+    "request"
+  );
+  assert.deepEqual(siblingBundled.allOf?.map((schema) => schema.required), [["a"], ["b"]]);
+  const siblingValidator = schemas.loadArtifactZodSchema(
+    [siblingReferenceDocument],
+    siblingReferenceDocument.$id,
+    "request"
+  );
+  assert.equal(siblingValidator.safeParse({ a: true, b: true }).success, true);
+  assert.equal(
+    siblingValidator.safeParse({ b: true }).success,
+    false,
+    "$ref sibling constraints must not overwrite referenced constraints"
+  );
+  const annotationReferenceDocument = {
+    $id: "pi-security://schemas/tools/artifact-reference-annotations.schema.json",
+    $defs: {
+      nonEmpty: {
+        type: "string",
+        minLength: 1,
+        description: "Referenced description",
+      },
+      request: {
+        $ref: "#/$defs/nonEmpty",
+        title: "Annotated request",
+        description: "Sibling description",
+      },
+    },
+  };
+  const annotationBundled = schemas.bundleArtifactSchema(
+    [annotationReferenceDocument],
+    annotationReferenceDocument.$id,
+    "request",
+  );
+  assert.equal(annotationBundled.allOf, undefined);
+  assert.equal(annotationBundled.minLength, 1);
+  assert.equal(annotationBundled.title, "Annotated request");
+  assert.equal(annotationBundled.description, "Sibling description");
+  const annotationValidator = schemas.loadArtifactZodSchema(
+    [annotationReferenceDocument],
+    annotationReferenceDocument.$id,
+    "request",
+  );
+  assert.equal(annotationValidator.safeParse("").success, false);
+  assert.equal(annotationValidator.safeParse("value").success, true);
   assert.throws(
     () => schemas.bundleArtifactSchema([common], "missing", "request"),
     /Unknown Pi Security schema document/
@@ -524,6 +608,199 @@ async function testArtifactDestinationSwap() {
   await assert.rejects(readFile(path.join(outsideDirectory, "result.json"), "utf8"));
 }
 
+async function testArtifactParentSwapDuringWrite() {
+  if (process.platform === "win32") return;
+  const context = await boundArtifactContext(
+    path.join(fixture, "write-race"),
+    path.join(fixture, "repository")
+  );
+  const destination = await io.artifactDestination(
+    context,
+    ["swap", "result.json"],
+    "artifact write race"
+  );
+  const destinationDirectory = path.dirname(destination);
+  const originalDirectory = destinationDirectory + "-original";
+  const outsideDirectory = path.join(fixture, "outside-write-race");
+  await mkdir(outsideDirectory);
+
+  const originalOpen = fs.open;
+  let swapped = false;
+  fs.open = async (...arguments_) => {
+    if (
+      !swapped
+      && typeof arguments_[0] === "string"
+      && arguments_[0].endsWith(".lock")
+    ) {
+      swapped = true;
+      await rename(destinationDirectory, originalDirectory);
+      await symlink(outsideDirectory, destinationDirectory);
+    }
+    return originalOpen(...arguments_);
+  };
+  try {
+    await io.replaceArtifactJson(context, destination, { escaped: true });
+  } finally {
+    fs.open = originalOpen;
+  }
+
+  assert.equal(swapped, true);
+  await assert.rejects(readFile(path.join(outsideDirectory, "result.json"), "utf8"));
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(originalDirectory, "result.json"), "utf8")),
+    { escaped: true }
+  );
+}
+
+async function testArtifactDirectoryMoveDuringWrite() {
+  if (process.platform === "win32") return;
+  const context = await boundArtifactContext(
+    path.join(fixture, "write-move-race"),
+    path.join(fixture, "repository")
+  );
+  const destination = await io.artifactDestination(
+    context,
+    ["swap", "result.json"],
+    "artifact directory move race"
+  );
+  const destinationDirectory = path.dirname(destination);
+  const outsideDirectory = path.join(fixture, "outside-write-move-race");
+  const movedDirectory = path.join(outsideDirectory, "moved");
+  await mkdir(outsideDirectory);
+
+  const originalOpen = fs.open;
+  let swapped = false;
+  fs.open = async (...arguments_) => {
+    if (
+      !swapped
+      && typeof arguments_[0] === "string"
+      && arguments_[0].endsWith(".lock")
+    ) {
+      swapped = true;
+      await rename(destinationDirectory, movedDirectory);
+      await symlink(movedDirectory, destinationDirectory);
+    }
+    return originalOpen(...arguments_);
+  };
+  try {
+    await assert.rejects(
+      io.replaceArtifactJson(context, destination, { escaped: true }),
+      /outside its coordinator-bound root/
+    );
+  } finally {
+    fs.open = originalOpen;
+  }
+
+  assert.equal(swapped, true);
+  await assert.rejects(readFile(path.join(movedDirectory, "result.json"), "utf8"));
+}
+
+async function testArtifactParentSwapDuringRead() {
+  if (process.platform === "win32") return;
+  const context = await boundArtifactContext(
+    path.join(fixture, "read-race"),
+    path.join(fixture, "repository")
+  );
+  const destination = await io.artifactDestination(
+    context,
+    ["swap", "result.json"],
+    "artifact read race"
+  );
+  await writeFile(destination, "safe artifact\n");
+  const destinationDirectory = path.dirname(destination);
+  const originalDirectory = destinationDirectory + "-original";
+  const outsideDirectory = path.join(fixture, "outside-read-race");
+  await mkdir(outsideDirectory);
+  await writeFile(path.join(outsideDirectory, "result.json"), "outside secret\n");
+
+  const originalRealpath = fs.realpath;
+  let swapped = false;
+  fs.realpath = async (...arguments_) => {
+    const canonical = await originalRealpath(...arguments_);
+    const candidate = arguments_[0];
+    if (
+      !swapped
+      && (
+        candidate === destination
+        || (
+          typeof candidate === "string"
+          && (
+            candidate.startsWith("/proc/self/fd/")
+            || candidate.startsWith("/dev/fd/")
+          )
+        )
+      )
+    ) {
+      swapped = true;
+      await rename(destinationDirectory, originalDirectory);
+      await symlink(outsideDirectory, destinationDirectory);
+    }
+    return canonical;
+  };
+  let source;
+  try {
+    source = await io.readArtifactText(
+      context,
+      ["swap", "result.json"],
+      "artifact read race"
+    );
+  } finally {
+    fs.realpath = originalRealpath;
+  }
+
+  assert.equal(swapped, true);
+  assert.equal(source, "safe artifact\n");
+}
+
+async function testArtifactFifoSwapDuringRead() {
+  if (process.platform === "win32") return;
+  const context = await boundArtifactContext(
+    path.join(fixture, "read-fifo-race"),
+    path.join(fixture, "repository")
+  );
+  const destination = await io.artifactDestination(
+    context,
+    ["swap", "result.json"],
+    "artifact FIFO read race"
+  );
+  await writeFile(destination, "safe artifact\n");
+
+  const originalLstat = fs.lstat;
+  let swapped = false;
+  let writer;
+  let timer;
+  fs.lstat = async (...arguments_) => {
+    const metadata = await originalLstat(...arguments_);
+    if (!swapped && arguments_[0] === destination) {
+      swapped = true;
+      await rm(destination);
+      await promisify(execFile)("mkfifo", [destination]);
+    }
+    return metadata;
+  };
+  try {
+    timer = setTimeout(() => {
+      writer = fs.open(destination, "w").then((handle) => handle.close());
+    }, 1000);
+    const started = Date.now();
+    await assert.rejects(
+      io.readArtifactText(
+        context,
+        ["swap", "result.json"],
+        "artifact FIFO read race"
+      ),
+      /not a safe regular file/
+    );
+    assert.ok(Date.now() - started < 500);
+  } finally {
+    fs.lstat = originalLstat;
+    clearTimeout(timer);
+    if (writer) await writer;
+  }
+
+  assert.equal(swapped, true);
+}
+
 async function testUnsafeArtifacts() {
   const context = await boundArtifactContext(
     path.join(fixture, "scan"),
@@ -535,13 +812,27 @@ async function testUnsafeArtifacts() {
     [".", "outside.json"],
     ["artifacts/02_discovery", "candidate_ledger.jsonl"],
     ["artifacts", "..", "outside.json"],
-    ["artifacts", "bad\0name"]
+    ["artifacts", "bad\0name"],
+    ["artifacts", "candidate_ledger.jsonl:metadata"],
+    ["artifacts", "NUL"],
+    ["artifacts", "result.json."],
+    ["artifacts", "result.json "],
+    ["artifacts", "bad\nname"]
   ]) {
     await assert.rejects(
       io.artifactDestination(context, components, "discovery_candidates"),
       /fixed artifact destination|unsafe/
     );
   }
+
+  await assert.rejects(
+    io.replaceArtifactText(
+      context,
+      path.join(context.root, "candidate_ledger.jsonl:metadata"),
+      "unsafe"
+    ),
+    /artifact destination is unsafe/
+  );
 
   await assert.rejects(
     io.artifactDestination(

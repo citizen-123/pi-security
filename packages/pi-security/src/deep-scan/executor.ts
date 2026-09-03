@@ -135,7 +135,7 @@ export class NativePiWorkerExecutor implements PiWorkerExecutor {
   async validateContinuationPolicy(
     request: PiWorkerContinuationValidationRequest,
   ): Promise<void> {
-    if (!request.resumeContinuationId) {
+    if (!hasContinuationId(request.resumeContinuationId)) {
       throw new Error("Continuation policy validation requires a continuation ID.");
     }
     await assertExecutionBoundaryTuple({
@@ -167,6 +167,12 @@ export class NativePiWorkerExecutor implements PiWorkerExecutor {
   }
 
   async run(request: PiWorkerRequest): Promise<PiWorkerResult> {
+    if (
+      request.resumeContinuationId !== undefined
+      && !hasContinuationId(request.resumeContinuationId)
+    ) {
+      throw continuationError("Worker execution requires a non-empty continuation ID.");
+    }
     const diagnostics = new NativeDiagnosticsCollector(
       this.settings.thinkingLevel,
       this.now,
@@ -378,6 +384,7 @@ export class NativePiWorkerExecutor implements PiWorkerExecutor {
     });
 
     await request.onPolicyReady?.();
+    request.signal.throwIfAborted();
     if (created) {
       await writeContinuation(continuationContext, continuation, true);
       await request.onContinuationStarted?.(continuation.id);
@@ -628,6 +635,12 @@ function createNativeToolDefinitions(
     label: definition.annotations.title,
     description: definition.description,
     parameters: Type.Unsafe(definition.inputSchema as TSchema),
+    // The durable ledger and final artifact transitions are single-writer
+    // operations. In particular, recovery admits at most one active child.
+    executionMode: (
+      definition.name === "delegate_security_task"
+      || !definition.annotations.readOnlyHint
+    ) ? "sequential" : "parallel",
     async execute(toolCallId, params, signal) {
       diagnostics.recordToolCall();
       try {
@@ -1092,7 +1105,12 @@ async function writeDelegatedChildOutcome(
   const value: PersistedDelegatedChildOutcome = outcome.error === undefined
     ? { version: 1, status: "succeeded", result: outcome.result }
     : { version: 1, status: "failed", error: outcome.error };
-  await replaceArtifactJson(context, DELEGATED_OUTCOME_FILE, value);
+  const destination = await artifactDestination(
+    context,
+    [DELEGATED_OUTCOME_FILE],
+    "delegated security task outcome",
+  );
+  await replaceArtifactJson(context, destination, value);
 }
 
 async function delegatedChildContinuation(
@@ -1217,15 +1235,15 @@ async function writeContinuation(
   continuation: WorkerContinuation,
   createOnly = false,
 ): Promise<void> {
-  if (!createOnly) {
-    await replaceArtifactJson(context, CONTINUATION_FILE, continuation);
-    return;
-  }
   const destination = await artifactDestination(
     context,
     [CONTINUATION_FILE],
     "native worker continuation",
   );
+  if (!createOnly) {
+    await replaceArtifactJson(context, destination, continuation);
+    return;
+  }
   await fs.mkdir(dirname(destination), { recursive: true });
   await fs.writeFile(destination, `${JSON.stringify(continuation, null, 2)}\n`, {
     encoding: "utf8",
@@ -1278,6 +1296,19 @@ function parseContinuation(value: Record<string, unknown>): WorkerContinuation {
   }
   const messages = value.messages.map(parseNativeMessage);
   const toolCalls = value.toolCalls.map(parsePersistedToolCall);
+  const acceptedFinalSubmission = toolCalls.some(
+    (call) => call.finalSubmissionAccepted,
+  );
+  if (
+    value.finalSubmissionAccepted !== acceptedFinalSubmission
+    || toolCalls.some((call) => (
+      call.finalSubmissionAccepted && call.result.isError
+    ))
+  ) {
+    throw continuationError(
+      "Native worker continuation has an inconsistent final submission state.",
+    );
+  }
   const children = value.delegation.children.map(parseDelegationMarker);
   return {
     version: 3,
@@ -1468,6 +1499,10 @@ function isSafeJson(value: unknown, seen = new Set<object>()): boolean {
       && Object.values(value).every((item) => isSafeJson(item, seen));
   seen.delete(value);
   return valid;
+}
+
+function hasContinuationId(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function isNonnegativeInteger(value: unknown): value is number {

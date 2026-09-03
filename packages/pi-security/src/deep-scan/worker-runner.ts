@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { getPiSecurityDeepReducerInputs } from "../artifact-deep-reducer.js";
 import { createWorkerArtifactContext } from "../artifact-context.js";
 import { describePolicyEnforcementFailure } from "../enforcement-capabilities.js";
@@ -205,7 +205,7 @@ export class DeepScanWorkerRunner {
         userContext: run.userContext
       },
       subagents: run.config.subagents,
-      validate: async () => {
+      validateResult: async () => {
         await validateDiscoveryArtifacts(artifacts, files.resultPath, run.scanId);
         discoveryValidated = true;
       },
@@ -251,7 +251,7 @@ export class DeepScanWorkerRunner {
           : { consecutiveErrors: outcome.consecutiveErrors })
       };
     }
-    if (outcome.status === "canceled" || this.options.signal.aborted) {
+    if (outcome.status === "canceled") {
       return { type: "discovery", status: "canceled", workerId };
     }
 
@@ -384,7 +384,7 @@ export class DeepScanWorkerRunner {
       artifactDir,
       artifactContext,
       subagents: 0,
-      validate: async () => {
+      validateResult: async () => {
         reducerValidation = await validateReducerArtifacts({
           artifacts,
           artifactDir,
@@ -496,7 +496,7 @@ export class DeepScanWorkerRunner {
     artifactDir: string;
     artifactContext: PiWorkerArtifactContext;
     subagents: number;
-    validate: () => Promise<void>;
+    validateResult: () => Promise<void>;
     beforeRetry: (attempt: number) => Promise<void>;
   }): Promise<WorkerAttemptOutcome> {
     const { run, signal } = this.options;
@@ -532,8 +532,12 @@ export class DeepScanWorkerRunner {
         continuationId: resumableContinuationId
       };
       let attemptPersisted = false;
+      let policyReady = false;
       const persistPolicyReadyAttempt = async (): Promise<void> => {
-        if (attemptPersisted) return;
+        if (policyReady) {
+          throw new Error("Pi worker executor validated its continuation policy more than once.");
+        }
+        policyReady = true;
         await this.options.store.updateWorker(baseMutation);
         attemptPersisted = true;
         this.options.log({
@@ -544,9 +548,6 @@ export class DeepScanWorkerRunner {
           attempt
         });
       };
-      if (!resumableContinuationId) {
-        await persistPolicyReadyAttempt();
-      }
       try {
         const executionContext = issueDeepScanSourceContext({
           targetRoot: run.targetPath,
@@ -599,7 +600,7 @@ export class DeepScanWorkerRunner {
             });
           }
         });
-        if (!attemptPersisted) {
+        if (!policyReady || !attemptPersisted) {
           throw new Error(
             "Pi worker executor returned without validating its continuation policy.",
           );
@@ -620,9 +621,12 @@ export class DeepScanWorkerRunner {
         }
         validationStarted = true;
         try {
-          await input.validate();
+          await input.validateResult();
         } catch (validationError) {
-          throw withWorkerDiagnostics(validationError, result.diagnostics);
+          throw withWorkerDiagnostics(
+            expectedWorkerResultMissing(validationError),
+            result.diagnostics
+          );
         }
         validationCompleted = true;
         if (signal.aborted) {
@@ -717,7 +721,7 @@ export class DeepScanWorkerRunner {
           && validationStarted
           && !validationCompleted
           && activeContinuationId
-          && isMissingWorkerResult(normalized, input.artifactDir)
+          && isMissingWorkerResult(normalized)
         ) {
           // Completed analysis may only be missing its final recording tool.
           // Keep the existing conversation so the worker can correct that call.
@@ -1049,13 +1053,38 @@ function withWorkerDiagnostics(
   return combined;
 }
 
-function isMissingWorkerResult(error: Error, artifactDir: string): boolean {
-  const diagnosed = error as NodeJS.ErrnoException;
-  const original = diagnosed.code === "artifact_tool_failed" && error.cause instanceof Error
-    ? error.cause as NodeJS.ErrnoException
-    : diagnosed;
-  return original.code === "ENOENT"
-    && original.path === join(artifactDir, "result.json");
+class ExpectedWorkerResultMissingError extends Error {
+  constructor(cause: Error) {
+    super("The expected worker result (result.json) is missing.", { cause });
+  }
+}
+
+function expectedWorkerResultMissing(error: unknown): Error {
+  const normalized = asError(error);
+  const cause = normalized.cause;
+  // Secure descriptor-relative opens report the final component rather than the
+  // configured artifact path. Brand only that expected result-file ENOENT; a
+  // missing parent or any other artifact validation failure remains a clean retry.
+  if (cause instanceof Error) {
+    const errno = cause as NodeJS.ErrnoException;
+    if (
+      errno.code === "ENOENT"
+      && errno.syscall === "open"
+      && typeof errno.path === "string"
+      && basename(errno.path) === "result.json"
+    ) {
+      return new ExpectedWorkerResultMissingError(normalized);
+    }
+  }
+  return normalized;
+}
+function isMissingWorkerResult(error: Error): boolean {
+  let current: unknown = error;
+  while (current instanceof Error) {
+    if (current instanceof ExpectedWorkerResultMissingError) return true;
+    current = current.cause;
+  }
+  return false;
 }
 
 function standardScanCompletionContinuation(attempt: number): string {

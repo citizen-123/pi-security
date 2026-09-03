@@ -43,7 +43,7 @@ from rank_preview import (
     preview_for,
     preview_for_bytes,
 )
-from workbench_target import git_blob_bytes, git_directory_snapshot_paths
+from workbench_target import git_blob_bytes, git_command, git_directory_snapshot_paths
 
 EXCLUDED_DIRS = {
     ".cache",
@@ -622,20 +622,21 @@ def bind_repo_scopes(args: argparse.Namespace) -> None:
 
 
 def run_git_changed_paths(repo: Path, diff_args: list[str]) -> list[tuple[Path, str]]:
-    result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo),
-            "diff",
-            "--name-status",
-            "-z",
-            "--diff-filter=ACMRD",
-            *diff_args,
-        ],
-        check=True,
-        capture_output=True,
+    result = git_command(
+        repo,
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--name-status",
+        "-z",
+        "--diff-filter=ACMRD",
+        *diff_args,
+        text=False,
     )
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, result.args, output=result.stdout, stderr=result.stderr
+        )
     fields = result.stdout.split(b"\0")
     if fields and not fields[-1]:
         fields.pop()
@@ -659,11 +660,21 @@ def git_changed_paths(repo: Path, base: str, head: str, mode: str) -> list[tuple
     if mode == "local-patch":
         unstaged = run_git_changed_paths(repo, [base])
         staged = run_git_changed_paths(repo, ["--cached", base])
-        untracked = subprocess.run(
-            ["git", "-C", str(repo), "ls-files", "--others", "--exclude-standard", "-z"],
-            capture_output=True,
-            check=True,
+        untracked = git_command(
+            repo,
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            text=False,
         )
+        if untracked.returncode != 0:
+            raise subprocess.CalledProcessError(
+                untracked.returncode,
+                untracked.args,
+                output=untracked.stdout,
+                stderr=untracked.stderr,
+            )
         combined = dict(staged)
         combined.update(unstaged)
         combined.update(

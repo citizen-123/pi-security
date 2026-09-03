@@ -7,9 +7,13 @@ import argparse
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
+
+# Some hosts launch Python with safe-path isolation enabled.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from finalize_scan_contract import ContractError, external_output_path, write_external_output_bytes
+from workbench_target import git_command
 
 class InventoryError(ValueError):
     """Raised when the repository, scope, or inventory cannot be used safely."""
@@ -66,16 +70,16 @@ def resolve_scope(repository: Path, value: str) -> str:
 
 
 def resolve_output(value: str) -> Path:
-    """Reject direct symlink outputs without constraining the artifact root."""
+    """Reject direct symlink outputs while preserving a no-follow write path."""
     if not value or "\0" in value:
         raise InventoryError("--out: expected an inventory file path")
     requested = Path(value).expanduser()
     if requested.is_symlink():
         raise InventoryError("--out: refusing to replace a symbolic link")
     try:
-        output = requested.resolve(strict=False)
-    except (OSError, ValueError) as error:
-        raise InventoryError(f"--out: cannot resolve inventory path: {value}") from error
+        output = external_output_path(requested)
+    except ContractError as error:
+        raise InventoryError(f"--out: {error}") from error
     if output.exists() and not output.is_file():
         raise InventoryError(f"--out: expected a regular file path: {output}")
     return output
@@ -94,21 +98,16 @@ def generate_in_scope_files(repository: Path, scope: str, output: Path) -> int:
 def git_inventory_rows(repository: Path, scope: str) -> list[bytes]:
     """List tracked files plus non-ignored untracked files without ripgrep."""
     try:
-        result = subprocess.run(
-            [
-                "git",
-                "ls-files",
-                "--cached",
-                "--others",
-                "--exclude-standard",
-                "-z",
-                "--",
-                scope,
-            ],
-            cwd=repository,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
+        result = git_command(
+            repository,
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            scope,
+            text=False,
         )
     except OSError as error:
         raise InventoryError(f"could not run git inventory: {error}") from error
@@ -149,20 +148,21 @@ def directory_inventory_rows(repository: Path, scope: str) -> list[bytes]:
 
 
 def committed_changed_paths(repository: Path, base: str, head: str) -> list[tuple[Path, str]]:
-    result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repository),
-            "diff",
-            "--raw",
-            "-z",
-            "--diff-filter=ACMRD",
-            f"{base}..{head}",
-        ],
-        capture_output=True,
-        check=True,
+    result = git_command(
+        repository,
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--raw",
+        "-z",
+        "--diff-filter=ACMRD",
+        f"{base}..{head}",
+        text=False,
     )
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, result.args, output=result.stdout, stderr=result.stderr
+        )
     fields = result.stdout.split(b"\0")
     changed: list[tuple[Path, str]] = []
     index = 0
@@ -260,24 +260,11 @@ def generate_diff_in_scope_files(
 
 
 def write_inventory(output: Path, rows: list[bytes]) -> int:
-    """Replace a complete inventory atomically, keeping failures from corrupting the old one."""
-    output.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
+    """Atomically replace an inventory without following swapped output parents."""
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            dir=output.parent,
-            prefix=f".{output.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            temporary = Path(handle.name)
-            handle.writelines(rows)
-        temporary.replace(output)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-
+        write_external_output_bytes(output, b"".join(rows))
+    except ContractError as error:
+        raise InventoryError(f"--out: {error}") from error
     return len(rows)
 
 
