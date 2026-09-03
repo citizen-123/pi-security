@@ -123,6 +123,22 @@ def parse_args(description: str) -> argparse.Namespace:
     get_scan.add_argument("--scan-id", required=True)
     get_scan.add_argument("--occurrence-id")
 
+    runtime_create_run = subparsers.add_parser("runtime-create-run")
+    runtime_create_run.set_defaults(runtime_payload_stdin=True)
+    runtime_claim_run = subparsers.add_parser("runtime-claim-run")
+    runtime_claim_run.set_defaults(runtime_payload_stdin=True)
+    runtime_transition = subparsers.add_parser("runtime-transition")
+    runtime_transition.set_defaults(runtime_payload_stdin=True)
+    runtime_record_event = subparsers.add_parser("runtime-record-event")
+    runtime_record_event.set_defaults(runtime_payload_stdin=True)
+    runtime_reuse_output = subparsers.add_parser("runtime-reuse-output")
+    runtime_reuse_output.set_defaults(runtime_payload_stdin=True)
+    runtime_get_run = subparsers.add_parser("runtime-get-run")
+    runtime_get_run.add_argument("--run-id", required=True)
+    runtime_list_events = subparsers.add_parser("runtime-list-events")
+    runtime_list_events.add_argument("--run-id", required=True)
+    runtime_list_events.add_argument("--after-sequence", type=non_negative_int, default=0)
+
     get_scan_feedback = subparsers.add_parser("get-scan-feedback")
     get_scan_feedback.add_argument("--scan-id", required=True)
 

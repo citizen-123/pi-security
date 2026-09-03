@@ -39,6 +39,7 @@ import workbench_remediation as remediation
 import workbench_saved_results as saved_results
 import workbench_scan_history as scan_history
 import workbench_scan_usage as scan_usage
+import runtime_state
 from filesystem_identity import (
     serialize_filesystem_identity as serialize_filesystem_identity,
 )
@@ -3625,6 +3626,20 @@ def main() -> None:
             result = deep_scan.record_deep_scan_publication_failure(connection, args)
         elif args.command == "get-scan":
             result = scan_context(connection, args.scan_id, args.occurrence_id)
+        elif args.command == "runtime-create-run":
+            result = runtime_state.create_run(connection, json.load(sys.stdin), now)
+        elif args.command == "runtime-claim-run":
+            result = runtime_state.claim_run(connection, json.load(sys.stdin), now)
+        elif args.command == "runtime-transition":
+            result = runtime_state.transition(connection, json.load(sys.stdin), now)
+        elif args.command == "runtime-record-event":
+            result = runtime_state.record_event(connection, json.load(sys.stdin), now)
+        elif args.command == "runtime-reuse-output":
+            result = runtime_state.reuse_output(connection, json.load(sys.stdin), now)
+        elif args.command == "runtime-get-run":
+            result = runtime_state.get_run(connection, args.run_id)
+        elif args.command == "runtime-list-events":
+            result = runtime_state.list_events(connection, args.run_id, args.after_sequence)
         elif args.command == "get-scan-feedback":
             result = get_scan_feedback(connection, require_scan(connection, args.scan_id))
         elif args.command == "list-scans":

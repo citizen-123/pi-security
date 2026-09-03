@@ -8,11 +8,11 @@
 
 ## 2. Durable Runtime State
 
-- [ ] 2.1 Add additive workbench migrations for workflow runs, phase instances, logical agents, attempts, sanitized snapshots, run links, progress, controller claims, and ordered events; verify fresh setup and upgrade from the existing schema with workbench migration tests.
-- [ ] 2.2 Extend the Python workbench facade with narrow transactional operations for creating a run and phases, claiming a controller, transitioning lifecycle state, recording outputs, and appending the matching domain event; verify each transition and event commit atomically under success and injected failure.
-- [ ] 2.3 Add typed TypeScript repository interfaces and the temporary workbench-backed adapter so runtime code does not depend on Python command shapes; verify adapter contract tests cover state round trips and stable typed failures.
-- [ ] 2.4 Add run-state, progress, and ordered-event queries including events after a run-local sequence; verify reconnect returns canonical state and later events in sequence order without replaying activity history.
-- [ ] 2.5 Implement run-link and validated output-reuse records; verify a compatible output retains source run/phase/digest provenance and incompatible type, version, input, target, or policy identities are rejected.
+- [x] 2.1 Add additive workbench migrations for workflow runs, phase instances, logical agents, attempts, sanitized snapshots, run links, progress, controller claims, and ordered events; verify fresh setup and upgrade from the existing schema with workbench migration tests.
+- [x] 2.2 Extend the Python workbench facade with narrow transactional operations for creating a run and phases, claiming a controller, transitioning lifecycle state, recording outputs, and appending the matching domain event; verify each transition and event commit atomically under success and injected failure.
+- [x] 2.3 Add typed TypeScript repository interfaces and the temporary workbench-backed adapter so runtime code does not depend on Python command shapes; verify adapter contract tests cover state round trips and stable typed failures.
+- [x] 2.4 Add run-state, progress, and ordered-event queries including events after a run-local sequence; verify reconnect returns canonical state and later events in sequence order without replaying activity history.
+- [x] 2.5 Implement run-link and validated output-reuse records; verify a compatible output retains source run/phase/digest provenance and incompatible type, version, input, target, or policy identities are rejected.
 
 ## 3. Pi RPC Supervision
 
