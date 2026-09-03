@@ -34,11 +34,11 @@
 
 ## 5. Run Lifecycle and Recovery
 
-- [ ] 5.1 Implement scan creation that validates config and target, persists the immutable snapshot and workflow before agent launch, then atomically claims foreground controller ownership; verify invalid preflight starts no agent and concurrent claims have one winner.
-- [ ] 5.2 Implement completed, failed, canceled, and interrupted outcomes while preserving admissible evidence and honest coverage semantics; verify only completed runs can publish a complete coverage conclusion.
-- [ ] 5.3 Implement the cancellation barrier that stops scheduling, aborts attempts, awaits settlement, persists admissible state, freezes output admission, and marks cancellation terminal; verify late fake-agent output cannot mutate canonical state.
-- [ ] 5.4 Reconcile unexpected foreground process/session loss to an interrupted run and implement explicit compatible resume using the persisted snapshot and freshly validated authority; verify completed/canceled/failed runs and mismatched target, role, model, policy, or capability state cannot resume in place.
-- [ ] 5.5 Implement failed-run retry as creation of a new linked run with optional explicitly validated immutable output reuse; verify the failed run remains unchanged and reuse events identify every accepted source output.
+- [x] 5.1 Implement scan creation that validates config and target, persists the immutable snapshot and workflow before agent launch, then atomically claims foreground controller ownership; verify invalid preflight starts no agent and concurrent claims have one winner.
+- [x] 5.2 Implement completed, failed, canceled, and interrupted outcomes while preserving admissible evidence and honest coverage semantics; verify only completed runs can publish a complete coverage conclusion.
+- [x] 5.3 Implement the cancellation barrier that stops scheduling, aborts attempts, awaits settlement, persists admissible state, freezes output admission, and marks cancellation terminal; verify late fake-agent output cannot mutate canonical state.
+- [x] 5.4 Reconcile unexpected foreground process/session loss to an interrupted run and implement explicit compatible resume using the persisted snapshot and freshly validated authority; verify completed/canceled/failed runs and mismatched target, role, model, policy, or capability state cannot resume in place.
+- [x] 5.5 Implement failed-run retry as creation of a new linked run with optional explicitly validated immutable output reuse; verify the failed run remains unchanged and reuse events identify every accepted source output.
 
 ## 6. CLI Progress and Operations
 

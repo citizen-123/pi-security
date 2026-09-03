@@ -21,6 +21,17 @@ RUN_TRANSITIONS = {
     "failed": frozenset(),
     "canceled": frozenset(),
 }
+PHASE_TRANSITIONS = {
+    "pending": frozenset({"ready", "running", "skipped", "canceled"}),
+    "ready": frozenset({"ready", "running", "skipped", "canceled"}),
+    "running": frozenset({"completed", "failed", "interrupted", "canceled"}),
+    "interrupted": frozenset({"running", "failed", "canceled"}),
+    "failed": frozenset(),
+    "completed": frozenset(),
+    "canceled": frozenset(),
+    "skipped": frozenset(),
+    "reused": frozenset(),
+}
 
 
 def create_run(
@@ -222,6 +233,7 @@ def transition(
                 raise SystemExit(
                     f"Workflow run cannot transition from {run['status']} to {next_status}."
                 )
+            validate_run_outcome(connection, run_id, next_status, progress)
             if next_status in TERMINAL_RUN_STATUSES:
                 completed_at = timestamp
                 controller_after = None
@@ -693,6 +705,10 @@ def update_phase(
     )
     if phase["version"] != expected_phase_version:
         raise SystemExit("Workflow phase version changed before transition.")
+    if state not in PHASE_TRANSITIONS[phase["state"]]:
+        raise SystemExit(
+            f"Workflow phase cannot transition from {phase['state']} to {state}."
+        )
     output = change.get("output")
     output_digest = change.get("outputDigest")
     input_digest = change.get("inputDigest")
@@ -722,6 +738,39 @@ def update_phase(
     ).rowcount
     if changed != 1:
         raise SystemExit("Workflow phase transition lost a concurrent update.")
+
+
+def validate_run_outcome(
+    connection: sqlite3.Connection,
+    run_id: str,
+    next_status: str,
+    progress: Any,
+) -> None:
+    progress_object = require_object(progress, "progress") if progress is not None else {}
+    conclusion = progress_object.get("coverageConclusion")
+    if next_status != "completed" and conclusion == "complete":
+        raise SystemExit("Only a completed workflow run can record complete coverage.")
+    if next_status != "completed":
+        return
+    incomplete = connection.execute(
+        """
+        SELECT COUNT(*) FROM workflow_phases
+        WHERE run_id = ? AND state NOT IN ('completed', 'reused')
+        """,
+        (run_id,),
+    ).fetchone()[0]
+    publication = connection.execute(
+        """
+        SELECT 1 FROM workflow_phases
+        WHERE run_id = ? AND phase_type = 'publication'
+            AND state IN ('completed', 'reused')
+        """,
+        (run_id,),
+    ).fetchone()
+    if incomplete or publication is None:
+        raise SystemExit("Workflow run cannot complete before every phase and publication.")
+    if conclusion != "complete":
+        raise SystemExit("Completed workflow run requires a complete coverage conclusion.")
 
 
 def append_event(
