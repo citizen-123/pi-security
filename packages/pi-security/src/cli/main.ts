@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import { CLI_HELP, CliUsageError, parseCliArgs, type CliCommand } from "./args.js";
+import { CLI_HELP, CliExitError, CliUsageError, parseCliArgs, type CliCommand } from "./args.js";
 
 export interface CliIo {
   error(message: string): void;
@@ -33,6 +33,10 @@ export async function runCli(
     if (error instanceof CliUsageError) {
       io.error(error.message);
       io.error("Run pi-security --help for usage.");
+      return error.exitCode;
+    }
+    if (error instanceof CliExitError) {
+      io.error(error.message);
       return error.exitCode;
     }
     io.error(error instanceof Error ? error.message : String(error));

@@ -42,11 +42,11 @@
 
 ## 6. CLI Progress and Operations
 
-- [ ] 6.1 Implement foreground scan execution and exit-status mapping for completed, failed, canceled, interrupted, and configuration/preflight failures; verify each outcome through CLI subprocess tests using the fake RPC executable.
-- [ ] 6.2 Implement the TTY progress renderer showing phase states, active logical agents, meaningful completed/total units, finding counts, unavailable values, and terminal outcome; verify rendered snapshots never fall back to a generic working-only display.
-- [ ] 6.3 Implement deterministic non-TTY output and run inspection from relational state without a live executor; verify completed and interrupted runs can be inspected and parsed after their originating process exits.
-- [ ] 6.4 Wire CLI cancel, explicit resume, and linked retry to the runtime command layer; verify commands enforce ownership/state/version rules and never mutate terminal history incorrectly.
-- [ ] 6.5 Implement event reconnection after a supplied run sequence for CLI consumers; verify missed committed events are delivered once in canonical order and unsupported event versions produce a compatibility error.
+- [x] 6.1 Implement foreground scan execution and exit-status mapping for completed, failed, canceled, interrupted, and configuration/preflight failures; verify each outcome through CLI subprocess tests using the fake RPC executable.
+- [x] 6.2 Implement the TTY progress renderer showing phase states, active logical agents, meaningful completed/total units, finding counts, unavailable values, and terminal outcome; verify rendered snapshots never fall back to a generic working-only display.
+- [x] 6.3 Implement deterministic non-TTY output and run inspection from relational state without a live executor; verify completed and interrupted runs can be inspected and parsed after their originating process exits.
+- [x] 6.4 Wire CLI cancel, explicit resume, and linked retry to the runtime command layer; verify commands enforce ownership/state/version rules and never mutate terminal history incorrectly.
+- [x] 6.5 Implement event reconnection after a supplied run sequence for CLI consumers; verify missed committed events are delivered once in canonical order and unsupported event versions produce a compatibility error.
 
 ## 7. Pi Adapter and Compatibility
 
