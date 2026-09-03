@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { CLI_HELP, CliExitError, CliUsageError, parseCliArgs, type CliCommand } from "./args.js";
+import { createDefaultCliCommandHandler } from "./default.js";
 
 export interface CliIo {
   error(message: string): void;
@@ -8,7 +9,7 @@ export interface CliIo {
 
 export type CliCommandHandler = (command: Exclude<CliCommand, { kind: "help" }>) => Promise<number>;
 
-const consoleIo: CliIo = {
+export const consoleIo: CliIo = {
   error(message) {
     process.stderr.write(`${message}\n`);
   },
@@ -49,5 +50,5 @@ async function commandUnavailable(command: Exclude<CliCommand, { kind: "help" }>
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = await runCli(process.argv.slice(2));
+  process.exitCode = await runCli(process.argv.slice(2), consoleIo, createDefaultCliCommandHandler(consoleIo));
 }

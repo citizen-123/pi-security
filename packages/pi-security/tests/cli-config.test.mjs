@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -137,6 +137,12 @@ test("credential values are usable but absent from snapshots and redacted output
     runtime.redactKnownSecrets(`error ${secretA} and ${secretB}`, [secretA, secretB]),
     "error [REDACTED] and [REDACTED]",
   );
+  const environmentCredential = structuredClone(first);
+  environmentCredential.roles.default.credential = { env: "SYNTHETIC_PROVIDER_TOKEN", kind: "env" };
+  assert.deepEqual(
+    runtime.createExecutionSnapshot(environmentCredential).resolved.roles.default.credential,
+    { env: "SYNTHETIC_PROVIDER_TOKEN", source: "env" },
+  );
 });
 
 test("environment and profile credentials report only source identity on failure", async () => {
@@ -148,4 +154,16 @@ test("environment and profile credentials report only source identity on failure
     runtime.resolveCredential({ kind: "profile", profile: "missing-profile" }, { profiles: () => undefined }),
     /missing-profile.*unavailable/u,
   );
+});
+
+test("documented canonical commands remain present in generated help", async () => {
+  const packageRoot = new URL("..", import.meta.url).pathname;
+  const documents = [
+    await readFile(path.join(packageRoot, "README.md"), "utf8"),
+    await readFile(path.join(packageRoot, "../../README.md"), "utf8"),
+  ];
+  for (const command of ["pi-security scan", "pi-security run inspect", "pi-security run cancel", "pi-security run resume", "pi-security run retry"]) {
+    assert.equal(documents.every((document) => document.includes(command)), true, command);
+    assert.equal(runtime.CLI_HELP.includes(command.replace("pi-security ", "")), true, command);
+  }
 });

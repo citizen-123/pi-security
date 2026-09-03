@@ -180,7 +180,12 @@ export class PhaseSessionSupervisor {
         status: "running",
       });
       this.#sessions.set(request.logicalAgentId, binding);
+      let settleAgent!: () => void;
+      const agentSettled = new Promise<void>((resolvePromise) => {
+        settleAgent = resolvePromise;
+      });
       client.onEvent((event) => {
+        if (event.type === "agent_settled") settleAgent();
         binding.activity = binding.activity
           .then(() => this.#recordActivity(binding, event))
           .catch(() => undefined);
@@ -190,6 +195,12 @@ export class PhaseSessionSupervisor {
         type: "prompt",
         message: `${request.role.instructions}\n\nPhase input:\n${JSON.stringify(request.input)}`,
       });
+      await Promise.race([
+        agentSettled,
+        client.waitForExit().then(() => {
+          throw new JsonlRpcError("Pi RPC process exited before the phase settled.", "process");
+        }),
+      ]);
       await binding.activity;
       const current = await this.#options.repository.getRun(request.input.runId);
       return { piSessionId, version: current.version };
@@ -223,7 +234,33 @@ export class PhaseSessionSupervisor {
     }
   }
 
+  async complete(request: AgentControlRequest): Promise<{ transcript: unknown; version: number }> {
+    const binding = await this.#authorize(request);
+    const transcript = (await binding.client.request({ type: "get_messages" })).data;
+    this.#sessions.delete(binding.logicalAgentId);
+    await binding.client.stop();
+    const current = await this.#options.repository.getRun(binding.runId);
+    const completed = await this.#options.repository.updateAttempt({
+      attemptId: binding.attemptId,
+      claimToken: binding.claimToken,
+      controllerId: binding.controllerId,
+      details: {},
+      event: {
+        attemptId: binding.attemptId,
+        category: "domain",
+        kind: "agent.attempt_completed",
+        logicalAgentId: binding.logicalAgentId,
+        phaseId: binding.phaseId,
+        source: "runtime",
+      },
+      expectedVersion: current.version,
+      runId: binding.runId,
+      status: "completed",
+    });
+    return { transcript, version: completed.version };
+  }
   async control(request: AgentControlRequest, control: AgentControl): Promise<unknown> {
+
     const binding = await this.#authorize(request);
 
     const mutation = await this.#options.repository.recordEvent({

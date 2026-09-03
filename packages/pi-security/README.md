@@ -182,6 +182,25 @@ Deep workers use the active Pi model and requested reasoning effort. Diagnostics
 
 Token counts come from native Pi session statistics or, for host-led scans, the optional host session database. Coverage is reported as complete, partial, or unavailable according to the sessions that supplied counts. Missing counts are never inferred, converted to zero, or used to estimate cost. Nested Deep Scan usage is included in executor-tree totals and also reported as a nested subset.
 
+## Standalone canonical CLI
+
+The package exposes `pi-security`:
+
+```sh
+pi-security scan --target /absolute/repository/path
+pi-security scan --config /absolute/pi-security.toml
+pi-security run inspect <run-id>
+pi-security run cancel <run-id>
+pi-security run resume <run-id>
+pi-security run retry <run-id>
+```
+
+The built-in `full-repository` workflow runs in the foreground. The canonical runtime alone advances phases and admits outputs. Non-TTY output is one deterministic JSON run record; TTY output includes phase units, active logical agents, available finding counts, and the terminal reason. Exit codes are completed `0`, failed `1`, configuration/preflight `2`, interrupted `75`, and canceled `130`.
+
+Ctrl-C stops scheduling, aborts active attempts, waits for settlement, freezes admission, and records terminal cancellation. A handled foreground process-loss signal records interruption instead. `run resume` claims and continues the same interrupted run only when its target, snapshot, workflow, policy, capabilities, and admitted outputs remain compatible. `run retry` leaves failed history immutable and executes a new linked run.
+
+Configuration precedence is defaults, ambient `$PI_HOME/pi-security/config.toml`, explicit `--config`, then supported non-secret CLI overrides. `[roles.<name>]` accepts provider, model, thinking, instructions, attempt policy, and exactly one credential form: `{ env = \"NAME\" }`, `{ profile = \"name\" }`, or `{ value = \"literal\" }`. Secret flags are not accepted. Credential values are memory-only and excluded from arguments, persisted snapshots, events, artifacts, rendering, and compatibility digests.
+
 ## State and configuration
 
 Defaults:

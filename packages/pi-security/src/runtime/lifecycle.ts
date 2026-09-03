@@ -165,6 +165,7 @@ export class CanonicalRunLifecycle {
       active.outcome = "interrupted";
       active.reason = reason;
       active.abort.abort(new Error(reason));
+      await this.#options.abortActiveAttempts?.(runId);
       return await active.settled;
     }
     const run = await this.#options.repository.getRun(runId);
@@ -321,6 +322,12 @@ export class CanonicalRunLifecycle {
         initialStates[phase.id] = "pending";
       }
     }
+    let persistence = Promise.resolve();
+    const persist = async (operation: () => Promise<RuntimeRunRecord>): Promise<void> => {
+      const next = persistence.then(operation);
+      persistence = next.then(() => undefined, () => undefined);
+      current = await next;
+    };
     let result: WorkflowScheduleResult;
     try {
       result = await scheduleWorkflow({
@@ -331,49 +338,55 @@ export class CanonicalRunLifecycle {
           ? ((current.snapshot.resolved as Record<string, Record<string, unknown>>).execution.maxParallel ?? 1)
           : 1),
         onPhaseSettled: async (phase, state, output, error) => {
-          const persisted = phaseRecord(current, phase.id);
-          const persistedState = state === "canceled" && execution.outcome === "interrupted"
-            ? "interrupted"
-            : state;
-          current = await this.#options.repository.transition({
-            ...owned(current, ownership),
-            event: {
-              category: "domain",
-              kind: `phase.${persistedState}`,
-              payload: error ? { error: errorMessage(error) } : {},
-              phaseId: phase.id,
-              source: "runtime",
-            },
-            phase: {
-              expectedVersion: persisted.version,
-              id: phase.id,
-              ...(persistedState === "completed" ? { output, outputDigest: digest(output) } : {}),
-              state: persistedState,
-            },
+          await persist(async () => {
+            current = await this.#options.repository.getRun(initial.id);
+            const persisted = phaseRecord(current, phase.id);
+            const persistedState = state === "canceled" && execution.outcome === "interrupted"
+              ? "interrupted"
+              : state;
+            return await this.#options.repository.transition({
+              ...owned(current, ownership),
+              event: {
+                category: "domain",
+                kind: `phase.${persistedState}`,
+                payload: error ? { error: errorMessage(error) } : {},
+                phaseId: phase.id,
+                source: "runtime",
+              },
+              phase: {
+                expectedVersion: persisted.version,
+                id: phase.id,
+                ...(persistedState === "completed" ? { output, outputDigest: digest(output) } : {}),
+                state: persistedState,
+              },
+            });
           });
         },
         onPhaseStarted: async (phase, inputs) => {
-          const persisted = phaseRecord(current, phase.id);
-          current = await this.#options.repository.transition({
-            ...owned(current, ownership),
-            event: {
-              category: "domain",
-              kind: "phase.started",
-              phaseId: phase.id,
-              source: "runtime",
-            },
-            phase: {
-              expectedVersion: persisted.version,
-              id: phase.id,
-              inputDigest: digest({
-                inputs,
-                phaseType: phase.type,
-                policyDigest: current.policyDigest,
-                targetPath: current.targetPath,
-                targetRevision: current.targetRevision,
-              }),
-              state: "running",
-            },
+          await persist(async () => {
+            current = await this.#options.repository.getRun(initial.id);
+            const persisted = phaseRecord(current, phase.id);
+            return await this.#options.repository.transition({
+              ...owned(current, ownership),
+              event: {
+                category: "domain",
+                kind: "phase.started",
+                phaseId: phase.id,
+                source: "runtime",
+              },
+              phase: {
+                expectedVersion: persisted.version,
+                id: phase.id,
+                inputDigest: digest({
+                  inputs,
+                  phaseType: phase.type,
+                  policyDigest: current.policyDigest,
+                  targetPath: current.targetPath,
+                  targetRevision: current.targetRevision,
+                }),
+                state: "running",
+              },
+            });
           });
         },
         registry: BUILT_IN_PHASE_REGISTRY,
@@ -393,6 +406,7 @@ export class CanonicalRunLifecycle {
         throw error;
       }
     }
+    current = await this.#options.repository.getRun(initial.id);
     current = await this.#persistUnsettledStates(current, ownership, result, execution.outcome);
     const complete = result.status === "completed"
       && result.states.publication === "completed"

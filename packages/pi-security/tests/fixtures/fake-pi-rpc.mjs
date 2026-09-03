@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { appendFileSync } from "node:fs";
 
 let input = Buffer.alloc(0);
 let sessionId = "fixture-session";
@@ -6,6 +7,7 @@ if (process.env.FAKE_RPC_MODE === "ignore-term") {
   process.on("SIGTERM", () => undefined);
 }
 let streaming = false;
+let lastPrompt;
 
 process.stdin.on("data", (chunk) => {
   input = Buffer.concat([input, chunk]);
@@ -67,15 +69,40 @@ function handle(command) {
         credentialPresent: Boolean(process.env.FIXTURE_TOKEN)
       });
       break;
-    case "get_messages":
-      response(command, { messages: [{ role: "assistant", content: "synthetic\u2028transcript" }] });
+    case "get_messages": {
+      const outputs = process.env.FAKE_RPC_PHASE_OUTPUTS
+        ? JSON.parse(process.env.FAKE_RPC_PHASE_OUTPUTS)
+        : undefined;
+      const input = lastPrompt?.match(/Phase input:\n(.*)$/su)?.[1];
+      const phase = input ? JSON.parse(input) : undefined;
+      const content = outputs && phase
+        ? JSON.stringify({
+            attemptId: `fixture:${phase.phaseId}`,
+            output: outputs[phase.phaseId],
+            phaseId: phase.phaseId,
+            runId: phase.runId,
+            schemaVersion: 1,
+          })
+        : "synthetic\u2028transcript";
+      response(command, { messages: [{ role: "assistant", content }] });
       break;
+    }
     case "prompt":
+      lastPrompt = command.message;
+      if (process.env.FAKE_RPC_CAPTURE_FILE) {
+        appendFileSync(process.env.FAKE_RPC_CAPTURE_FILE, `${JSON.stringify({
+          argv: process.argv.slice(2),
+          credentialPresent: Boolean(process.env.PI_SECURITY_ROLE_CREDENTIAL),
+          phaseInput: command.message.match(/Phase input:\n(.*)$/su)?.[1] ?? null,
+        })}\n`);
+      }
       streaming = true;
       response(command);
       emit({ type: "agent_start", sessionId });
-      emit({ type: "agent_settled", sessionId, result: { status: "ok" } });
-      streaming = false;
+      setTimeout(() => {
+        emit({ type: "agent_settled", sessionId, result: { status: "ok" } });
+        streaming = false;
+      }, Number(process.env.FAKE_RPC_SETTLE_DELAY_MS ?? 0));
       break;
     case "new_session":
       sessionId = "fixture-session-2";

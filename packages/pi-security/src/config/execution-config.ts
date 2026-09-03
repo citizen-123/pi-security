@@ -72,7 +72,7 @@ export interface SanitizedExecutionConfig {
   legacyDeepScan?: Record<string, number>;
   provenance: Record<string, ConfigSource>;
   roles: Record<string, Omit<RoleExecutionConfig, "credential"> & {
-    credential?: { source: CredentialSource["kind"] };
+    credential?: { env?: string; profile?: string; source: CredentialSource["kind"] };
   }>;
   scan: ResolvedExecutionConfig["scan"];
 }
@@ -175,10 +175,18 @@ export function sanitizeExecutionConfig(config: ResolvedExecutionConfig): Saniti
       model: role.model,
       provider: role.provider,
       thinking: role.thinking,
-      ...(role.credential ? { credential: { source: role.credential.kind } } : {}),
+      ...(role.credential ? { credential: sanitizeCredentialSource(role.credential) } : {}),
     }])),
     scan: { ...config.scan },
   };
+}
+
+function sanitizeCredentialSource(
+  credential: CredentialSource,
+): { env?: string; profile?: string; source: CredentialSource["kind"] } {
+  if (credential.kind === "env") return { env: credential.env, source: "env" };
+  if (credential.kind === "profile") return { profile: credential.profile, source: "profile" };
+  return { source: "inline" };
 }
 
 export function createExecutionSnapshot(config: ResolvedExecutionConfig): ExecutionSnapshot {
