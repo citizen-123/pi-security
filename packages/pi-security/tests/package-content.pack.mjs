@@ -15,6 +15,7 @@ const repositoryPackagePrefix = "packages/pi-security/";
 
 const nestedFiles = [
   "dist/pi-security-extension.mjs",
+  "dist/pi-security-cli.mjs",
   "agents/*.md",
   "skills/**/*.md",
   "skills/**/*.py",
@@ -28,9 +29,10 @@ const nestedFiles = [
   "README.md",
 ];
 const rootFiles = [
+  `${repositoryPackagePrefix}dist/pi-security-cli.mjs`,
   `${repositoryPackagePrefix}dist/pi-security-extension.mjs`,
   `${repositoryPackagePrefix}package.json`,
-  ...nestedFiles.slice(1, -1).map((path) => `${repositoryPackagePrefix}${path}`),
+  ...nestedFiles.slice(2, -1).map((path) => `${repositoryPackagePrefix}${path}`),
   `${repositoryPackagePrefix}README.md`,
   "README.md",
   "LICENSE",
@@ -47,6 +49,7 @@ const requiredPackageSentinels = [
   "package.json",
   "README.md",
   "dist/pi-security-extension.mjs",
+  "dist/pi-security-cli.mjs",
   "agents/pi-security-scout.md",
   "agents/pi-security-auditor.md",
   "agents/pi-security-validator.md",
@@ -55,6 +58,7 @@ const requiredPackageSentinels = [
   "skills/security-diff-scan/SKILL.md",
   "skills/deep-security-scan/SKILL.md",
   "scripts/workbench_db.py",
+  "scripts/runtime_state.py",
   "scripts/deep_scan_workbench.py",
   "scripts/finalize_scan_contract.py",
   "scripts/workbench/__init__.py",
@@ -76,6 +80,7 @@ const bundledSubagentSentinels = [
 ];
 const expectedRuntimeDependencies = {
   "pi-subagents": "0.62.0",
+  "smol-toml": "^1.8.0",
   "zod": "^4.3.6",
 };
 const bundledRuntimeTrees = new Set([
@@ -175,7 +180,7 @@ function isAllowedPackPath(path, packagePrefix) {
   if (relative === "README.md" || relative === "package.json" || relative === "LICENSE") {
     return true;
   }
-  if (relative === "dist/pi-security-extension.mjs") return true;
+  if (relative === "dist/pi-security-extension.mjs" || relative === "dist/pi-security-cli.mjs") return true;
   return [
     /^agents\/[^/]+\.md$/u,
     /^skills\/.+\.(?:md|py)$/u,
