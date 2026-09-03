@@ -6,6 +6,7 @@
   "type": "module",
   "packageManager": "pnpm@11.19.0",
   "files": [
+    "packages/pi-security/dist/pi-security-cli.mjs",
     "packages/pi-security/dist/pi-security-extension.mjs",
     "packages/pi-security/package.json",
     "packages/pi-security/agents/*.md",
@@ -22,6 +23,9 @@
     "README.md",
     "LICENSE"
   ],
+  "bin": {
+    "pi-security": "./packages/pi-security/dist/pi-security-cli.mjs"
+  },
   "scripts": {
     "build": "npm --prefix packages/pi-security run build",
     "prepare": "npm run build",
@@ -33,6 +37,7 @@
   },
   "dependencies": {
     "pi-subagents": "0.62.0",
+    "smol-toml": "^1.8.0",
     "zod": "^4.3.6"
   },
   "bundleDependencies": ["pi-subagents"],
