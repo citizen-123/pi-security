@@ -16,12 +16,12 @@
 
 ## 3. Pi RPC Supervision
 
-- [ ] 3.1 Add a fake Pi RPC executable/fixture supporting prompts, events, controls, malformed frames, delayed exit, and process loss; verify the fixture drives tests without provider or network access.
-- [ ] 3.2 Implement the JSONL Pi process RPC transport with strict request correlation, stdout framing, stderr diagnostics, exit classification, and bounded cleanup; verify valid traffic, malformed messages, duplicate responses, stderr output, and unexpected exit behavior.
-- [ ] 3.3 Implement phase-scoped session launch using resolved role model/thinking/credential settings and issued target/artifact capability profiles; verify the fake process receives expected non-secret settings and cannot obtain capabilities beyond the phase ceiling.
-- [ ] 3.4 Persist logical-agent, attempt, and Pi-session identities before dispatch and record meaningful session, message, tool, and usage activity; verify retries keep the logical identity while allocating distinct attempts and session IDs.
-- [ ] 3.5 Route status, transcript, steering, follow-up, interrupt, and stop through runtime ownership checks; verify valid controls reach the bound fake session and foreign, stale, or cross-target controls are rejected before RPC dispatch.
-- [ ] 3.6 Implement replaceable versus non-replaceable attempt classification and bounded replacement; verify provider/transport failures can replace within policy while policy denial, invalid authority, schema incompatibility, and cancellation cannot.
+- [x] 3.1 Add a fake Pi RPC executable/fixture supporting prompts, events, controls, malformed frames, delayed exit, and process loss; verify the fixture drives tests without provider or network access.
+- [x] 3.2 Implement the JSONL Pi process RPC transport with strict request correlation, stdout framing, stderr diagnostics, exit classification, and bounded cleanup; verify valid traffic, malformed messages, duplicate responses, stderr output, and unexpected exit behavior.
+- [x] 3.3 Implement phase-scoped session launch using resolved role model/thinking/credential settings and issued target/artifact capability profiles; verify the fake process receives expected non-secret settings and cannot obtain capabilities beyond the phase ceiling.
+- [x] 3.4 Persist logical-agent, attempt, and Pi-session identities before dispatch and record meaningful session, message, tool, and usage activity; verify retries keep the logical identity while allocating distinct attempts and session IDs.
+- [x] 3.5 Route status, transcript, steering, follow-up, interrupt, and stop through runtime ownership checks; verify valid controls reach the bound fake session and foreign, stale, or cross-target controls are rejected before RPC dispatch.
+- [x] 3.6 Implement replaceable versus non-replaceable attempt classification and bounded replacement; verify provider/transport failures can replace within policy while policy denial, invalid authority, schema incompatibility, and cancellation cannot.
 
 ## 4. Typed Workflow Runtime
 

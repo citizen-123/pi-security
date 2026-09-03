@@ -360,3 +360,170 @@ def test_runtime_output_reuse_requires_matching_provenance(tmp_path: Path) -> No
         state_dir, "runtime-get-run", "--run-id", incompatible["id"]
     )
     assert unchanged["phases"][0]["state"] == "ready"
+
+
+def test_runtime_persists_logical_agents_attempts_sessions_and_activity(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / "state"
+    target = tmp_path / "target"
+    target.mkdir()
+    created = invoke(state_dir, "runtime-create-run", runtime_payload(target))
+    ownership = {
+        "runId": created["id"],
+        "expectedVersion": created["version"],
+        "controllerId": "agent-controller",
+        "claimToken": "agent-claim",
+    }
+    running = invoke(state_dir, "runtime-claim-run", ownership)
+    logical_agent_id = str(uuid.uuid4())
+    attempt_id = str(uuid.uuid4())
+    started = invoke(
+        state_dir,
+        "runtime-start-attempt",
+        {
+            **ownership,
+            "expectedVersion": running["version"],
+            "phaseId": "preflight",
+            "logicalAgentId": logical_agent_id,
+            "attemptId": attempt_id,
+            "ordinal": 1,
+            "details": {"roleId": "deterministic-preflight"},
+        },
+    )
+    assert started["status"] == "starting"
+    bound = invoke(
+        state_dir,
+        "runtime-update-attempt",
+        {
+            **ownership,
+            "expectedVersion": started["version"],
+            "attemptId": attempt_id,
+            "status": "running",
+            "piSessionId": "synthetic-pi-session",
+            "details": {"providerSessionId": "synthetic-provider-session"},
+            "event": {
+                "category": "activity",
+                "kind": "agent.session_bound",
+                "source": "runtime",
+                "phaseId": "preflight",
+                "logicalAgentId": logical_agent_id,
+                "attemptId": attempt_id,
+                "correlationId": "synthetic-correlation",
+            },
+        },
+    )
+    agent = run_workbench(
+        state_dir,
+        "runtime-get-agent",
+        "--run-id",
+        created["id"],
+        "--logical-agent-id",
+        logical_agent_id,
+    )
+    assert agent["id"] == logical_agent_id
+    assert agent["attempts"] == [
+        {
+            "id": attempt_id,
+            "ordinal": 1,
+            "piSessionId": "synthetic-pi-session",
+            "status": "running",
+            "failureCategory": None,
+            "details": {"providerSessionId": "synthetic-provider-session"},
+            "createdAt": agent["attempts"][0]["createdAt"],
+            "updatedAt": agent["attempts"][0]["updatedAt"],
+        }
+    ]
+    events = run_workbench(
+        state_dir, "runtime-list-events", "--run-id", created["id"]
+    )["events"]
+    assert events[-1]["sequence"] == 4
+    assert events[-1]["correlationId"] == "synthetic-correlation"
+
+    duplicate = run_workbench(
+        state_dir,
+        "runtime-start-attempt",
+        check=False,
+        input_text=json.dumps(
+            {
+                **ownership,
+                "expectedVersion": bound["version"],
+                "phaseId": "preflight",
+                "logicalAgentId": logical_agent_id,
+                "attemptId": str(uuid.uuid4()),
+                "ordinal": 2,
+            }
+        ),
+    )
+    assert duplicate["returncode"] != 0
+    unchanged = run_workbench(state_dir, "runtime-get-run", "--run-id", created["id"])
+    assert unchanged["version"] == bound["version"]
+    failed = invoke(
+        state_dir,
+        "runtime-update-attempt",
+        {
+            **ownership,
+            "expectedVersion": unchanged["version"],
+            "attemptId": attempt_id,
+            "status": "failed",
+            "failureCategory": "transport",
+            "event": {
+                "category": "domain",
+                "kind": "agent.attempt_failed",
+                "source": "runtime",
+                "phaseId": "preflight",
+                "logicalAgentId": logical_agent_id,
+                "attemptId": attempt_id,
+            },
+        },
+    )
+    replacement_id = str(uuid.uuid4())
+    replacement = invoke(
+        state_dir,
+        "runtime-start-attempt",
+        {
+            **ownership,
+            "expectedVersion": failed["version"],
+            "phaseId": "preflight",
+            "logicalAgentId": logical_agent_id,
+            "attemptId": replacement_id,
+            "ordinal": 2,
+        },
+    )
+    replacement = invoke(
+        state_dir,
+        "runtime-update-attempt",
+        {
+            **ownership,
+            "expectedVersion": replacement["version"],
+            "attemptId": replacement_id,
+            "status": "running",
+            "piSessionId": "synthetic-pi-session-2",
+            "event": {
+                "category": "domain",
+                "kind": "agent.session_bound",
+                "source": "runtime",
+                "phaseId": "preflight",
+                "logicalAgentId": logical_agent_id,
+                "attemptId": replacement_id,
+            },
+        },
+    )
+    replaced_agent = run_workbench(
+        state_dir,
+        "runtime-get-agent",
+        "--run-id",
+        created["id"],
+        "--logical-agent-id",
+        logical_agent_id,
+    )
+    assert replaced_agent["id"] == logical_agent_id
+    assert [attempt["id"] for attempt in replaced_agent["attempts"]] == [
+        attempt_id,
+        replacement_id,
+    ]
+    assert [attempt["piSessionId"] for attempt in replaced_agent["attempts"]] == [
+        "synthetic-pi-session",
+        "synthetic-pi-session-2",
+    ]
+    assert replacement["version"] == failed["version"] + 2
