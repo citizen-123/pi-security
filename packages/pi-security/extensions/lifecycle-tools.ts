@@ -3,7 +3,7 @@ import type {
   ExtensionAPI,
   CreateAgentSessionOptions,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { deepScanToolRenderer } from "./deep-scan-renderer.js";
 import { Type, type TSchema } from "typebox";
 import type { ExecutionPolicyContext } from "../src/execution-policy.js";
 import {
@@ -91,28 +91,6 @@ export function registerPiSecurityLifecycleTools(
   });
 }
 
-function deepScanToolRenderer(name: string) {
-  if (name !== "start_pi_security_deep_scan") return {};
-  return {
-    renderCall() {
-      return new Text("Deep Scan: preparing independent reviews…", 0, 0);
-    },
-    renderResult(
-      result: AgentToolResult<unknown>,
-      { isPartial }: { isPartial: boolean }
-    ) {
-      const details = isJsonObject(result.details) ? result.details : undefined;
-      const statusText = typeof details?.statusText === "string"
-        ? details.statusText
-        : result.content.find((item) => item.type === "text")?.text
-          ?? "Deep Scan is running.";
-      const text = isPartial && !statusText.startsWith("Deep Scan:")
-        ? `Deep Scan: ${statusText}`
-        : statusText;
-      return new Text(text, 0, 0);
-    }
-  };
-}
 
 function currentThinkingLevel(
   entries: readonly unknown[],

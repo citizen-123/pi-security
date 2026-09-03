@@ -325,7 +325,7 @@ async function openSecureDirectory(path: string, label: string): Promise<FileHan
       secureOpenFlags(fsConstants.O_RDONLY, true, label, true)
     );
   } catch (error) {
-    throw new Error(`${label} cannot be opened safely.`, { cause: error });
+    throw new Error(`${label} escaped its scan directory or is not a canonical non-symlink path; cannot be opened safely.`, { cause: error });
   }
   try {
     if (!(await directory.stat()).isDirectory()) {
@@ -397,7 +397,7 @@ async function openSecureReadFile(
         secureOpenFlags(fsConstants.O_RDONLY, false, label, true)
       );
     } catch (error) {
-      throw new Error(`${label} cannot be opened safely.`, { cause: error });
+      throw new Error(`${label} escaped its scan directory or is not a canonical non-symlink path; cannot be opened safely.`, { cause: error });
     }
   }
   const before = await safeWindowsPathIdentity(parent.path, label);
@@ -405,7 +405,7 @@ async function openSecureReadFile(
   try {
     file = await fs.open(parent.path, fsConstants.O_RDONLY);
   } catch (error) {
-    throw new Error(`${label} cannot be opened safely.`, { cause: error });
+    throw new Error(`${label} escaped its scan directory or is not a canonical non-symlink path; cannot be opened safely.`, { cause: error });
   }
   try {
     const opened = await file.stat();
@@ -429,7 +429,7 @@ async function openWindowsSecureDirectory(path: string, label: string): Promise<
   try {
     directory = await fs.open(before.canonicalPath, fsConstants.O_RDONLY);
   } catch (error) {
-    throw new Error(`${label} cannot be opened safely.`, { cause: error });
+    throw new Error(`${label} escaped its scan directory or is not a canonical non-symlink path; cannot be opened safely.`, { cause: error });
   }
   try {
     const opened = await directory.stat();
