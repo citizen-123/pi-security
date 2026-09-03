@@ -1,6 +1,6 @@
 # Pi Security
 
-Pi Security is a local, agent-driven security scanner for [Pi](https://pi.dev). It helps Pi inspect a repository, validate potential vulnerabilities, and produce durable security artifacts without requiring a provider-specific security service, CLI, SDK, account, or API key.
+Pi Security is a local, agent-driven security scanner for [Pi](https://pi.dev). It helps Pi inspect a repository, validate potential vulnerabilities, and produce durable security artifacts without requiring a provider-specific security service, SDK, account, or hosted API.
 
 It includes:
 
@@ -69,11 +69,31 @@ Or focus the diff review:
 
 Pi Security maps the target, builds a threat model, delegates non-overlapping read-only investigations, validates candidates independently, deduplicates findings, and produces the final local artifacts.
 
+## Standalone CLI
+
+Start the canonical full-repository workflow in the foreground:
+
+```sh
+pi-security scan --target /path/to/repository
+pi-security scan --config /path/to/pi-security.toml
+```
+
+Inspect durable state or operate on an existing run:
+
+```sh
+pi-security run inspect <run-id>
+pi-security run cancel <run-id>
+pi-security run resume <run-id>
+pi-security run retry <run-id>
+```
+
+`scan` owns the executor in its foreground process. Exit status is `0` for completed, `1` for failed, `2` for configuration or preflight failure, `75` for interrupted, and `130` for canceled. Ctrl-C uses the cancellation barrier; other handled termination reconciles the run as interrupted. Resume continues the same compatible interrupted run. Retry creates a new run linked to failed history.
+
 ## Scan modes
 
 ### Standard Scan
 
-A repository-wide audit driven by the current Pi session. Use it for a new codebase, a broad security review, or investigation of a specific attack surface.
+A repository-wide audit scheduled by the canonical runtime. It can be invoked from the current Pi session or the standalone `pi-security` CLI.
 
 ### Diff Scan
 
@@ -154,6 +174,26 @@ Python resolution order:
 2. `PYTHON`
 3. Pi's cached primary runtime, when executable
 4. `python3` on Unix-like systems or `python` on Windows
+
+Canonical configuration resolves in this order: built-in defaults, `$PI_HOME/pi-security/config.toml`, explicit `--config`, then non-secret CLI overrides. Role tables support `provider`, `model`, `thinking`, `instructions`, `max_attempts`, and one credential source:
+
+```toml
+[scan]
+target = "/path/to/repository"
+workflow = "full-repository"
+
+[execution]
+max_parallel = 4
+
+[roles.default]
+provider = "provider-id"
+model = "model-id"
+thinking = "medium"
+max_attempts = 2
+credential = { env = "PROVIDER_TOKEN" } # or { profile = "name" } / { value = "literal" }
+```
+
+There are no CLI secret flags. Credential values remain memory-only, are redacted from errors and child arguments, and are excluded from snapshots and execution digests. Prefer environment or profile sources over inline literals.
 
 Optional Deep Scan configuration:
 

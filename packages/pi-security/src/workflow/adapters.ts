@@ -123,6 +123,12 @@ export function createArtifactWorkflowServices(options: {
         input,
         options.runWorkbench,
       );
+      await options.runWorkbench([
+        "complete-scan",
+        "--scan-id",
+        options.scanId,
+        ...(options.handoffClaimToken ? ["--claim-token", options.handoffClaimToken] : []),
+      ]);
       await getPiSecurityCompletedScan(
         await context(false),
         { handoffClaimToken: options.handoffClaimToken, scanId: options.scanId },
