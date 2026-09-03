@@ -184,7 +184,7 @@ export function sanitizeExecutionConfig(config: ResolvedExecutionConfig): Saniti
 export function createExecutionSnapshot(config: ResolvedExecutionConfig): ExecutionSnapshot {
   const resolved = sanitizeExecutionConfig(config);
   return {
-    digest: createHash("sha256").update(stableJson(resolved)).digest("hex"),
+    digest: `sha256:${createHash("sha256").update(stableJson(resolved)).digest("hex")}`,
     resolved,
     schemaVersion: 1,
   };

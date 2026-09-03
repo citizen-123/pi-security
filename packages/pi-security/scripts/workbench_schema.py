@@ -842,6 +842,120 @@ MIGRATIONS = (
         ALTER TABLE deep_scan_workers RENAME COLUMN sdk_thread_id TO continuation_id;
         """,
     ),
+    (
+        42,
+        "persist canonical workflow runtime state and events",
+        """
+        CREATE TABLE workflow_runs (
+            id TEXT PRIMARY KEY,
+            scan_id TEXT REFERENCES scans(id),
+            parent_run_id TEXT REFERENCES workflow_runs(id),
+            workflow_id TEXT NOT NULL,
+            workflow_version INTEGER NOT NULL,
+            workflow_json TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL,
+            snapshot_digest TEXT NOT NULL,
+            target_path TEXT NOT NULL,
+            target_revision TEXT,
+            policy_digest TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (
+                status IN ('created', 'running', 'interrupted', 'completed', 'failed', 'canceled')
+            ),
+            status_reason TEXT,
+            progress_json TEXT NOT NULL DEFAULT '{}',
+            controller_id TEXT,
+            controller_claim_token TEXT,
+            output_admission_frozen INTEGER NOT NULL DEFAULT 0,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT
+        );
+
+        CREATE INDEX workflow_runs_by_scan ON workflow_runs(scan_id, created_at);
+        CREATE INDEX workflow_runs_by_status ON workflow_runs(status, updated_at);
+
+        CREATE TABLE workflow_phases (
+            run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+            phase_id TEXT NOT NULL,
+            phase_type TEXT NOT NULL,
+            phase_version INTEGER NOT NULL,
+            role_id TEXT,
+            dependencies_json TEXT NOT NULL,
+            input_digest TEXT,
+            output_json TEXT,
+            output_digest TEXT,
+            state TEXT NOT NULL CHECK (
+                state IN ('pending', 'ready', 'running', 'completed', 'failed', 'interrupted', 'canceled', 'skipped', 'reused')
+            ),
+            reused_from_run_id TEXT,
+            reused_from_phase_id TEXT,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (run_id, phase_id)
+        );
+
+        CREATE TABLE workflow_logical_agents (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            phase_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (run_id, phase_id) REFERENCES workflow_phases(run_id, phase_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX workflow_agents_by_phase
+        ON workflow_logical_agents(run_id, phase_id, created_at);
+
+        CREATE TABLE workflow_attempts (
+            id TEXT PRIMARY KEY,
+            logical_agent_id TEXT NOT NULL REFERENCES workflow_logical_agents(id) ON DELETE CASCADE,
+            ordinal INTEGER NOT NULL,
+            pi_session_id TEXT,
+            status TEXT NOT NULL,
+            failure_category TEXT,
+            details_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (logical_agent_id, ordinal)
+        );
+
+        CREATE TABLE workflow_events (
+            run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+            sequence INTEGER NOT NULL,
+            schema_version INTEGER NOT NULL,
+            category TEXT NOT NULL CHECK (category IN ('domain', 'activity')),
+            kind TEXT NOT NULL,
+            source TEXT NOT NULL,
+            phase_id TEXT,
+            logical_agent_id TEXT,
+            attempt_id TEXT,
+            correlation_id TEXT,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (run_id, sequence)
+        );
+
+        CREATE INDEX workflow_events_by_kind
+        ON workflow_events(run_id, kind, sequence);
+
+        CREATE TABLE workflow_output_reuse (
+            run_id TEXT NOT NULL,
+            phase_id TEXT NOT NULL,
+            source_run_id TEXT NOT NULL,
+            source_phase_id TEXT NOT NULL,
+            source_output_digest TEXT NOT NULL,
+            validation_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (run_id, phase_id),
+            FOREIGN KEY (run_id, phase_id) REFERENCES workflow_phases(run_id, phase_id) ON DELETE CASCADE,
+            FOREIGN KEY (source_run_id, source_phase_id)
+                REFERENCES workflow_phases(run_id, phase_id)
+        );
+        """,
+    ),
 )
 
 
