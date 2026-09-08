@@ -87,7 +87,7 @@ pi-security run resume <run-id>
 pi-security run retry <run-id>
 ```
 
-`scan` owns the executor in its foreground process. Exit status is `0` for completed, `1` for failed, `2` for configuration or preflight failure, `75` for interrupted, and `130` for canceled. Ctrl-C uses the cancellation barrier; other handled termination reconciles the run as interrupted. Resume continues the same compatible interrupted run. Retry creates a new run linked to failed history.
+`scan`, `run resume`, and `run retry` own the executor in their foreground process. Exit status is `0` for completed, `1` for failed, `2` for scan configuration or startup failure, `75` for interrupted, and `130` for canceled. Ctrl-C uses the cancellation barrier; handled SIGHUP and SIGTERM reconcile the run as interrupted. Resume continues the same compatible interrupted run. Retry creates a new run and a separate artifact scan linked to failed history.
 
 ## Scan modes
 
@@ -175,7 +175,7 @@ Python resolution order:
 3. Pi's cached primary runtime, when executable
 4. `python3` on Unix-like systems or `python` on Windows
 
-Canonical configuration resolves in this order: built-in defaults, `$PI_HOME/pi-security/config.toml`, explicit `--config`, then non-secret CLI overrides. Role tables support `provider`, `model`, `thinking`, `instructions`, `max_attempts`, and one credential source:
+Canonical configuration resolves in this order: built-in defaults, `$PI_HOME/pi-security/config.toml`, explicit `--config`, then non-secret CLI overrides. Role tables support `provider`, `model`, `thinking`, `instructions`, `max_attempts`, and one optional credential source:
 
 ```toml
 [scan]
@@ -190,10 +190,16 @@ provider = "provider-id"
 model = "model-id"
 thinking = "medium"
 max_attempts = 2
-credential = { env = "PROVIDER_TOKEN" } # or { profile = "name" } / { value = "literal" }
+credential = { env = "PROVIDER_TOKEN" } # or { value = "literal" }
 ```
 
-There are no CLI secret flags. Credential values remain memory-only, are redacted from errors and child arguments, and are excluded from snapshots and execution digests. Prefer environment or profile sources over inline literals.
+There are no CLI secret flags. The standalone CLI resolves environment references and inline literals, then supplies the value through the selected provider's native API-key environment variable. Explicit credentials require a supported provider ID. Credential values are excluded from snapshots and execution digests; only source descriptors are retained. Prefer environment sources over inline literals.
+
+Recovery restores non-secret execution settings from the saved snapshot rather than the current working directory or ambient settings. Environment sources are resolved again. To resume or retry an inline-credential run, supply the corresponding role's inline credential in `$PI_HOME/pi-security/config.toml`; the old literal is never persisted for recovery. Unavailable credentials are rejected before a resumed run is claimed.
+
+When provider or model is omitted, a tools-disabled, no-prompt Pi preflight resolves the native host default before creating the run. The selected provider and model are saved in the execution snapshot so later changes to ambient Pi defaults do not change a resumed run. Native phase sessions are ephemeral; durable recovery uses canonical attempts, events, and validated outputs rather than unredacted Pi transcript files.
+
+The configuration schema also accepts `{ profile = "name" }` for host integrations with a credential-profile resolver. The standalone CLI has no named-profile backend and rejects these references before creating or claiming a run. A Pi login/provider entry is not implicitly treated as a named profile.
 
 Optional Deep Scan configuration:
 

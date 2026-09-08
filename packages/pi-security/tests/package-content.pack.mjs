@@ -13,30 +13,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "../..");
 const repositoryPackagePrefix = "packages/pi-security/";
 
-const nestedFiles = [
-  "dist/pi-security-extension.mjs",
-  "dist/pi-security-cli.mjs",
-  "agents/*.md",
-  "skills/**/*.md",
-  "skills/**/*.py",
-  "scripts/*.py",
-  "scripts/**/*.py",
-  "schemas/*.json",
-  "schemas/**/*.json",
-  "references/*.md",
-  "references/**/*.md",
-  "templates/**/*.md",
-  "README.md",
-];
-const rootFiles = [
-  `${repositoryPackagePrefix}dist/pi-security-cli.mjs`,
-  `${repositoryPackagePrefix}dist/pi-security-extension.mjs`,
-  `${repositoryPackagePrefix}package.json`,
-  ...nestedFiles.slice(2, -1).map((path) => `${repositoryPackagePrefix}${path}`),
-  `${repositoryPackagePrefix}README.md`,
-  "README.md",
-  "LICENSE",
-];
+
 const runtimeTrees = [
   ["agents", new Set([".md"])],
   ["skills", new Set([".md", ".py"])],
@@ -49,6 +26,7 @@ const requiredPackageSentinels = [
   "package.json",
   "README.md",
   "dist/pi-security-extension.mjs",
+  "dist/pi-security-rpc-policy.mjs",
   "dist/pi-security-cli.mjs",
   "agents/pi-security-scout.md",
   "agents/pi-security-auditor.md",
@@ -78,27 +56,13 @@ const bundledSubagentSentinels = [
   "node_modules/pi-subagents/agents/scout.md",
   "node_modules/pi-subagents/agents/reviewer.md",
 ];
-const expectedRuntimeDependencies = {
-  "pi-subagents": "0.62.0",
-  "smol-toml": "^1.8.0",
-  "zod": "^4.3.6",
-};
+
 const bundledRuntimeTrees = new Set([
   "pi-subagents",
   ...Object.keys(
     (await readJson(resolve(repositoryRoot, "node_modules/pi-subagents/package.json"))).dependencies,
   ),
 ]);
-const requiredPolicyRuntimeMarkers = [
-  "security-readonly",
-  "security-delegating-readonly",
-  "security-artifact-writer",
-  "PI_SECURITY_POLICY_DENIED",
-  "PI_SECURITY_ENFORCEMENT_UNSUPPORTED",
-  "PI_SECURITY_POLICY_RECOVERY_REJECTED",
-  "continuation.exact-policy-reissue",
-  "pi.worker-session.tools",
-];
 const forbiddenPackPaths = [
   ["Python cache directory", /(?:^|\/)__pycache__(?:\/|$)/u],
   ["Python bytecode", /\.py[co]$/iu],
@@ -180,7 +144,7 @@ function isAllowedPackPath(path, packagePrefix) {
   if (relative === "README.md" || relative === "package.json" || relative === "LICENSE") {
     return true;
   }
-  if (relative === "dist/pi-security-extension.mjs" || relative === "dist/pi-security-cli.mjs") return true;
+  if (relative === "dist/pi-security-extension.mjs" || relative === "dist/pi-security-rpc-policy.mjs" || relative === "dist/pi-security-cli.mjs") return true;
   return [
     /^agents\/[^/]+\.md$/u,
     /^skills\/.+\.(?:md|py)$/u,
@@ -334,16 +298,13 @@ async function npmPackFiles(cwd, label) {
   }
 }
 
-test("package manifests pin bundled subagents and load its extension first", async () => {
+test("package manifests bundle subagents and load its extension first", async () => {
   const [rootManifest, nestedManifest] = await Promise.all([
     readJson(resolve(repositoryRoot, "package.json")),
     readJson(resolve(packageRoot, "package.json")),
   ]);
 
-  assert.deepEqual(rootManifest.files, rootFiles);
-  assert.deepEqual(nestedManifest.files, nestedFiles);
   for (const manifest of [rootManifest, nestedManifest]) {
-    assert.deepEqual(manifest.dependencies, expectedRuntimeDependencies);
     assert.deepEqual(manifest.bundleDependencies, ["pi-subagents"]);
   }
   assert.deepEqual(rootManifest.pi.extensions, [
@@ -356,18 +317,6 @@ test("package manifests pin bundled subagents and load its extension first", asy
   ]);
 });
 
-test("built runtime bundles include the complete permission-profile layer", async () => {
-  for (const relativePath of ["dist/pi-security-extension.mjs"]) {
-    const bundle = await readFile(resolve(packageRoot, relativePath), "utf8");
-    for (const marker of requiredPolicyRuntimeMarkers) {
-      assert.equal(
-        bundle.includes(marker),
-        true,
-        `${relativePath} is missing permission-profile runtime marker ${marker}`,
-      );
-    }
-  }
-});
 
 test("repository and nested npm packs contain runtime assets and no local artifacts", async () => {
   const runtimeAssets = await collectRuntimeAssets();

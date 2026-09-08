@@ -10,6 +10,16 @@ await mkdir(resolve(root, "dist"), { recursive: true });
 await Promise.all([
   build({
     bundle: true,
+    entryPoints: [resolve(root, "src/rpc/tool-policy.ts")],
+    external: ["@earendil-works/pi-coding-agent"],
+    format: "esm",
+    logLevel: "info",
+    outfile: resolve(root, "dist/pi-security-rpc-policy.mjs"),
+    platform: "node",
+    target: "node22"
+  }),
+  build({
+    bundle: true,
     entryPoints: [resolve(root, "extensions/pi-security.ts")],
     external: ["@earendil-works/pi-coding-agent", "fsevents"],
     format: "esm",

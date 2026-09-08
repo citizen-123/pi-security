@@ -125,6 +125,8 @@ def parse_args(description: str) -> argparse.Namespace:
 
     runtime_create_run = subparsers.add_parser("runtime-create-run")
     runtime_create_run.set_defaults(runtime_payload_stdin=True)
+    runtime_cancel_run = subparsers.add_parser("runtime-cancel-run")
+    runtime_cancel_run.set_defaults(runtime_payload_stdin=True)
     runtime_claim_run = subparsers.add_parser("runtime-claim-run")
     runtime_claim_run.set_defaults(runtime_payload_stdin=True)
     runtime_transition = subparsers.add_parser("runtime-transition")
