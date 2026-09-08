@@ -8,6 +8,7 @@
   "files": [
     "packages/pi-security/dist/pi-security-cli.mjs",
     "packages/pi-security/dist/pi-security-extension.mjs",
+    "packages/pi-security/dist/pi-security-rpc-policy.mjs",
     "packages/pi-security/package.json",
     "packages/pi-security/agents/*.md",
     "packages/pi-security/skills/**/*.md",

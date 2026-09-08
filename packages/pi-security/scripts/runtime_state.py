@@ -21,6 +21,18 @@ RUN_TRANSITIONS = {
     "failed": frozenset(),
     "canceled": frozenset(),
 }
+PHASE_TRANSITIONS = {
+    "pending": frozenset({"ready", "running", "skipped", "canceled"}),
+    "ready": frozenset({"ready", "running", "skipped", "canceled"}),
+    "running": frozenset({"completed", "failed", "interrupted", "canceled"}),
+    "interrupted": frozenset({"running", "failed", "canceled"}),
+    "failed": frozenset(),
+    "completed": frozenset(),
+    "canceled": frozenset(),
+    "skipped": frozenset(),
+    "reused": frozenset(),
+}
+
 
 
 def create_run(
@@ -30,6 +42,8 @@ def create_run(
 ) -> dict[str, Any]:
     run_id = require_uuid(payload.get("runId"), "runId")
     parent_run_id = optional_uuid(payload.get("parentRunId"), "parentRunId")
+    if parent_run_id == run_id:
+        raise SystemExit("Workflow run cannot be its own parent.")
     scan_id = optional_uuid(payload.get("scanId"), "scanId")
     workflow = require_object(payload.get("workflow"), "workflow")
     snapshot = require_object(payload.get("snapshot"), "snapshot")
@@ -38,7 +52,9 @@ def create_run(
     workflow_version = require_positive_int(workflow.get("version"), "workflow.version")
     snapshot_digest = require_digest(payload.get("snapshotDigest"), "snapshotDigest")
     policy_digest = require_digest(payload.get("policyDigest"), "policyDigest")
-    target_path = str(Path(require_text(payload.get("targetPath"), "targetPath")).expanduser().resolve())
+    target_path_value = payload.get("targetPath")
+    require_text(target_path_value, "targetPath")
+    target_path = str(Path(target_path_value).expanduser().resolve())
     target_revision = optional_text(payload.get("targetRevision"), "targetRevision")
     timestamp = clock()
 
@@ -71,6 +87,21 @@ def create_run(
             raise SystemExit(
                 f"Workflow phase {phase['id']} depends on unknown phase {missing[0]}."
             )
+    dependents: dict[str, list[str]] = {phase["id"]: [] for phase in normalized_phases}
+    pending_dependencies = {
+        phase["id"]: len(phase["dependencies"]) for phase in normalized_phases
+    }
+    for phase in normalized_phases:
+        for dependency in phase["dependencies"]:
+            dependents[dependency].append(phase["id"])
+    ready = [phase_id for phase_id, count in pending_dependencies.items() if count == 0]
+    for phase_id in ready:
+        for dependent in dependents[phase_id]:
+            pending_dependencies[dependent] -= 1
+            if pending_dependencies[dependent] == 0:
+                ready.append(dependent)
+    if len(ready) != len(normalized_phases):
+        raise SystemExit("Workflow phase dependencies must be acyclic.")
 
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -129,11 +160,12 @@ def create_run(
             },
             timestamp,
         )
+        result = get_run(connection, run_id)
         connection.commit()
     except BaseException:
         connection.rollback()
         raise
-    return get_run(connection, run_id)
+    return result
 
 
 def claim_run(
@@ -155,6 +187,7 @@ def claim_run(
             raise SystemExit(f"Workflow run in state {run['status']} cannot be claimed.")
         if run["controller_id"] is not None:
             raise SystemExit("Workflow run already has a controller owner.")
+        validate_run_outcome(connection, run_id, "running")
         changed = connection.execute(
             """
             UPDATE workflow_runs
@@ -177,11 +210,12 @@ def claim_run(
             },
             timestamp,
         )
+        result = get_run(connection, run_id)
         connection.commit()
     except BaseException:
         connection.rollback()
         raise
-    return get_run(connection, run_id)
+    return result
 
 
 def transition(
@@ -194,6 +228,7 @@ def transition(
     controller_id = require_text(payload.get("controllerId"), "controllerId")
     claim_token = require_text(payload.get("claimToken"), "claimToken")
     event = require_object(payload.get("event"), "event")
+    require_choice(event.get("category"), {"domain"}, "event.category")
     timestamp = clock()
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -202,10 +237,18 @@ def transition(
         )
         phase_change = payload.get("phase")
         if phase_change is not None:
-            update_phase(connection, run, require_object(phase_change, "phase"), timestamp)
+            phase_change = require_object(phase_change, "phase")
+            phase_id = require_text(phase_change.get("id"), "phase.id")
+            if optional_text(event.get("phaseId"), "event.phaseId") != phase_id:
+                raise SystemExit(
+                    "Workflow phase transition event must name the transitioning phase."
+                )
+            update_phase(connection, run, phase_change, timestamp)
         progress = payload.get("progress")
         if progress is not None:
             require_object(progress, "progress")
+            if progress.get("coverageConclusion") == "complete" and payload.get("status") != "completed":
+                raise SystemExit("Only a completed workflow run may claim complete coverage.")
             connection.execute(
                 "UPDATE workflow_runs SET progress_json = ? WHERE id = ?",
                 (canonical_json(progress), run_id),
@@ -233,6 +276,7 @@ def transition(
                 frozen = 1
         else:
             next_status = run["status"]
+        validate_run_outcome(connection, run_id, next_status)
         connection.execute(
             """
             UPDATE workflow_runs
@@ -254,11 +298,12 @@ def transition(
             ),
         )
         append_event(connection, run_id, event, timestamp)
+        result = get_run(connection, run_id)
         connection.commit()
     except BaseException:
         connection.rollback()
         raise
-    return get_run(connection, run_id)
+    return result
 
 
 def record_event(
@@ -312,6 +357,12 @@ def start_attempt(
         phase = require_phase(connection, run_id, phase_id)
         if phase["state"] not in {"ready", "running"}:
             raise SystemExit("Workflow phase is not ready for an attempt.")
+        next_ordinal = connection.execute(
+            "SELECT COALESCE(MAX(ordinal), 0) + 1 FROM workflow_attempts WHERE logical_agent_id = ?",
+            (logical_agent_id,),
+        ).fetchone()[0]
+        if ordinal != next_ordinal:
+            raise SystemExit("Workflow attempt ordinal must follow the logical agent's last attempt.")
         agent = connection.execute(
             "SELECT * FROM workflow_logical_agents WHERE id = ?", (logical_agent_id,)
         ).fetchone()
@@ -419,6 +470,21 @@ def update_attempt(
         ).fetchone()
         if attempt is None or attempt["run_id"] != run_id:
             raise SystemExit("Workflow attempt does not belong to the requested run.")
+        event = dict(event)
+        for key, expected in (
+            ("phaseId", attempt["phase_id"]),
+            ("logicalAgentId", attempt["logical_agent_id"]),
+            ("attemptId", attempt_id),
+        ):
+            if event.get(key) is not None and event[key] != expected:
+                raise SystemExit("Attempt update event does not match the updated attempt.")
+            event[key] = expected
+        if (
+            pi_session_id is not None
+            and attempt["pi_session_id"] is not None
+            and pi_session_id != attempt["pi_session_id"]
+        ):
+            raise SystemExit("Workflow attempt cannot change its bound Pi session identity.")
         allowed = {
             "starting": {"running", "failed", "interrupted", "canceled"},
             "running": {"completed", "failed", "interrupted", "canceled"},
@@ -542,6 +608,8 @@ def reuse_output(
             raise SystemExit("Reusable phase type does not match the target phase.")
         if target_phase["phase_version"] != source_phase["phase_version"]:
             raise SystemExit("Reusable phase version does not match the target phase.")
+        if target_phase["input_digest"] is None or source_phase["input_digest"] is None:
+            raise SystemExit("Reusable phase requires known source and target input digests.")
         if target_phase["input_digest"] != source_phase["input_digest"]:
             raise SystemExit("Reusable phase input digest does not match the target phase.")
         for column, label in (
@@ -551,7 +619,7 @@ def reuse_output(
         ):
             if target_run[column] != source_run[column]:
                 raise SystemExit(f"Reusable phase {label} does not match the target run.")
-        connection.execute(
+        changed = connection.execute(
             """
             UPDATE workflow_phases
             SET state = 'reused', output_json = ?, output_digest = ?,
@@ -568,7 +636,9 @@ def reuse_output(
                 run_id,
                 phase_id,
             ),
-        )
+        ).rowcount
+        if changed != 1:
+            raise SystemExit("Workflow output reuse lost a concurrent phase update.")
         connection.execute(
             """
             INSERT INTO workflow_output_reuse (
@@ -607,40 +677,47 @@ def reuse_output(
             "UPDATE workflow_runs SET version = version + 1, updated_at = ? WHERE id = ?",
             (timestamp, run_id),
         )
+        result = get_run(connection, run_id)
         connection.commit()
     except BaseException:
         connection.rollback()
         raise
-    return get_run(connection, run_id)
+    return result
 
 
 def get_run(connection: sqlite3.Connection, run_id_value: Any) -> dict[str, Any]:
     run_id = require_uuid(run_id_value, "runId")
-    run = require_run(connection, run_id)
-    phases = connection.execute(
-        "SELECT * FROM workflow_phases WHERE run_id = ? ORDER BY rowid", (run_id,)
-    ).fetchall()
-    return {
-        "id": run["id"],
-        "scanId": run["scan_id"],
-        "parentRunId": run["parent_run_id"],
-        "workflow": json.loads(run["workflow_json"]),
-        "snapshot": json.loads(run["snapshot_json"]),
-        "snapshotDigest": run["snapshot_digest"],
-        "targetPath": run["target_path"],
-        "targetRevision": run["target_revision"],
-        "policyDigest": run["policy_digest"],
-        "status": run["status"],
-        "statusReason": run["status_reason"],
-        "progress": json.loads(run["progress_json"]),
-        "controllerId": run["controller_id"],
-        "outputAdmissionFrozen": bool(run["output_admission_frozen"]),
-        "version": run["version"],
-        "createdAt": run["created_at"],
-        "updatedAt": run["updated_at"],
-        "completedAt": run["completed_at"],
-        "phases": [phase_result(phase) for phase in phases],
-    }
+    # Keep the run version/progress and phases on one snapshot, including when
+    # this query is nested inside a mutation's transaction.
+    connection.execute("SAVEPOINT runtime_get_run")
+    try:
+        run = require_run(connection, run_id)
+        phases = connection.execute(
+            "SELECT * FROM workflow_phases WHERE run_id = ? ORDER BY rowid", (run_id,)
+        ).fetchall()
+        return {
+            "id": run["id"],
+            "scanId": run["scan_id"],
+            "parentRunId": run["parent_run_id"],
+            "workflow": json.loads(run["workflow_json"]),
+            "snapshot": json.loads(run["snapshot_json"]),
+            "snapshotDigest": run["snapshot_digest"],
+            "targetPath": run["target_path"],
+            "targetRevision": run["target_revision"],
+            "policyDigest": run["policy_digest"],
+            "status": run["status"],
+            "statusReason": run["status_reason"],
+            "progress": json.loads(run["progress_json"]),
+            "controllerId": run["controller_id"],
+            "outputAdmissionFrozen": bool(run["output_admission_frozen"]),
+            "version": run["version"],
+            "createdAt": run["created_at"],
+            "updatedAt": run["updated_at"],
+            "completedAt": run["completed_at"],
+            "phases": [phase_result(phase) for phase in phases],
+        }
+    finally:
+        connection.execute("RELEASE SAVEPOINT runtime_get_run")
 
 
 def list_events(connection: sqlite3.Connection, run_id_value: Any, after: Any) -> dict[str, Any]:
@@ -693,6 +770,18 @@ def update_phase(
     )
     if phase["version"] != expected_phase_version:
         raise SystemExit("Workflow phase version changed before transition.")
+    if state not in PHASE_TRANSITIONS[phase["state"]]:
+        raise SystemExit(
+            f"Workflow phase cannot transition from {phase['state']} to {state}."
+        )
+    if state == "running":
+        for dependency_id in json.loads(phase["dependencies_json"]):
+            dependency = require_phase(connection, run["id"], dependency_id)
+            if dependency["state"] not in {"completed", "reused"}:
+                raise SystemExit(
+                    f"Workflow phase {phase_id} cannot start before dependency "
+                    f"{dependency_id} is completed or reused."
+                )
     output = change.get("output")
     output_digest = change.get("outputDigest")
     input_digest = change.get("inputDigest")
@@ -722,6 +811,43 @@ def update_phase(
     ).rowcount
     if changed != 1:
         raise SystemExit("Workflow phase transition lost a concurrent update.")
+
+
+def validate_run_outcome(
+    connection: sqlite3.Connection,
+    run_id: str,
+    next_status: str,
+) -> None:
+    persisted_run = require_run(connection, run_id)
+    progress_object = require_object(json.loads(persisted_run["progress_json"]), "progress")
+    conclusion = progress_object.get("coverageConclusion")
+    if next_status != "completed":
+        if conclusion == "complete":
+            progress_object["coverageConclusion"] = "inconclusive"
+            connection.execute(
+                "UPDATE workflow_runs SET progress_json = ? WHERE id = ?",
+                (canonical_json(progress_object), run_id),
+            )
+        return
+    incomplete = connection.execute(
+        """
+        SELECT COUNT(*) FROM workflow_phases
+        WHERE run_id = ? AND state NOT IN ('completed', 'reused')
+        """,
+        (run_id,),
+    ).fetchone()[0]
+    publication = connection.execute(
+        """
+        SELECT 1 FROM workflow_phases
+        WHERE run_id = ? AND phase_type = 'publication'
+            AND state IN ('completed', 'reused')
+        """,
+        (run_id,),
+    ).fetchone()
+    if incomplete or publication is None:
+        raise SystemExit("Workflow run cannot complete before every phase and publication.")
+    if conclusion != "complete":
+        raise SystemExit("Completed workflow run requires a complete coverage conclusion.")
 
 
 def append_event(
@@ -927,12 +1053,12 @@ def require_choice(value: Any, choices: set[str] | frozenset[str], label: str) -
 
 def require_digest(value: Any, label: str) -> str:
     text = require_text(value, label)
-    if not text.startswith("sha256:") or len(text) != 71:
+    if (
+        not text.startswith("sha256:")
+        or len(text) != 71
+        or any(character not in "0123456789abcdefABCDEF" for character in text[7:])
+    ):
         raise SystemExit(f"{label} must be a sha256 digest.")
-    try:
-        int(text[7:], 16)
-    except ValueError as error:
-        raise SystemExit(f"{label} must be a sha256 digest.") from error
     return text.lower()
 
 
