@@ -25,6 +25,7 @@ const requiredPackageSentinels = [
   "package.json",
   "README.md",
   "dist/pi-security-extension.mjs",
+  "dist/pi-security-rpc-policy.mjs",
   "dist/pi-security-cli.mjs",
   "agents/pi-security-scout.md",
   "agents/pi-security-auditor.md",
@@ -140,7 +141,7 @@ function isAllowedPackPath(path, packagePrefix) {
   if (relative === "README.md" || relative === "package.json" || relative === "LICENSE") {
     return true;
   }
-  if (relative === "dist/pi-security-extension.mjs" || relative === "dist/pi-security-cli.mjs") return true;
+  if (relative === "dist/pi-security-extension.mjs" || relative === "dist/pi-security-rpc-policy.mjs" || relative === "dist/pi-security-cli.mjs") return true;
   return [
     /^agents\/[^/]+\.md$/u,
     /^skills\/.+\.(?:md|py)$/u,
