@@ -15,7 +15,7 @@ export class CliUsageError extends Error {
 }
 
 export const CLI_HELP = `Usage:
-  pi-security scan [--config <path>] [--target <path>] [--provider <id>] [--model <id>] [--thinking <level>] [--max-parallel <count>]
+  pi-security scan [--config <path>] [--target <path>] [--workflow <id>] [--provider <id>] [--model <id>] [--thinking <level>] [--max-parallel <count>]
   pi-security run inspect <run-id>
   pi-security run cancel <run-id>
   pi-security run resume <run-id>
@@ -97,14 +97,16 @@ function parseRunArgs(args: readonly string[]): CliCommand {
     throw new CliUsageError(action ? `Unknown run command: ${action}` : "Missing run command.");
   }
   const runId = args[1]?.trim();
+  if (runId === "--help" || runId === "-h") return { kind: "help" };
   if (!runId) throw new CliUsageError(`Missing run ID for run ${action}.`);
+  if (runId.startsWith("-")) throw new CliUsageError(`Unexpected option for run ${action}.`);
   if (args.length > 2) throw new CliUsageError(`Unexpected argument for run ${action}: ${args[2]}`);
   return { kind: `run-${action}` as Exclude<CliCommand["kind"], "help" | "scan">, runId };
 }
 
 function requiredOptionValue(args: readonly string[], index: number, option: string): string {
   if (!option.startsWith("--")) throw new CliUsageError(`Unexpected scan argument: ${option}`);
-  const value = args[index + 1];
-  if (!value || value.startsWith("--")) throw new CliUsageError(`Missing value for ${option}.`);
+  const value = args[index + 1]?.trim();
+  if (!value || value.startsWith("--") || value === "-h") throw new CliUsageError(`Missing value for ${option}.`);
   return value;
 }

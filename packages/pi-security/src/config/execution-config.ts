@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { parse as parseToml } from "smol-toml";
+import { parse as parseToml, TomlError } from "smol-toml";
 import { z } from "zod";
 
 export const BUILT_IN_WORKFLOW = "full-repository" as const;
@@ -33,7 +33,7 @@ export interface RoleExecutionConfig {
 
 export interface ResolvedExecutionConfig {
   execution: { maxParallel: number };
-  legacyDeepScan?: Record<string, number>;
+  legacyDeepScan?: Record<string, number | "auto">;
   provenance: Record<string, ConfigSource>;
   roles: Record<string, RoleExecutionConfig>;
   scan: { target: string; workflow: typeof BUILT_IN_WORKFLOW };
@@ -69,10 +69,10 @@ export interface ExecutionSnapshot {
 
 export interface SanitizedExecutionConfig {
   execution: ResolvedExecutionConfig["execution"];
-  legacyDeepScan?: Record<string, number>;
+  legacyDeepScan?: Record<string, number | "auto">;
   provenance: Record<string, ConfigSource>;
   roles: Record<string, Omit<RoleExecutionConfig, "credential"> & {
-    credential?: { source: CredentialSource["kind"] };
+    credential?: { source: "inline" } | { source: "env"; env: string } | { source: "profile"; profile: string };
   }>;
   scan: ResolvedExecutionConfig["scan"];
 }
@@ -97,7 +97,7 @@ const deepScanSchema = z.object({
   stop_after_consecutive_errors: z.number().int().positive().optional(),
   stop_after_no_new: z.number().int().positive().optional(),
   subagents: z.number().int().nonnegative().optional(),
-  workers: z.number().int().positive().optional(),
+  workers: z.union([z.number().int().positive(), z.literal("auto")]).optional(),
 }).strict();
 const documentSchema = z.object({
   deep_scan: deepScanSchema.optional(),
@@ -118,15 +118,24 @@ export function parseExecutionConfigText(text: string, label = "configuration"):
   try {
     parsed = parseToml(text);
   } catch (error) {
-    throw new Error(`Cannot parse ${label}: ${safeErrorMessage(error)}`);
+    const location = error instanceof TomlError ? ` at line ${error.line}, column ${error.column}` : "";
+    throw new Error(`Cannot parse ${label}${location}: invalid TOML.`);
   }
+  return validateDocument(parsed, label);
+}
+
+function validateDocument(parsed: unknown, label: string): ConfigDocument {
   const result = documentSchema.safeParse(parsed);
   if (!result.success) {
     const issue = result.error.issues[0];
-    const issuePath = [...(issue?.path ?? [])];
-    if (issue?.code === "unrecognized_keys" && issue.keys[0]) issuePath.push(issue.keys[0]);
+    const issuePath = [...(issue?.path ?? [])].map((part, index) =>
+      index === 1 && issue?.path[0] === "roles" && !BUILT_IN_ROLE_IDS.includes(part as typeof BUILT_IN_ROLE_IDS[number])
+        ? "<role>"
+        : String(part),
+    );
+    if (issue?.code === "unrecognized_keys") issuePath.push("<unknown>");
     const path = issuePath.length ? issuePath.join(".") : "<root>";
-    throw new Error(`Invalid ${label} at ${path}: ${issue?.message ?? "invalid value"}`);
+    throw new Error(`Invalid ${label} at ${path}: ${issue?.code ?? "invalid value"}.`);
   }
   return result.data;
 }
@@ -136,7 +145,9 @@ export async function resolveExecutionConfig(
 ): Promise<ResolvedExecutionConfig> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const env = options.env ?? process.env;
-  const ambientPath = options.ambientPath ?? resolvePiHome(env, options.cwd) + "/pi-security/config.toml";
+  const ambientPath = options.ambientPath === undefined
+    ? resolve(resolvePiHome(env, cwd), "pi-security/config.toml")
+    : resolve(cwd, options.ambientPath);
   const provenance: Record<string, ConfigSource> = {
     "execution.maxParallel": "default",
     "roles.default.maxAttempts": "default",
@@ -145,7 +156,7 @@ export async function resolveExecutionConfig(
   };
   const merged: MutableConfig = {
     execution: { maxParallel: 4 },
-    roles: { default: { ...DEFAULT_ROLE } },
+    roles: Object.assign(Object.create(null) as Record<string, RoleExecutionConfig>, { default: { ...DEFAULT_ROLE } }),
     scan: { target: cwd, workflow: BUILT_IN_WORKFLOW },
   };
 
@@ -175,19 +186,31 @@ export function sanitizeExecutionConfig(config: ResolvedExecutionConfig): Saniti
       model: role.model,
       provider: role.provider,
       thinking: role.thinking,
-      ...(role.credential ? { credential: { source: role.credential.kind } } : {}),
+      ...(role.credential ? { credential: sanitizeCredential(role.credential) } : {}),
     }])),
     scan: { ...config.scan },
   };
 }
 
+function sanitizeCredential(credential: CredentialSource): NonNullable<SanitizedExecutionConfig["roles"][string]["credential"]> {
+  if (credential.kind === "env") return { source: "env", env: credential.env };
+  if (credential.kind === "profile") return { source: "profile", profile: credential.profile };
+  return { source: "inline" };
+}
+
 export function createExecutionSnapshot(config: ResolvedExecutionConfig): ExecutionSnapshot {
   const resolved = sanitizeExecutionConfig(config);
-  return {
-    digest: createHash("sha256").update(stableJson(resolved)).digest("hex"),
+  return deepFreeze({
+    digest: executionSnapshotDigest(resolved),
     resolved,
-    schemaVersion: 1,
-  };
+    schemaVersion: 1 as const,
+  });
+}
+
+export function executionSnapshotDigest(resolved: SanitizedExecutionConfig): string {
+  const { provenance: _provenance, roles, ...settings } = resolved;
+  const semanticRoles = Object.fromEntries(Object.entries(roles).map(([id, { credential: _credential, ...role }]) => [id, role]));
+  return createHash("sha256").update(stableJson({ ...settings, roles: semanticRoles })).digest("hex");
 }
 
 export async function resolveCredential(
@@ -201,11 +224,16 @@ export async function resolveCredential(
   if (credential.kind === "inline") return { source: "inline", value: credential.value };
   if (credential.kind === "env") {
     const value = (options.env ?? process.env)[credential.env];
-    if (!value) throw new Error(`Credential environment variable ${credential.env} is unavailable.`);
+    if (typeof value !== "string" || !value) throw new Error(`Credential environment variable ${credential.env} is unavailable.`);
     return { source: "env", value };
   }
-  const value = await options.profiles?.(credential.profile);
-  if (!value) throw new Error(`Credential profile ${credential.profile} is unavailable.`);
+  let value: string | undefined;
+  try {
+    value = await options.profiles?.(credential.profile);
+  } catch {
+    throw new Error(`Credential profile ${credential.profile} could not be resolved.`);
+  }
+  if (typeof value !== "string" || !value) throw new Error(`Credential profile ${credential.profile} is unavailable.`);
   return { source: "profile", value };
 }
 
@@ -218,7 +246,7 @@ export function redactKnownSecrets(value: string, secrets: readonly string[]): s
 
 interface MutableConfig {
   execution: { maxParallel: number };
-  legacyDeepScan?: Record<string, number>;
+  legacyDeepScan?: Record<string, number | "auto">;
   roles: Record<string, RoleExecutionConfig>;
   scan: { target: string; workflow: typeof BUILT_IN_WORKFLOW };
 }
@@ -233,8 +261,10 @@ function applyDocument(
   if (document.scan?.workflow !== undefined) set(target.scan, "workflow", document.scan.workflow, "scan.workflow", source, provenance);
   if (document.execution?.max_parallel !== undefined) set(target.execution, "maxParallel", document.execution.max_parallel, "execution.maxParallel", source, provenance);
   for (const [roleId, role] of Object.entries(document.roles ?? {})) {
+    const isNewRole = target.roles[roleId] === undefined;
     const current = target.roles[roleId] ?? { ...DEFAULT_ROLE };
     target.roles[roleId] = current;
+    if (isNewRole) provenance[`roles.${roleId}.maxAttempts`] = "default";
     if (role.provider !== undefined) set(current, "provider", role.provider, `roles.${roleId}.provider`, source, provenance);
     if (role.model !== undefined) set(current, "model", role.model, `roles.${roleId}.model`, source, provenance);
     if (role.thinking !== undefined) set(current, "thinking", role.thinking, `roles.${roleId}.thinking`, source, provenance);
@@ -246,7 +276,10 @@ function applyDocument(
     }
   }
   if (document.deep_scan) {
-    target.legacyDeepScan = Object.fromEntries(Object.entries(document.deep_scan).filter((entry): entry is [string, number] => entry[1] !== undefined));
+    target.legacyDeepScan ??= {};
+    for (const [key, value] of Object.entries(document.deep_scan)) {
+      if (value !== undefined) set(target.legacyDeepScan, key, value, `legacyDeepScan.${key}`, source, provenance);
+    }
   }
 }
 
@@ -255,13 +288,11 @@ function applyOverrides(
   overrides: ConfigOverrides,
   provenance: Record<string, ConfigSource>,
 ): void {
-  if (overrides.target !== undefined) set(target.scan, "target", overrides.target, "scan.target", "cli", provenance);
-  if (overrides.workflow !== undefined) set(target.scan, "workflow", overrides.workflow, "scan.workflow", "cli", provenance);
-  if (overrides.maxParallel !== undefined) set(target.execution, "maxParallel", overrides.maxParallel, "execution.maxParallel", "cli", provenance);
-  const role = target.roles.default;
-  if (overrides.provider !== undefined) set(role, "provider", overrides.provider, "roles.default.provider", "cli", provenance);
-  if (overrides.model !== undefined) set(role, "model", overrides.model, "roles.default.model", "cli", provenance);
-  if (overrides.thinking !== undefined) set(role, "thinking", overrides.thinking, "roles.default.thinking", "cli", provenance);
+  applyDocument(target, validateDocument({
+    scan: { target: overrides.target, workflow: overrides.workflow },
+    execution: { max_parallel: overrides.maxParallel },
+    roles: { default: { provider: overrides.provider, model: overrides.model, thinking: overrides.thinking } },
+  }, "CLI overrides"), "cli", provenance);
 }
 
 function normalizeCredential(value: z.infer<typeof credentialSchema>): CredentialSource {
@@ -288,7 +319,11 @@ async function readRequiredFile(path: string, label: string): Promise<string> {
 }
 
 function resolvePiHome(env: NodeJS.ProcessEnv, cwd: string | undefined): string {
-  return resolve(cwd ?? process.cwd(), env.PI_HOME?.trim() || resolve(homedir(), ".pi"));
+  const configured = env.PI_HOME?.trim() || resolve(homedir(), ".pi");
+  const home = configured === "~" ? homedir()
+    : configured.startsWith("~/") ? resolve(homedir(), configured.slice(2))
+    : configured;
+  return resolve(cwd ?? process.cwd(), home);
 }
 
 function set<T extends object, K extends keyof T>(
@@ -307,9 +342,17 @@ function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value && typeof value === "object") {
     const object = value as Record<string, unknown>;
-    return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${stableJson(object[key])}`).join(",")}}`;
+    return `{${Object.keys(object).filter((key) => object[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${stableJson(object[key])}`).join(",")}}`;
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value) ?? "null";
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object") {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 function safeErrorMessage(error: unknown): string {
