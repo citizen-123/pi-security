@@ -1666,3 +1666,31 @@ def test_attempt_updates_bind_events_and_preserve_session_and_retry_order(tmp_pa
     agent = run_workbench(state_dir, "runtime-get-agent", "--run-id", created["id"], "--logical-agent-id", agents[0])
     assert [attempt["ordinal"] for attempt in agent["attempts"]] == [1, 2]
     assert agent["attempts"][0]["piSessionId"] == "synthetic-session"
+
+
+def test_runtime_rejects_complete_coverage_in_progress_only_updates(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    target = tmp_path / "target"
+    target.mkdir()
+    created = invoke(state_dir, "runtime-create-run", runtime_payload(target))
+    ownership = {
+        "runId": created["id"],
+        "expectedVersion": created["version"],
+        "controllerId": "coverage-controller",
+        "claimToken": "coverage-claim",
+    }
+    running = invoke(state_dir, "runtime-claim-run", ownership)
+    rejected = run_workbench(
+        state_dir,
+        "runtime-transition",
+        check=False,
+        input_text=json.dumps({
+            **ownership,
+            "expectedVersion": running["version"],
+            "progress": {"coverageConclusion": "complete"},
+            "event": {"category": "domain", "kind": "run.progress", "source": "runtime"},
+        }),
+    )
+    assert rejected["returncode"] != 0
+    unchanged = run_workbench(state_dir, "runtime-get-run", "--run-id", created["id"])
+    assert unchanged == running

@@ -581,3 +581,38 @@ test("a registry cannot legitimize an unsupported phase version", () => {
     /identity and version/u,
   );
 });
+
+test("persistence callback failure aborts and drains siblings without reporting durable completion", async () => {
+  const registry = new workflow.ClosedPhaseRegistry([type("root")]);
+  const definition = workflow.validateWorkflow({
+    id: "persistence-failure",
+    version: 1,
+    phases: [phase("first", "root"), phase("sibling", "root")],
+  }, registry);
+  let siblingSettled = false;
+  const settledStates = [];
+  const changes = [];
+  await assert.rejects(workflow.scheduleWorkflow({
+    executors: {
+      root: async (context) => {
+        if (context.phase.id === "sibling") {
+          await new Promise((resolve) => context.signal.addEventListener("abort", resolve, { once: true }));
+          siblingSettled = true;
+        }
+        return delivery(context);
+      },
+    },
+    maxParallel: 2,
+    onPhaseSettled: async (_phase, state) => {
+      settledStates.push(state);
+      throw new Error("synthetic durable write failure");
+    },
+    onStateChange: (id, state) => changes.push([id, state]),
+    registry,
+    runId: randomUUID(),
+    workflow: definition,
+  }), /synthetic durable write failure/u);
+  assert.equal(siblingSettled, true);
+  assert.deepEqual(settledStates, ["completed"]);
+  assert.equal(changes.some(([, state]) => state === "completed"), false);
+});

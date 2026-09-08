@@ -34,7 +34,6 @@ PHASE_TRANSITIONS = {
 }
 
 
-
 def create_run(
     connection: sqlite3.Connection,
     payload: dict[str, Any],

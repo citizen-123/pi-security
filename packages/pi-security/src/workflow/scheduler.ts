@@ -27,7 +27,19 @@ export type PhaseExecutor = (
 
 export interface WorkflowSchedulerOptions {
   executors: Readonly<Record<string, PhaseExecutor>>;
+  initialOutputs?: Readonly<Record<string, unknown>>;
+  initialStates?: Readonly<Record<string, WorkflowPhaseState>>;
   maxParallel: number;
+  onPhaseSettled?: (
+    phase: WorkflowPhaseDefinition,
+    state: "completed" | "failed" | "canceled",
+    output?: unknown,
+    error?: unknown
+  ) => Promise<void> | void;
+  onPhaseStarted?: (
+    phase: WorkflowPhaseDefinition,
+    inputs: Record<string, unknown>
+  ) => Promise<void> | void;
   onStateChange?: (phaseId: string, state: WorkflowPhaseState) => void;
   registry: ClosedPhaseRegistry;
   runId: string;
@@ -101,14 +113,19 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
     }
   }
   const states: Record<string, WorkflowPhaseState> = Object.fromEntries(
-    options.workflow.definition.phases.map((phase) => [phase.id, "pending"])
+    options.workflow.definition.phases.map((phase) => [
+      phase.id,
+      options.initialStates?.[phase.id] ?? "pending",
+    ])
   );
-  const outputs = new Map<string, unknown>();
+  const outputs = new Map<string, unknown>(Object.entries(options.initialOutputs ?? {}));
   const errors = new Map<string, string>();
   const running = new Map<string, Promise<SettledExecution>>();
   const admission = new PhaseResultAdmission();
-  const signal = options.signal ?? new AbortController().signal;
+  const abort = new AbortController();
+  const signal = options.signal ? AbortSignal.any([options.signal, abort.signal]) : abort.signal;
 
+  try {
   for (;;) {
     if (signal.aborted) {
       for (const phase of options.workflow.definition.phases) {
@@ -125,10 +142,16 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
         if (states[phaseId] !== "ready") continue;
         const phase = phaseById(options.workflow, phaseId);
         const executor = options.executors[phase.type];
-        setState(states, phase.id, "running", options.onStateChange);
         const inputs = Object.fromEntries(
           Object.entries(phase.bindings ?? {}).map(([name, binding]) => [name, outputs.get(binding.from)])
         );
+        setState(states, phase.id, "running", options.onStateChange);
+        await options.onPhaseStarted?.(phase, inputs);
+        if (signal.aborted) {
+          await options.onPhaseSettled?.(phase, "canceled");
+          setState(states, phase.id, "canceled", options.onStateChange);
+          break;
+        }
         const execution = Promise.resolve().then(() => {
           signal.throwIfAborted();
           return executor({ inputs, phase, runId: options.runId, signal });
@@ -161,11 +184,21 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
     const settled = await Promise.race(running.values());
     running.delete(settled.phaseId);
     if (signal.aborted) {
+      await options.onPhaseSettled?.(
+        phaseById(options.workflow, settled.phaseId),
+        "canceled"
+      );
       setState(states, settled.phaseId, "canceled", options.onStateChange);
       continue;
     }
     if ("error" in settled) {
       errors.set(settled.phaseId, errorMessage(settled.error));
+      await options.onPhaseSettled?.(
+        phaseById(options.workflow, settled.phaseId),
+        "failed",
+        undefined,
+        settled.error
+      );
       setState(states, settled.phaseId, "failed", options.onStateChange);
       continue;
     }
@@ -185,11 +218,29 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
         break;
       }
       if (!accepted) throw new Error("Phase execution produced no admissible structured result.");
-      setState(states, phase.id, "completed", options.onStateChange);
+      // Persist admission before exposing completion to dependent phases.
     } catch (error) {
       errors.set(settled.phaseId, errorMessage(error));
       setState(states, settled.phaseId, "failed", options.onStateChange);
+      await options.onPhaseSettled?.(
+        phaseById(options.workflow, settled.phaseId),
+        "failed",
+        undefined,
+        error
+      );
+      continue;
     }
+    await options.onPhaseSettled?.(
+      phaseById(options.workflow, settled.phaseId),
+      "completed",
+      outputs.get(settled.phaseId)
+    );
+    setState(states, settled.phaseId, "completed", options.onStateChange);
+  }
+  } catch (error) {
+    abort.abort(error);
+    await Promise.all(running.values());
+    throw error;
   }
 
   const status = signal.aborted
