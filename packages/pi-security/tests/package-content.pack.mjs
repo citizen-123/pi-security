@@ -13,6 +13,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "../..");
 const repositoryPackagePrefix = "packages/pi-security/";
 
+
 const runtimeTrees = [
   ["agents", new Set([".md"])],
   ["skills", new Set([".md", ".py"])],
@@ -35,6 +36,7 @@ const requiredPackageSentinels = [
   "skills/security-diff-scan/SKILL.md",
   "skills/deep-security-scan/SKILL.md",
   "scripts/workbench_db.py",
+  "scripts/runtime_state.py",
   "scripts/deep_scan_workbench.py",
   "scripts/finalize_scan_contract.py",
   "scripts/workbench/__init__.py",
@@ -54,6 +56,7 @@ const bundledSubagentSentinels = [
   "node_modules/pi-subagents/agents/scout.md",
   "node_modules/pi-subagents/agents/reviewer.md",
 ];
+
 const bundledRuntimeTrees = new Set([
   "pi-subagents",
   ...Object.keys(

@@ -50,10 +50,10 @@
 
 ## 7. Pi Adapter and Compatibility
 
-- [ ] 7.1 Add a Pi extension adapter for starting and observing the covered canonical full-repository workflow without giving widgets or the invoking session phase-transition authority; verify lifecycle tool tests show commands route through the runtime.
-- [ ] 7.2 Update the `/security-scan` skill so the covered full-repository path delegates orchestration to the canonical runtime while retaining its existing user-facing invocation; verify artifact/skill tests contain no independent duplicate phase sequence for that path.
-- [ ] 7.3 Preserve existing diff and Deep entry points on their current implementations until their follow-on cutovers; verify the existing diff, Deep coordinator, continuation, policy, and artifact integration tests remain green.
-- [ ] 7.4 Preserve the temporary Python workbench and current Node/Python engine requirements in package contents; verify package tests include the new executable and still include every existing required runtime asset.
+- [x] 7.1 Add a Pi extension adapter for starting and observing the covered canonical full-repository workflow without giving widgets or the invoking session phase-transition authority; verify lifecycle tool tests show commands route through the runtime.
+- [x] 7.2 Update the `/security-scan` skill so the covered full-repository path delegates orchestration to the canonical runtime while retaining its existing user-facing invocation; verify artifact/skill tests contain no independent duplicate phase sequence for that path.
+- [x] 7.3 Preserve existing diff and Deep entry points on their current implementations until their follow-on cutovers; verify the existing diff, Deep coordinator, continuation, policy, and artifact integration tests remain green.
+- [x] 7.4 Preserve the temporary Python workbench and current Node/Python engine requirements in package contents; verify package tests include the new executable and still include every existing required runtime asset.
 
 ## 8. Documentation and End-to-End Verification
 

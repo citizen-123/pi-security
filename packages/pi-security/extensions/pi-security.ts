@@ -15,6 +15,7 @@ import {
 import { resolvePythonCommand } from "../src/python_command.js";
 import { registerSecuritySubagentTools } from "./subagent-tools.js";
 import { registerPiSecurityLifecycleTools } from "./lifecycle-tools.js";
+import { createCanonicalCliPort, registerCanonicalRuntimeTools } from "./canonical-runtime.js";
 
 const execFileAsync = promisify(execFile);
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -32,6 +33,10 @@ export default function piSecurity(pi: ExtensionAPI): void {
   const delegationRegistrationContext = issuePiDelegatingAgentContext(permissionBindings, 1);
   registerSecuritySubagentTools(pi, delegationRegistrationContext);
   registerPiSecurityLifecycleTools(pi, lifecycleContext);
+  registerCanonicalRuntimeTools(pi, createCanonicalCliPort({
+    cliPath: resolve(packageRoot, "dist/pi-security-cli.mjs"),
+    cwd: process.cwd(),
+  }));
   if (piPermissionSurfaceAllowed(workbenchContext, "workbench")) {
     pi.registerTool({
     name: "pi_security_workbench",

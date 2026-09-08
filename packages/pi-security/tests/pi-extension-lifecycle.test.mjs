@@ -84,6 +84,8 @@ test("the Pi extension exposes and executes the managed lifecycle catalog", asyn
 
     const expectedNames = [
       ...contract.surfaces.standalone,
+      "inspect_pi_security_canonical_run",
+      "start_pi_security_canonical_scan",
       "pi_security_control_agents",
       "pi_security_spawn_agents",
       "pi_security_workbench"
