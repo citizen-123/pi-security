@@ -81,6 +81,93 @@ def invoke(state_dir: Path, command: str, payload: dict[str, object]) -> dict[st
     return run_workbench(state_dir, command, input_text=json.dumps(payload))
 
 
+def test_cancellation_request_freezes_admission_until_owner_finalizes(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    state_dir = tmp_path / "state"
+    created = invoke(state_dir, "runtime-create-run", runtime_payload(target))
+    ownership = {
+        "runId": created["id"],
+        "expectedVersion": created["version"],
+        "controllerId": "owner",
+        "claimToken": "synthetic-owner-claim",
+    }
+    running = invoke(state_dir, "runtime-claim-run", ownership)
+    running = invoke(state_dir, "runtime-transition", {
+        **ownership,
+        "expectedVersion": running["version"],
+        "phase": {
+            "id": "preflight", "state": "running", "expectedVersion": 1,
+            "inputDigest": INPUT_DIGEST,
+        },
+        "event": {
+            "category": "domain", "kind": "phase.started",
+            "source": "runtime", "phaseId": "preflight",
+        },
+    })
+    attempt_id = str(uuid.uuid4())
+    agent_id = str(uuid.uuid4())
+    invoke(state_dir, "runtime-start-attempt", {
+        **ownership,
+        "expectedVersion": running["version"],
+        "phaseId": "preflight",
+        "logicalAgentId": agent_id,
+        "attemptId": attempt_id,
+        "ordinal": 1,
+    })
+    requested = invoke(state_dir, "runtime-cancel-run", {"runId": created["id"]})
+    assert requested["status"] == "running"
+    assert requested["controllerId"] == ownership["controllerId"]
+    assert requested["completedAt"] is None
+    assert requested["outputAdmissionFrozen"] is True
+    assert requested["phases"][0]["state"] == "running"
+    agent = run_workbench(state_dir, "runtime-get-agent", "--run-id", created["id"],
+                          "--logical-agent-id", agent_id)
+    assert agent["status"] == "running"
+    assert agent["attempts"][0]["status"] == "starting"
+    finalization = {
+        **ownership,
+        "expectedVersion": requested["version"],
+        "status": "canceled",
+        "progress": {"coverageConclusion": "inconclusive"},
+        "event": {"category": "domain", "kind": "run.canceled", "source": "runtime"},
+    }
+    for invalid in [
+        {**finalization, "controllerId": "not-the-owner"},
+        {**finalization, "phase": {
+            "id": "preflight", "expectedVersion": requested["phases"][0]["version"],
+            "state": "completed", "output": {"late": True}, "outputDigest": OUTPUT_DIGEST,
+        }},
+        {**finalization, "status": "completed"},
+    ]:
+        rejected = run_workbench(state_dir, "runtime-transition", check=False,
+                                 input_text=json.dumps(invalid))
+        assert rejected["returncode"] != 0
+    late_attempt = run_workbench(state_dir, "runtime-update-attempt", check=False,
+                                input_text=json.dumps({
+        **ownership, "expectedVersion": requested["version"], "attemptId": attempt_id,
+        "status": "running",
+        "event": {
+            "category": "domain", "kind": "agent.session_bound", "source": "runtime",
+            "phaseId": "preflight", "logicalAgentId": agent_id, "attemptId": attempt_id,
+        },
+    }))
+    assert late_attempt["returncode"] != 0
+    unchanged = run_workbench(state_dir, "runtime-get-run", "--run-id", created["id"])
+    assert unchanged == requested
+    canceled = invoke(state_dir, "runtime-transition", finalization)
+    assert canceled["status"] == "canceled"
+    assert canceled["controllerId"] is None
+    assert all(phase["state"] == "canceled" for phase in canceled["phases"])
+    assert all(phase["output"] is None for phase in canceled["phases"])
+    agent = run_workbench(state_dir, "runtime-get-agent", "--run-id", created["id"],
+                          "--logical-agent-id", agent_id)
+    assert agent["attempts"][0]["status"] == "canceled"
+    assert invoke(state_dir, "runtime-cancel-run", {"runId": created["id"]}) == canceled
+    events = run_workbench(state_dir, "runtime-list-events", "--run-id", created["id"])["events"]
+    assert [event["kind"] for event in events[-2:]] == ["run.cancel_requested", "run.canceled"]
+
+
 def test_runtime_schema_migrates_fresh_and_existing_databases(tmp_path: Path) -> None:
     fresh = tmp_path / "fresh"
     run_workbench(fresh, "database-info")

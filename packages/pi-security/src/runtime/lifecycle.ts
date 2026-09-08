@@ -50,18 +50,31 @@ export interface RetryCanonicalRunInput extends RuntimeOwnership {
 
 export interface CanonicalRunLifecycleOptions {
   abortActiveAttempts?: (runId: string) => Promise<void>;
-  executors: Readonly<Record<string, PhaseExecutor>>;
+  createScan?(input: StartCanonicalRunInput): Promise<string>;
+  executors?: Readonly<Record<string, PhaseExecutor>>;
+  executorsForRun?(
+    run: RuntimeRunRecord,
+    ownership: RuntimeOwnership,
+  ): Promise<Readonly<Record<string, PhaseExecutor>>> | Readonly<Record<string, PhaseExecutor>>;
   repository: RuntimeStateRepository;
 }
 
 interface ActiveExecution {
   abort: AbortController;
+  monitor: AbortController;
   abortAttempts: Promise<void> | undefined;
   ownership: RuntimeOwnership;
   finalizing: boolean;
   outcome: "canceled" | "interrupted" | undefined;
   reason: string | undefined;
   settled: Promise<RuntimeRunRecord>;
+}
+
+export class CanonicalPreflightError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "CanonicalPreflightError";
+  }
 }
 
 export class CanonicalRunLifecycle {
@@ -75,15 +88,17 @@ export class CanonicalRunLifecycle {
   async createAndClaim(input: StartCanonicalRunInput): Promise<RuntimeRunRecord> {
     validateConfig(input.config);
     const targetPath = await canonicalTarget(input.config.scan.target);
-    const snapshot = createExecutionSnapshot({
+    const config = {
       ...input.config,
       scan: { ...input.config.scan, target: targetPath },
-    });
+    };
+    const snapshot = createExecutionSnapshot(config);
     const policyDigest = executionPolicyDigest(snapshot.digest);
+    const scanId = input.scanId ?? await this.#options.createScan?.({ ...input, config });
     const created = await this.#options.repository.createRun({
       policyDigest,
       runId: randomUUID(),
-      scanId: input.scanId,
+      scanId,
       snapshot: snapshot as unknown as Record<string, unknown>,
       snapshotDigest: snapshot.digest,
       targetPath,
@@ -104,7 +119,11 @@ export class CanonicalRunLifecycle {
   }
 
   async execute(run: RuntimeRunRecord, ownership: RuntimeOwnership): Promise<RuntimeRunRecord> {
-    return await this.#executeActive(run, ownership);
+    return await this.#executeActive(
+      run,
+      ownership,
+      (current) => this.#normalizeRunningPhases(current, ownership),
+    );
   }
 
   async #executeActive(
@@ -117,6 +136,7 @@ export class CanonicalRunLifecycle {
     }
     if (this.#active.has(run.id)) throw new Error("Canonical run already has an active executor.");
     const abort = new AbortController();
+    const monitor = new AbortController();
     let settle!: (run: RuntimeRunRecord) => void;
     let reject!: (error: unknown) => void;
     const settled = new Promise<RuntimeRunRecord>((resolvePromise, rejectPromise) => {
@@ -127,6 +147,7 @@ export class CanonicalRunLifecycle {
     void settled.catch(() => {});
     const active: ActiveExecution = {
       abort,
+      monitor,
       abortAttempts: undefined,
       ownership: { ...ownership },
       finalizing: false,
@@ -135,6 +156,7 @@ export class CanonicalRunLifecycle {
       settled,
     };
     this.#active.set(run.id, active);
+    void this.#monitorDurableCancellation(run.id, active).catch(() => undefined);
     try {
       const recovered = recover ? await recover(run) : run;
       const terminal = await this.#executeClaimed(recovered, ownership, active);
@@ -143,6 +165,17 @@ export class CanonicalRunLifecycle {
     } catch (error) {
       try {
         const current = await this.#options.repository.getRun(run.id);
+        if (current.status === "running" && current.outputAdmissionFrozen) {
+          await this.#abortCanceledExecution(run.id, active);
+          const canceled = await this.#finalizeCancellation(run.id, ownership);
+          settle(canceled);
+          return canceled;
+        }
+        if (current.status === "canceled") {
+          await this.#abortCanceledExecution(run.id, active);
+          settle(current);
+          return current;
+        }
         if (current.status === "running") {
           const failed = await this.#options.repository.transition({
             ...owned(current, ownership),
@@ -165,27 +198,28 @@ export class CanonicalRunLifecycle {
         throw failure;
       }
     } finally {
+      active.monitor.abort();
       this.#active.delete(run.id);
     }
   }
 
   async cancel(runId: string, ownership: RuntimeOwnership): Promise<RuntimeRunRecord> {
     const active = this.#active.get(runId);
-    if (!active) throw new Error("Canonical run has no active executor to cancel.");
-    assertActiveOwnership(active, ownership);
-    const run = await this.#options.repository.getRun(runId);
-    if (active.finalizing) return await active.settled;
-    if (run.status !== "running" || run.controllerId !== ownership.controllerId) {
-      throw new Error("Canonical run cancellation authority does not match.");
+    if (active) {
+      assertActiveOwnership(active, ownership);
+      if (active.finalizing || active.outcome === "interrupted") return await active.settled;
     }
-    if (!active.outcome) {
-      active.outcome = "canceled";
-      active.reason = "Canonical run canceled by operator.";
+    let current = await this.#options.repository.cancelRun(runId);
+    if (current.status === "canceled") return current;
+    if (active) {
+      await this.#abortCanceledExecution(runId, active);
+      return await active.settled;
     }
-    const aborting = this.#abortActiveAttempts(active, runId);
-    active.abort.abort(new Error(active.reason));
-    await aborting;
-    return await active.settled;
+    while (current.status === "running") {
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      current = await this.#options.repository.getRun(runId);
+    }
+    return current;
   }
 
   async interrupt(runId: string, ownership: RuntimeOwnership, reason: string): Promise<RuntimeRunRecord> {
@@ -229,6 +263,10 @@ export class CanonicalRunLifecycle {
   }
 
   async resume(input: ResumeCanonicalRunInput): Promise<RuntimeRunRecord> {
+    return await this.execute(await this.resumeAndClaim(input), input);
+  }
+
+  async resumeAndClaim(input: ResumeCanonicalRunInput): Promise<RuntimeRunRecord> {
     const run = await this.#options.repository.getRun(input.runId);
     if (run.status !== "interrupted") {
       throw new Error(`Canonical run in state ${run.status} cannot resume.`);
@@ -253,17 +291,12 @@ export class CanonicalRunLifecycle {
       });
     }
     validatePersistedOutputs(run);
-    const claimed = await this.#options.repository.claimRun({
+    return await this.#options.repository.claimRun({
       claimToken: input.claimToken,
       controllerId: input.controllerId,
       expectedVersion: run.version,
       runId: run.id,
     });
-    return await this.#executeActive(
-      claimed,
-      input,
-      (current) => this.#normalizeRunningPhases(current, input),
-    );
   }
 
   async retry(input: RetryCanonicalRunInput): Promise<RuntimeRunRecord> {
@@ -365,6 +398,49 @@ export class CanonicalRunLifecycle {
     return target;
   }
 
+  #abortCanceledExecution(runId: string, execution: ActiveExecution): Promise<void> {
+    execution.outcome = "canceled";
+    execution.reason = "Canonical run canceled by operator.";
+    const aborting = this.#abortActiveAttempts(execution, runId);
+    execution.abort.abort(new Error(execution.reason));
+    return aborting;
+  }
+
+  async #finalizeCancellation(runId: string, ownership: RuntimeOwnership): Promise<RuntimeRunRecord> {
+    const current = await this.#options.repository.getRun(runId);
+    if (current.status === "canceled") return current;
+    return await this.#options.repository.transition({
+      ...owned(current, ownership),
+      event: { category: "domain", kind: "run.canceled", source: "runtime" },
+      progress: { ...current.progress, coverageConclusion: "inconclusive" },
+      status: "canceled",
+      statusReason: "Canonical run canceled by operator.",
+    });
+  }
+
+  async #monitorDurableCancellation(runId: string, execution: ActiveExecution): Promise<void> {
+    while (!execution.monitor.signal.aborted && !execution.abort.signal.aborted) {
+      const current = await this.#options.repository.getRun(runId);
+      if (current.status === "running" && current.outputAdmissionFrozen) {
+        await this.#abortCanceledExecution(runId, execution);
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timer);
+          execution.monitor.signal.removeEventListener("abort", finish);
+          resolve();
+        };
+        const timer = setTimeout(finish, 100);
+        if (execution.monitor.signal.aborted) {
+          finish();
+          return;
+        }
+        execution.monitor.signal.addEventListener("abort", finish, { once: true });
+      });
+    }
+  }
+
   #abortActiveAttempts(active: ActiveExecution, runId: string): Promise<void> {
     if (active.abortAttempts) return active.abortAttempts;
     try {
@@ -438,23 +514,30 @@ export class CanonicalRunLifecycle {
         initialStates[phase.id] = "pending";
       }
     }
+    const executors = await this.#options.executorsForRun?.(initial, ownership)
+      ?? this.#options.executors;
+    if (!executors) throw new Error("Canonical run has no workflow executors.");
     let result: WorkflowScheduleResult;
     try {
       result = await scheduleWorkflow({
-        executors: this.#options.executors,
+        executors,
         initialOutputs,
         initialStates,
         maxParallel: Number(current.snapshot.resolved && (current.snapshot.resolved as Record<string, unknown>).execution
           ? ((current.snapshot.resolved as Record<string, Record<string, unknown>>).execution.maxParallel ?? 1)
           : 1),
         onPhaseSettled: async (phase, state, output, error) => {
-          current = await this.#options.repository.getRun(current.id);
-          const persisted = phaseRecord(current, phase.id);
+          const persistedRun = await this.#options.repository.getRun(current.id);
+          if (persistedRun.outputAdmissionFrozen) {
+            await this.#abortCanceledExecution(current.id, execution);
+            return;
+          }
+          const persisted = phaseRecord(persistedRun, phase.id);
           const persistedState = state === "canceled" && execution.outcome === "interrupted"
             ? "interrupted"
             : state;
           current = await this.#options.repository.transition({
-            ...owned(current, ownership),
+            ...owned(persistedRun, ownership),
             event: {
               category: "domain",
               kind: `phase.${persistedState}`,
@@ -471,10 +554,14 @@ export class CanonicalRunLifecycle {
           });
         },
         onPhaseStarted: async (phase, inputs) => {
-          current = await this.#options.repository.getRun(current.id);
-          const persisted = phaseRecord(current, phase.id);
+          const persistedRun = await this.#options.repository.getRun(current.id);
+          if (persistedRun.outputAdmissionFrozen) {
+            await this.#abortCanceledExecution(current.id, execution);
+            throw new Error("Canonical run cancellation is pending.");
+          }
+          const persisted = phaseRecord(persistedRun, phase.id);
           current = await this.#options.repository.transition({
-            ...owned(current, ownership),
+            ...owned(persistedRun, ownership),
             event: {
               category: "domain",
               kind: "phase.started",
@@ -487,9 +574,9 @@ export class CanonicalRunLifecycle {
               inputDigest: digest({
                 inputs,
                 phaseType: phase.type,
-                policyDigest: current.policyDigest,
-                targetPath: current.targetPath,
-                targetRevision: current.targetRevision,
+                policyDigest: persistedRun.policyDigest,
+                targetPath: persistedRun.targetPath,
+                targetRevision: persistedRun.targetRevision,
               }),
               state: "running",
             },
@@ -511,6 +598,11 @@ export class CanonicalRunLifecycle {
       } else {
         throw error;
       }
+    }
+    const latest = await this.#options.repository.getRun(current.id);
+    if (latest.status === "running" && latest.outputAdmissionFrozen) {
+      await this.#abortCanceledExecution(current.id, execution);
+      return await this.#finalizeCancellation(current.id, ownership);
     }
     if (execution.abortAttempts) await execution.abortAttempts;
     current = await this.#persistUnsettledStates(current, ownership, result, execution.outcome);
@@ -589,17 +681,21 @@ function assertActiveOwnership(active: ActiveExecution, ownership: RuntimeOwners
 
 function validateConfig(config: ResolvedExecutionConfig): void {
   if (config.scan.workflow !== "full-repository") {
-    throw new Error(`Unsupported canonical workflow: ${config.scan.workflow}`);
+    throw new CanonicalPreflightError(`Unsupported canonical workflow: ${config.scan.workflow}`);
   }
   if (!Number.isInteger(config.execution.maxParallel) || config.execution.maxParallel < 1) {
-    throw new Error("Canonical workflow maxParallel must be a positive integer.");
+    throw new CanonicalPreflightError("Canonical workflow maxParallel must be a positive integer.");
   }
 }
 
 async function canonicalTarget(path: string): Promise<string> {
-  const target = await realpath(resolve(path));
-  if (!(await stat(target)).isDirectory()) throw new Error("Canonical scan target must be a directory.");
-  return target;
+  try {
+    const target = await realpath(resolve(path));
+    if (!(await stat(target)).isDirectory()) throw new Error("Canonical scan target must be a directory.");
+    return target;
+  } catch (error) {
+    throw new CanonicalPreflightError(errorMessage(error), { cause: error });
+  }
 }
 
 function executionPolicyDigest(snapshotDigest: string): string {

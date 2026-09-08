@@ -1205,14 +1205,28 @@ test("RPC redacts transcript and event payloads without letting observers break 
   assert.equal((await transport.request({ type: "get_messages" })).success, true);
 });
 
-test("run cancellation drains launches before claim, during startup, and after binding", async (t) => {
-  for (const stage of ["before-claim", "during-startup", "bound"]) {
+test("run cancellation drains launching and bound children across admission freeze races", async (t) => {
+  for (const stage of ["before-claim", "during-startup", "bound", "frozen-startup", "frozen-bound", "freeze-race"]) {
+    const duringStartup = stage.endsWith("startup");
+    const bound = !duringStartup && stage !== "before-claim";
+    const ownerSettles = stage.startsWith("frozen") || stage === "freeze-race";
     const runId = randomUUID();
     const logicalAgentId = randomUUID();
     const targetPath = path.resolve(packageRoot);
     const startupMarker = path.join(tmpdir(), `pi-security-start-${randomUUID()}`);
     const stateRelease = path.join(tmpdir(), `pi-security-release-${randomUUID()}`);
     const repository = new FakeRepository(runId, targetPath, "controller-a");
+    let frozen = false;
+    if (ownerSettles) {
+      const getRun = repository.getRun.bind(repository);
+      const updateAttempt = repository.updateAttempt.bind(repository);
+      repository.getRun = async () => ({ ...await getRun(), outputAdmissionFrozen: frozen });
+      repository.updateAttempt = async (input) => {
+        if (stage === "freeze-race" && input.status === "canceled") frozen = true;
+        if (frozen) throw new Error("Output admission is frozen.");
+        return await updateAttempt(input);
+      };
+    }
     let releaseRead;
     let enteredRead;
     const readEntered = new Promise((resolve) => { enteredRead = resolve; });
@@ -1234,7 +1248,7 @@ test("run cancellation drains launches before claim, during startup, and after b
       commandArgs: [
         fixture,
         `--startup-marker=${startupMarker}`,
-        ...(stage === "during-startup" ? [`--get-state-release=${stateRelease}`] : []),
+        ...(duringStartup ? [`--get-state-release=${stateRelease}`] : []),
       ],
       cleanupTimeoutMs: 20,
       repository,
@@ -1267,8 +1281,10 @@ test("run cancellation drains launches before claim, during startup, and after b
     };
     const launch = supervisor.launch(phaseRequest(request)).then((value) => ({ value }), (error) => ({ error }));
     if (stage === "before-claim") await readEntered;
-    else if (stage === "during-startup") await waitForCondition(() => existsSync(startupMarker), 2_000);
+    else if (duringStartup) await waitForCondition(() => existsSync(startupMarker), 2_000);
     else assert.equal((await launch).value.piSessionId, "fixture-session");
+    const statusBeforeAbort = repository.attempt?.status;
+    frozen = stage.startsWith("frozen");
     const aborted = supervisor.abortRun(runId);
     const repeatedAbort = supervisor.abortRun(runId);
     if (stage === "before-claim") {
@@ -1278,12 +1294,12 @@ test("run cancellation drains launches before claim, during startup, and after b
     }
     await Promise.all([aborted, repeatedAbort]);
     const result = await launch;
-    if (stage !== "bound") assert.equal(result.error.code, "CANCELED");
+    if (!bound) assert.equal(result.error.code, "CANCELED");
     if (stage === "before-claim") {
       assert.equal(repository.attempt, undefined);
       assert.equal(existsSync(startupMarker), false);
     } else {
-      assert.equal(repository.attempt.status, "canceled");
+      assert.equal(repository.attempt.status, ownerSettles ? statusBeforeAbort : "canceled");
       const pid = Number(await readFile(startupMarker, "utf8"));
       assert.throws(() => process.kill(pid, 0), (error) => error.code === "ESRCH");
     }

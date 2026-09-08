@@ -3628,6 +3628,8 @@ def main() -> None:
             result = scan_context(connection, args.scan_id, args.occurrence_id)
         elif args.command == "runtime-create-run":
             result = runtime_state.create_run(connection, json.load(sys.stdin), now)
+        elif args.command == "runtime-cancel-run":
+            result = runtime_state.cancel_run(connection, json.load(sys.stdin), now)
         elif args.command == "runtime-claim-run":
             result = runtime_state.claim_run(connection, json.load(sys.stdin), now)
         elif args.command == "runtime-transition":

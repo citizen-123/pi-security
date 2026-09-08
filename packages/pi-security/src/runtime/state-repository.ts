@@ -81,6 +81,8 @@ export interface OwnedRuntimeOperation {
 }
 
 export interface RuntimeStateRepository {
+  /** Freeze admission and request cancellation; the owner finalizes after worker settlement. */
+  cancelRun(runId: string): Promise<RuntimeRunRecord>;
   claimRun(input: OwnedRuntimeOperation): Promise<RuntimeRunRecord>;
   createRun(input: CreateRuntimeRunInput): Promise<RuntimeRunRecord>;
   getAgent(runId: string, logicalAgentId: string): Promise<RuntimeLogicalAgentRecord>;
@@ -265,6 +267,10 @@ export class WorkbenchRuntimeStateRepository implements RuntimeStateRepository {
 
   async createRun(input: CreateRuntimeRunInput): Promise<RuntimeRunRecord> {
     return parseRun(await this.execute("runtime-create-run", input as unknown as Record<string, unknown>));
+  }
+
+  async cancelRun(runId: string): Promise<RuntimeRunRecord> {
+    return parseRun(await this.execute("runtime-cancel-run", { runId }));
   }
 
   async claimRun(input: OwnedRuntimeOperation): Promise<RuntimeRunRecord> {

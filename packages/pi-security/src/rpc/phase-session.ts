@@ -188,7 +188,7 @@ export class PhaseSessionSupervisor {
     const settled = await Promise.allSettled(bindings.filter((binding) => !launchingAgents.has(binding.logicalAgentId)).map((binding) => (
       this.#queueRun(binding, async () => {
         const run = await this.#options.repository.getRun(binding.runId);
-        if (run.status !== "running") return;
+        if (run.status !== "running" || run.outputAdmissionFrozen) return;
         const agent = await this.#options.repository.getAgent(binding.runId, binding.logicalAgentId);
         if (agent.attempts.find((attempt) => attempt.id === binding.attemptId)?.status === "canceled") return;
         const canceled = await this.#options.repository.updateAttempt({
@@ -207,8 +207,12 @@ export class PhaseSessionSupervisor {
           expectedVersion: run.version,
           runId: binding.runId,
           status: "canceled",
+        }).catch(async (error: unknown) => {
+          const current = await this.#options.repository.getRun(binding.runId);
+          if (!current.outputAdmissionFrozen) throw error;
+          return undefined;
         });
-        this.#advanceRunState(binding.runState, canceled.version, true);
+        if (canceled) this.#advanceRunState(binding.runState, canceled.version, true);
       })
     )));
     const errors = [...stopped, ...settled].flatMap((result) => result.status === "rejected" ? [result.reason] : []);
@@ -346,7 +350,7 @@ export class PhaseSessionSupervisor {
       const decision = classifyAttemptFailure(error, request.ordinal, request.maxAttempts, launch.canceled);
       await this.#queueRun(binding, async () => {
         const run = await this.#options.repository.getRun(request.input.runId).catch(() => undefined);
-        if (!run || run.status !== "running") return;
+        if (!run || run.status !== "running" || run.outputAdmissionFrozen) return;
         const failed = await this.#options.repository.updateAttempt({
           attemptId: request.attemptId,
           claimToken: request.claimToken,
@@ -365,8 +369,11 @@ export class PhaseSessionSupervisor {
           failureCategory: decision.category,
           runId: request.input.runId,
           status: launch.canceled ? "canceled" : "failed",
-        }).catch((error: unknown) => {
-          if (launch.canceled) launch.cleanupError = error;
+        }).catch(async (error: unknown) => {
+          if (launch.canceled) {
+            const current = await this.#options.repository.getRun(request.input.runId);
+            if (!current.outputAdmissionFrozen) launch.cleanupError = error;
+          }
           return undefined;
         });
         if (failed) this.#advanceRunState(runState, failed.version, true);

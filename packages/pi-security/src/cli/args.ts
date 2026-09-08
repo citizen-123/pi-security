@@ -3,7 +3,10 @@ import { BUILT_IN_WORKFLOW, type ConfigOverrides } from "../config/execution-con
 export type CliCommand =
   | { kind: "help" }
   | { configPath?: string; kind: "scan"; overrides: ConfigOverrides }
-  | { kind: "run-cancel" | "run-inspect" | "run-resume" | "run-retry"; runId: string };
+  | { kind: "run-cancel"; runId: string }
+  | { kind: "run-inspect"; runId: string }
+  | { kind: "run-resume"; runId: string }
+  | { kind: "run-retry"; runId: string };
 
 export class CliUsageError extends Error {
   readonly exitCode = 2;
@@ -11,6 +14,13 @@ export class CliUsageError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CliUsageError";
+  }
+}
+
+export class CliExitError extends Error {
+  constructor(message: string, readonly exitCode: number) {
+    super(message);
+    this.name = "CliExitError";
   }
 }
 

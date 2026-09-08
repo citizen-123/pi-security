@@ -167,6 +167,97 @@ def create_run(
     return result
 
 
+
+def cancel_run(
+    connection: sqlite3.Connection,
+    payload: dict[str, Any],
+    clock: Callable[[], str],
+) -> dict[str, Any]:
+    """Freeze admission and request owner-driven cancellation without claiming settlement."""
+    run_id = require_uuid(payload.get("runId"), "runId")
+    timestamp = clock()
+    reason = "Canonical run cancellation requested by operator."
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        run = require_run(connection, run_id)
+        if run["status"] == "canceled" or (
+            run["status"] == "running" and run["output_admission_frozen"]
+        ):
+            result = get_run(connection, run_id)
+            connection.commit()
+            return result
+        if run["status"] != "running":
+            raise SystemExit(f"Workflow run in state {run['status']} cannot be canceled.")
+        progress = json.loads(run["progress_json"])
+        progress["coverageConclusion"] = "inconclusive"
+        changed = connection.execute(
+            """
+            UPDATE workflow_runs
+            SET status_reason = ?, progress_json = ?,
+                output_admission_frozen = 1, version = version + 1,
+                updated_at = ?
+            WHERE id = ? AND version = ? AND status = 'running'
+            """,
+            (
+                reason,
+                canonical_json(progress),
+                timestamp,
+                run_id,
+                run["version"],
+            ),
+        ).rowcount
+        if changed != 1:
+            raise SystemExit("Workflow run cancellation lost a concurrent update.")
+        append_event(
+            connection,
+            run_id,
+            {
+                "category": "domain",
+                "kind": "run.cancel_requested",
+                "source": "operator",
+                "payload": {"coverageConclusion": "inconclusive", "reason": reason},
+            },
+            timestamp,
+        )
+        result = get_run(connection, run_id)
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+    return result
+
+
+def settle_canceled_rows(connection: sqlite3.Connection, run_id: str, timestamp: str) -> None:
+    connection.execute(
+        """
+        UPDATE workflow_phases
+        SET state = 'canceled', version = version + 1, updated_at = ?
+        WHERE run_id = ?
+          AND state IN ('pending', 'ready', 'running', 'interrupted')
+        """,
+        (timestamp, run_id),
+    )
+    connection.execute(
+        """
+        UPDATE workflow_attempts
+        SET status = 'canceled', failure_category = 'canceled', updated_at = ?
+        WHERE status IN ('starting', 'running')
+          AND logical_agent_id IN (
+              SELECT id FROM workflow_logical_agents WHERE run_id = ?
+          )
+        """,
+        (timestamp, run_id),
+    )
+    connection.execute(
+        """
+        UPDATE workflow_logical_agents
+        SET status = 'canceled', updated_at = ?
+        WHERE run_id = ? AND status = 'running'
+        """,
+        (timestamp, run_id),
+    )
+
+
 def claim_run(
     connection: sqlite3.Connection,
     payload: dict[str, Any],
@@ -231,9 +322,20 @@ def transition(
     timestamp = clock()
     connection.execute("BEGIN IMMEDIATE")
     try:
-        run = require_owned_run(
-            connection, run_id, expected_version, controller_id, claim_token
+        cancellation_finalization = (
+            payload.get("status") == "canceled"
+            and payload.get("phase") is None
+            and event.get("category") == "domain"
+            and event.get("kind") == "run.canceled"
+            and event.get("source") == "runtime"
+            and event.get("phaseId") is None
         )
+        run = require_owned_run(
+            connection, run_id, expected_version, controller_id, claim_token,
+            allow_cancellation_finalization=cancellation_finalization,
+        )
+        if run["output_admission_frozen"]:
+            settle_canceled_rows(connection, run_id, timestamp)
         phase_change = payload.get("phase")
         if phase_change is not None:
             phase_change = require_object(phase_change, "phase")
@@ -933,6 +1035,8 @@ def require_owned_run(
     expected_version: int,
     controller_id: str,
     claim_token: str,
+    *,
+    allow_cancellation_finalization: bool = False,
 ) -> sqlite3.Row:
     run = require_run(connection, run_id)
     if run["version"] != expected_version:
@@ -941,6 +1045,8 @@ def require_owned_run(
         raise SystemExit("Workflow run controller ownership does not match.")
     if run["status"] != "running":
         raise SystemExit(f"Workflow run in state {run['status']} is not active.")
+    if run["output_admission_frozen"] and not allow_cancellation_finalization:
+        raise SystemExit("Workflow run no longer admits mutations while cancellation is pending.")
     return run
 
 

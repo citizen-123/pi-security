@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -108,6 +110,7 @@ test("creation validates target before agents, persists the snapshot, and comple
       config: config(path.join(root, "missing")),
       controllerId: "controller-invalid",
     }),
+    (error) => error instanceof runtime.CanonicalPreflightError,
   );
   assert.equal(agentCalls, 0);
 
@@ -122,6 +125,25 @@ test("creation validates target before agents, persists the snapshot, and comple
   assert.equal(completed.controllerId, null);
   assert.equal(completed.phases.every((phase) => phase.state === "completed"), true);
   assert.deepEqual((await repository.getRun(completed.id)).snapshot, completed.snapshot);
+});
+
+test("per-run executor factory supplies the foreground workflow executors", async (t) => {
+  const { repository, target } = await fixture(t);
+  const executorRuns = [];
+  const lifecycle = new runtime.CanonicalRunLifecycle({
+    executorsForRun: async (run) => {
+      executorRuns.push(run.id);
+      return executors();
+    },
+    repository,
+  });
+  const completed = await lifecycle.start({
+    claimToken: "claim-executor-factory",
+    config: config(target),
+    controllerId: "controller-executor-factory",
+  });
+  assert.equal(completed.status, "completed");
+  assert.deepEqual(executorRuns, [completed.id]);
 });
 
 test("failed runs preserve admitted outputs and cannot claim complete coverage", async (t) => {
@@ -265,6 +287,169 @@ test("cancellation after durable phase start does not launch the executor", asyn
   assert.equal(canceled.status, "canceled");
   assert.equal(canceled.phases.find((phase) => phase.id === "preflight").state, "canceled");
   assert.equal(executorCalls, 0);
+});
+
+test("durable cancellation reaches a foreground executor owned by another lifecycle", async (t) => {
+  let releaseStart;
+  const started = new Promise((resolve) => { releaseStart = resolve; });
+  let abortCalls = 0;
+  const { repository, target } = await fixture(t);
+  const owner = new runtime.CanonicalRunLifecycle({
+    abortActiveAttempts: async () => { abortCalls += 1; },
+    executors: executors(async (context) => {
+      if (context.phase.type !== "threat-model") return delivery(context);
+      releaseStart();
+      await new Promise((resolve) => context.signal.addEventListener("abort", resolve, { once: true }));
+      return delivery(context);
+    }),
+    repository,
+  });
+  const ownership = { claimToken: "claim-owner", controllerId: "controller-owner" };
+  const claimed = await owner.createAndClaim({ ...ownership, config: config(target) });
+  const execution = owner.execute(claimed, ownership);
+  await started;
+
+  const separateProcess = new runtime.CanonicalRunLifecycle({ repository });
+  const canceled = await separateProcess.cancel(claimed.id, {
+    claimToken: "claim-operator",
+    controllerId: "controller-operator",
+  });
+
+  assert.equal(canceled.status, "canceled");
+  assert.equal((await execution).status, "canceled");
+  assert.equal(abortCalls, 1);
+  const events = await repository.listEvents(claimed.id);
+  assert.equal(events.at(-1).kind, "run.canceled");
+  assert.ok(events.some((event) => event.kind === "run.cancel_requested"));
+});
+
+test("separate-process cancellation returns only after the worker process exits", { timeout: 30_000 }, async (t) => {
+  const { repository, root, target } = await fixture(t);
+  await writeFile(path.join(root, "runtime.mjs"), bundle.outputFiles[0].contents);
+  const ownerFile = path.join(root, "owner.mjs");
+  const workerCode = [
+    'process.on("SIGTERM", () => process.send({ kind: "stopping" }));',
+    'process.on("message", () => process.exit(0));',
+    'process.send({ kind: "ready" });',
+  ].join("\n");
+  const repositoryCode = `new runtime.WorkbenchRuntimeStateRepository(runtime.createWorkbenchRuntimeExecutor({
+    packageRoot: ${JSON.stringify(packageRoot)}, stateDir: ${JSON.stringify(path.join(root, "state"))}
+  }))`;
+  await writeFile(ownerFile, `
+    import * as runtime from "./runtime.mjs";
+    import { spawn } from "node:child_process";
+    import { once } from "node:events";
+    ${outputFor.toString()}
+    ${delivery.toString()}
+    ${executors.toString()}
+    let worker;
+    let workerExited;
+    process.on("message", () => worker.send("finish"));
+    const lifecycle = new runtime.CanonicalRunLifecycle({
+      repository: ${repositoryCode},
+      abortActiveAttempts: async () => {
+        if (worker) {
+          worker.kill("SIGTERM");
+          await workerExited;
+        }
+      },
+      executors: executors(async (context) => {
+        if (context.phase.type !== "threat-model") return delivery(context);
+        worker = spawn(process.execPath, ["-e", ${JSON.stringify(workerCode)}], {
+          stdio: ["ignore", "ignore", "inherit", "ipc"],
+        });
+        workerExited = once(worker, "exit");
+        await once(worker, "message");
+        worker.on("message", (message) => process.send(message));
+        process.send({ kind: "ready", runId: context.runId, workerPid: worker.pid });
+        await workerExited;
+        return delivery(context);
+      }),
+    });
+    await lifecycle.start({
+      claimToken: "synthetic-child-claim", controllerId: "child-owner",
+      config: ${JSON.stringify(config(target))},
+    });
+    process.disconnect();
+  `);
+  const owner = spawn(process.execPath, [ownerFile], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
+  let errors = "";
+  owner.stderr.on("data", (chunk) => { errors += chunk; });
+  const ownerExited = once(owner, "exit");
+  let workerPid;
+  let canceller;
+  t.after(() => {
+    owner.kill("SIGKILL");
+    canceller?.kill("SIGKILL");
+    if (workerPid) {
+      try { process.kill(workerPid, "SIGKILL"); } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+    }
+  });
+  const [ready] = await once(owner, "message", { signal: t.signal });
+  assert.equal(ready.kind, "ready", errors);
+  workerPid = ready.workerPid;
+  const cancelFile = path.join(root, "cancel.mjs");
+  await writeFile(cancelFile, `
+    import * as runtime from "./runtime.mjs";
+    const lifecycle = new runtime.CanonicalRunLifecycle({ repository: ${repositoryCode} });
+    const run = await lifecycle.cancel(${JSON.stringify(ready.runId)}, {
+      claimToken: "synthetic-operator-claim", controllerId: "separate-operator",
+    });
+    console.log(JSON.stringify(run));
+  `);
+  const stopping = once(owner, "message", { signal: t.signal });
+  canceller = spawn(process.execPath, [cancelFile], { stdio: ["ignore", "pipe", "pipe"] });
+  let output = "";
+  canceller.stdout.on("data", (chunk) => { output += chunk; });
+  canceller.stderr.on("data", (chunk) => { errors += chunk; });
+  const cancelExited = once(canceller, "exit");
+  assert.equal((await stopping)[0].kind, "stopping", errors);
+  const pending = await repository.getRun(ready.runId);
+  assert.equal(pending.status, "running");
+  assert.equal(pending.outputAdmissionFrozen, true);
+  assert.equal(pending.controllerId, "child-owner");
+  assert.equal(canceller.exitCode, null);
+  owner.send("release-worker");
+  assert.equal((await cancelExited)[0], 0, errors);
+  assert.equal(JSON.parse(output).status, "canceled");
+  assert.throws(() => process.kill(workerPid, 0), { code: "ESRCH" });
+  workerPid = undefined;
+  assert.equal((await ownerExited)[0], 0, errors);
+});
+
+test("durable cancellation cleans up workers when execution fails before the monitor observes it", async (t) => {
+  const { lifecycle, repository, target } = await fixture(t);
+  const ownership = { claimToken: "claim-race", controllerId: "controller-race" };
+  const claimed = await lifecycle.createAndClaim({ ...ownership, config: config(target) });
+  let releaseMonitor;
+  const monitorRead = new Promise((resolve) => { releaseMonitor = resolve; });
+  let reads = 0;
+  let workersStopped = false;
+  const owner = new runtime.CanonicalRunLifecycle({
+    abortActiveAttempts: async () => { workersStopped = true; },
+    executorsForRun: async () => {
+      await repository.cancelRun(claimed.id);
+      throw new Error("Canceled while constructing executors");
+    },
+    repository: {
+      transition: (input) => repository.transition(input),
+      async getRun(runId) {
+        if (++reads === 1) {
+          await monitorRead;
+          return claimed;
+        }
+        return await repository.getRun(runId);
+      },
+    },
+  });
+  try {
+    assert.equal((await owner.execute(claimed, ownership)).status, "canceled");
+    assert.equal(workersStopped, true);
+  } finally {
+    releaseMonitor();
+  }
 });
 
 test("active interruption aborts attempts and settles without converting pending work to cancellation", async (t) => {
