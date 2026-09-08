@@ -176,6 +176,16 @@ const eventSchema = z.object({
   source: z.string(),
   timestamp: z.string(),
 }).strict();
+const eventMutationSchema = z.object({
+  runId: z.string().uuid(),
+  sequence: z.number().int().positive(),
+  version: z.number().int().positive(),
+}).strict();
+const eventListSchema = z.object({
+  events: z.array(eventSchema),
+  runId: z.string().uuid(),
+}).strict();
+
 
 export class WorkbenchRuntimeStateRepository implements RuntimeStateRepository {
   constructor(private readonly execute: WorkbenchExecutor) {}
@@ -193,8 +203,9 @@ export class WorkbenchRuntimeStateRepository implements RuntimeStateRepository {
   }
 
   async recordEvent(input: OwnedRuntimeOperation & { event: RuntimeEventInput }): Promise<{ runId: string; sequence: number; version: number }> {
-    const schema = z.object({ runId: z.string().uuid(), sequence: z.number().int().positive(), version: z.number().int().positive() }).strict();
-    return schema.parse(await this.execute("runtime-record-event", input as unknown as Record<string, unknown>));
+    return parseEventMutation(
+      await this.execute("runtime-record-event", input as unknown as Record<string, unknown>),
+    );
   }
 
   async reuseOutput(input: ReuseRuntimeOutputInput): Promise<RuntimeRunRecord> {
@@ -206,10 +217,9 @@ export class WorkbenchRuntimeStateRepository implements RuntimeStateRepository {
   }
 
   async listEvents(runId: string, afterSequence = 0): Promise<RuntimeEvent[]> {
-    const result = z.object({ events: z.array(eventSchema), runId: z.string().uuid() }).strict().parse(
+    return parseEventList(
       await this.execute("runtime-list-events", undefined, ["--run-id", runId, "--after-sequence", String(afterSequence)]),
     );
-    return result.events;
   }
 }
 
@@ -230,31 +240,58 @@ export function createWorkbenchRuntimeExecutor(options: {
   const workbenchPath = join(packageRoot, "scripts", "workbench_db.py");
   const execFileAsync = promisify(execFile);
   return async (command, payload, args = []) => {
-    const pythonCommand = await resolvePythonCommand({ environment: options.environment });
-    const environment = { ...(options.environment ?? process.env) };
-    if (options.stateDir) environment.PI_SECURITY_STATE_DIR = options.stateDir;
-    const execution = execFileAsync(pythonCommand, [workbenchPath, command, ...args], {
-      cwd: packageRoot,
-      encoding: "utf8" as const,
-      env: environment,
-      maxBuffer: 4 * 1024 * 1024,
-      timeout: 30_000,
-    });
-    if (payload !== undefined) {
-      execution.child.stdin?.on("error", () => undefined);
-      execution.child.stdin?.end(JSON.stringify(payload));
-    }
+    let pythonCommand: string | undefined;
     try {
+      // Serialize before starting a helper so invalid JSON cannot leave it
+      // waiting on stdin after the caller has already received a rejection.
+      const input = payload === undefined ? undefined : JSON.stringify(payload);
+      pythonCommand = await resolvePythonCommand({ environment: options.environment });
+      const environment = { ...(options.environment ?? process.env) };
+      if (options.stateDir) environment.PI_SECURITY_STATE_DIR = options.stateDir;
+      const execution = execFileAsync(pythonCommand, [workbenchPath, command, ...args], {
+        cwd: packageRoot,
+        encoding: "utf8" as const,
+        env: environment,
+        maxBuffer: 4 * 1024 * 1024,
+        timeout: 30_000,
+      });
+      execution.child.stdin?.on("error", () => undefined);
+      execution.child.stdin?.end(input);
       const { stdout } = await execution;
       return JSON.parse(stdout) as unknown;
     } catch (error) {
-      const missing = missingPythonHelperMessage(error, pythonCommand);
+      const missing = pythonCommand ? missingPythonHelperMessage(error, pythonCommand) : undefined;
       const stderr = error && typeof error === "object" && "stderr" in error && typeof error.stderr === "string"
         ? error.stderr.trim()
         : "";
-      throw new RuntimeStateRepositoryError(missing ?? stderr ?? (error instanceof Error ? error.message : String(error)), command);
+      throw new RuntimeStateRepositoryError(
+        missing ?? (stderr || (error instanceof Error ? error.message : String(error))),
+        command,
+      );
     }
   };
+}
+
+function parseEventMutation(value: unknown): { runId: string; sequence: number; version: number } {
+  try {
+    return eventMutationSchema.parse(value);
+  } catch (error) {
+    throw new RuntimeStateRepositoryError(
+      `Workbench returned an invalid workflow event mutation: ${error instanceof Error ? error.message : String(error)}`,
+      "parse-record-event",
+    );
+  }
+}
+
+function parseEventList(value: unknown): RuntimeEvent[] {
+  try {
+    return eventListSchema.parse(value).events;
+  } catch (error) {
+    throw new RuntimeStateRepositoryError(
+      `Workbench returned invalid workflow events: ${error instanceof Error ? error.message : String(error)}`,
+      "parse-list-events",
+    );
+  }
 }
 
 function parseRun(value: unknown): RuntimeRunRecord {
