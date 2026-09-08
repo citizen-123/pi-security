@@ -182,6 +182,29 @@ Deep workers use the active Pi model and requested reasoning effort. Diagnostics
 
 Token counts come from native Pi session statistics or, for host-led scans, the optional host session database. Coverage is reported as complete, partial, or unavailable according to the sessions that supplied counts. Missing counts are never inferred, converted to zero, or used to estimate cost. Nested Deep Scan usage is included in executor-tree totals and also reported as a nested subset.
 
+## Standalone canonical CLI
+
+The package exposes `pi-security`:
+
+```sh
+pi-security scan --target /absolute/repository/path
+pi-security scan --config /absolute/pi-security.toml
+pi-security run inspect <run-id>
+pi-security run cancel <run-id>
+pi-security run resume <run-id>
+pi-security run retry <run-id>
+```
+
+The built-in `full-repository` workflow runs in the foreground. The canonical runtime alone advances phases and admits outputs. Non-TTY output is one deterministic JSON run record; TTY output includes phase units, active logical agents, available finding counts, and the terminal reason. Exit codes are completed `0`, failed `1`, scan configuration/startup `2`, interrupted `75`, and canceled `130`.
+
+Ctrl-C stops scheduling, aborts active attempts, waits for settlement, freezes admission, and records terminal cancellation. Handled SIGHUP and SIGTERM record interruption instead. These handlers apply to scans, resumed runs, and retries. `run resume` claims and continues the same interrupted run only when its target, snapshot, workflow, policy, capabilities, and admitted outputs remain compatible. `run retry` leaves failed history and its artifacts immutable and executes a new linked run with a separate artifact scan. Failed and canceled foreground runs finalize their artifact scan; interrupted scans remain available for recovery.
+
+Configuration precedence is defaults, ambient `$PI_HOME/pi-security/config.toml`, explicit `--config`, then supported non-secret CLI overrides. `[roles.<name>]` accepts `provider`, `model`, `thinking`, `instructions`, `max_attempts`, and one optional credential form: `{ env = "NAME" }`, `{ profile = "name" }`, or `{ value = "literal" }`. The standalone CLI supports environment references and inline literals with supported native API-key providers; profile references require a host-supplied resolver and are rejected by the standalone CLI before run creation or recovery claims. Pi provider login entries are not a named-profile backend. Secret flags are not accepted. Credential values are excluded from arguments, persisted snapshots, events, artifacts, rendering, and compatibility digests.
+
+Resume and retry restore non-secret execution settings from the persisted snapshot. Referenced environment variables must be available again. For an inline credential, supply the matching role's literal in ambient `$PI_HOME/pi-security/config.toml` before `run resume` or `run retry`; recovery commands do not accept `--config`, and the original explicit file is not reread. Missing credentials leave an interrupted run unclaimed.
+
+Omitted provider/model settings are resolved with a no-prompt native Pi RPC preflight before creating the run, with tools and repository resource discovery disabled. The effective model identity is persisted for recovery. Phase RPC sessions do not write native session transcripts; canonical attempts, events, and validated outputs provide durable history, and recovery launches replacement phase sessions.
+
 ## State and configuration
 
 Defaults:

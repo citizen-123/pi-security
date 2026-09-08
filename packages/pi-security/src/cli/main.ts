@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { CanonicalPreflightError } from "../runtime/lifecycle.js";
 import { CLI_HELP, CliExitError, CliUsageError, parseCliArgs, type CliCommand } from "./args.js";
+import { createDefaultCliCommandHandler } from "./default.js";
 
 export interface CliIo {
   error(message: string): void;
@@ -10,7 +11,7 @@ export interface CliIo {
 
 export type CliCommandHandler = (command: Exclude<CliCommand, { kind: "help" }>) => Promise<number>;
 
-const consoleIo: CliIo = {
+export const consoleIo: CliIo = {
   error(message) {
     process.stderr.write(`${message}\n`);
   },
@@ -64,5 +65,5 @@ function isDirectEntry(): boolean {
 }
 
 if (isDirectEntry()) {
-  process.exitCode = await runCli(process.argv.slice(2));
+  process.exitCode = await runCli(process.argv.slice(2), consoleIo, createDefaultCliCommandHandler(consoleIo));
 }

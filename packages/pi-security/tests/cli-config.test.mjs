@@ -134,6 +134,12 @@ test("credential values are usable but absent from snapshots and redacted output
     runtime.redactKnownSecrets(`error ${secretA} and ${secretB}`, [secretA, secretB]),
     "error [REDACTED] and [REDACTED]",
   );
+  const environmentCredential = structuredClone(first);
+  environmentCredential.roles.default.credential = { env: "SYNTHETIC_PROVIDER_TOKEN", kind: "env" };
+  assert.deepEqual(
+    runtime.createExecutionSnapshot(environmentCredential).resolved.roles.default.credential,
+    { env: "SYNTHETIC_PROVIDER_TOKEN", source: "env" },
+  );
 });
 
 test("environment and profile credentials report only source identity on failure", async () => {

@@ -1310,3 +1310,57 @@ test("run cancellation drains launching and bound children across admission free
     }, { kind: "status" }));
   }
 });
+
+test("cancellation drains completion stalled while retrieving the native transcript", async (t) => {
+  const runId = randomUUID();
+  const logicalAgentId = randomUUID();
+  const targetPath = path.resolve(packageRoot);
+  const startupMarker = path.join(tmpdir(), `pi-security-completion-start-${randomUUID()}`);
+  const messagesMarker = path.join(tmpdir(), `pi-security-messages-${randomUUID()}`);
+  const repository = new FakeRepository(runId, targetPath, "controller-a");
+  const supervisor = new rpc.PhaseSessionSupervisor({
+    command: process.execPath,
+    commandArgs: [fixture, `--startup-marker=${startupMarker}`, `--messages-marker=${messagesMarker}`, "--messages-never-respond"],
+    cleanupTimeoutMs: 20,
+    repository,
+  });
+  t.after(async () => {
+    await supervisor.abortRun(runId);
+    await Promise.all([startupMarker, messagesMarker].map((file) => rm(file, { force: true })));
+  });
+  const ownership = { claimToken: "claim-a", controllerId: "controller-a" };
+  await supervisor.launch(phaseRequest({
+    ...ownership,
+    attemptId: randomUUID(),
+    expectedVersion: 1,
+    input: {
+      artifactRoot: targetPath,
+      authority: { artifactRoot: targetPath, targetPath },
+      capabilityProfile: { allowDelegation: false, allowTargetMutation: false, tools: ["read"] },
+      outputContract: {},
+      phaseId: "discovery",
+      requiredInputs: {},
+      roleId: "discoverer",
+      runId,
+      target: { path: targetPath, revision: null },
+    },
+    logicalAgentId,
+    maxAttempts: 1,
+    ordinal: 1,
+    role: { instructions: "Inspect synthetic source.", model: "fixture-model", provider: "fixture", thinking: "off" },
+  }));
+  const completion = supervisor.complete({
+    ...ownership, expectedVersion: repository.version, logicalAgentId, runId, targetPath,
+  }).then((value) => ({ value }), (error) => ({ error }));
+  await waitForCondition(() => existsSync(messagesMarker));
+  const getRun = repository.getRun.bind(repository);
+  repository.getRun = async () => ({ ...await getRun(), outputAdmissionFrozen: true });
+  repository.updateAttempt = async () => { throw new Error("Output admission is frozen."); };
+  const aborting = supervisor.abortRun(runId);
+  assert.equal(await settlesWithin(aborting, 2_000), true);
+  await aborting;
+  assert.equal((await completion).error.code, "CANCELED");
+  const pid = Number(await readFile(startupMarker, "utf8"));
+  assert.throws(() => process.kill(pid, 0), (error) => error.code === "ESRCH");
+  assert.equal(repository.attempt.status, "running");
+});

@@ -93,6 +93,8 @@ export interface PhaseSessionSupervisorOptions {
 interface RunSessionState {
   activity: Promise<void>;
   authorityGeneration: number;
+  cancel: () => void;
+  canceled: Promise<void>;
   version: number;
 }
 
@@ -107,11 +109,14 @@ interface StartingSession {
 
 interface BoundSession {
   acceptActivity: boolean;
+  agentSettled: Promise<void>;
   attemptId: string;
   authority: PhaseInputPackage["authority"];
   activity: Promise<void>;
   claimToken: string;
   client: JsonlRpcClient;
+  completing: boolean;
+  completion?: Promise<void>;
   controllerId: string;
   logicalAgentId: string;
   phaseId: string;
@@ -170,9 +175,11 @@ export class PhaseSessionSupervisor {
 
   async #abortRun(runId: string): Promise<void> {
     this.#canceledRuns.add(runId);
+    this.#runStates.get(runId)?.cancel();
     const launches = [...this.#launches.values()].filter((launch) => launch.runId === runId);
     const bindings = [...this.#sessions.values()].filter((binding) => binding.runId === runId);
     const launchingAgents = new Set(launches.map((launch) => launch.logicalAgentId));
+    const completions = bindings.flatMap((binding) => binding.completion ? [binding.completion] : []);
     const clients = new Set<JsonlRpcClient>();
     for (const launch of launches) {
       launch.canceled = true;
@@ -185,12 +192,14 @@ export class PhaseSessionSupervisor {
     }
     const stopped = await Promise.allSettled([...clients].map((client) => client.stop()));
     await Promise.all(launches.map((launch) => launch.finished));
+    await Promise.all(completions);
     const settled = await Promise.allSettled(bindings.filter((binding) => !launchingAgents.has(binding.logicalAgentId)).map((binding) => (
       this.#queueRun(binding, async () => {
         const run = await this.#options.repository.getRun(binding.runId);
         if (run.status !== "running" || run.outputAdmissionFrozen) return;
         const agent = await this.#options.repository.getAgent(binding.runId, binding.logicalAgentId);
-        if (agent.attempts.find((attempt) => attempt.id === binding.attemptId)?.status === "canceled") return;
+        const attempt = agent.attempts.find((attempt) => attempt.id === binding.attemptId);
+        if (!attempt || (attempt.status !== "starting" && attempt.status !== "running")) return;
         const canceled = await this.#options.repository.updateAttempt({
           attemptId: binding.attemptId,
           claimToken: binding.claimToken,
@@ -208,9 +217,9 @@ export class PhaseSessionSupervisor {
           runId: binding.runId,
           status: "canceled",
         }).catch(async (error: unknown) => {
-          const current = await this.#options.repository.getRun(binding.runId);
-          if (!current.outputAdmissionFrozen) throw error;
-          return undefined;
+          const current = await this.#options.repository.getRun(binding.runId).catch(() => undefined);
+          if (current?.outputAdmissionFrozen) return undefined;
+          throw error;
         });
         if (canceled) this.#advanceRunState(binding.runState, canceled.version, true);
       })
@@ -271,8 +280,11 @@ export class PhaseSessionSupervisor {
       redact: (text) => credential ? text.split(credential).join("[REDACTED]") : text,
       requestTimeoutMs: this.#options.requestTimeoutMs,
     });
+    let settleAgent!: () => void;
+    const agentSettled = new Promise<void>((resolve) => { settleAgent = resolve; });
     const binding: BoundSession = {
       acceptActivity: true,
+      agentSettled,
       attemptId: request.attemptId,
       authority: {
         artifactRoot: resolve(request.input.authority.artifactRoot),
@@ -281,6 +293,7 @@ export class PhaseSessionSupervisor {
       activity: Promise.resolve(),
       claimToken: request.claimToken,
       client,
+      completing: false,
       controllerId: request.controllerId,
       logicalAgentId: request.logicalAgentId,
       phaseId: request.input.phaseId,
@@ -333,12 +346,14 @@ export class PhaseSessionSupervisor {
       client.onEvent((event) => {
         if (!isMeaningfulActivity(event.type)) return;
         void this.#queueRun(binding, () => this.#recordActivity(binding, event)).catch(() => undefined);
+        if (event.type === "agent_settled") settleAgent();
       });
       void this.#monitorExit(binding).catch(() => undefined);
       await client.request({
         type: "prompt",
         message: `${request.role.instructions}\n\nPhase input:\n${JSON.stringify(request.input)}`,
       });
+      await this.#waitForAgent(binding);
       const activity = runState.activity;
       await activity;
       this.#throwIfCanceled(launch);
@@ -370,17 +385,128 @@ export class PhaseSessionSupervisor {
           runId: request.input.runId,
           status: launch.canceled ? "canceled" : "failed",
         }).catch(async (error: unknown) => {
-          if (launch.canceled) {
-            const current = await this.#options.repository.getRun(request.input.runId);
-            if (!current.outputAdmissionFrozen) launch.cleanupError = error;
-          }
-          return undefined;
+          const current = await this.#options.repository.getRun(binding.runId).catch(() => undefined);
+          if (current?.outputAdmissionFrozen) return undefined;
+          if (launch.canceled) launch.cleanupError = error;
+          throw error;
         });
         if (failed) this.#advanceRunState(runState, failed.version, true);
       });
       this.#throwIfCanceled(launch);
       throw error;
     }
+  }
+
+  async complete(
+    request: AgentControlRequest,
+    validateTranscript?: (transcript: unknown) => void,
+  ): Promise<{ transcript: unknown; version: number }> {
+    const binding = this.#sessions.get(request.logicalAgentId);
+    if (!binding) throw new Error("Logical agent has no bound RPC session.");
+    if (binding.completion) throw new Error("Logical agent is already completing.");
+    const completion = this.#completeSession(binding, request, validateTranscript);
+    const finished = completion.then(() => undefined, () => undefined);
+    binding.completion = finished;
+    try {
+      return await completion;
+    } finally {
+      if (binding.completion === finished) binding.completion = undefined;
+    }
+  }
+
+  async #completeSession(
+    binding: BoundSession,
+    request: AgentControlRequest,
+    validateTranscript?: (transcript: unknown) => void,
+  ): Promise<{ transcript: unknown; version: number }> {
+    const authorityGeneration = binding.runState.authorityGeneration;
+    if (binding.runState.version > request.expectedVersion) {
+      throw new Error("Agent control authority does not match the active run.");
+    }
+    await this.#queueRun(binding, async () => {
+      if (binding.runState.authorityGeneration !== authorityGeneration || binding.completing) {
+        throw new Error("Agent control authority does not match the active run.");
+      }
+      await this.#authorize(request, Math.max(binding.runState.version, request.expectedVersion));
+      if (
+        this.#sessions.get(request.logicalAgentId) !== binding
+        || binding.runState.authorityGeneration !== authorityGeneration
+      ) {
+        throw new Error("Agent control authority does not match the active run.");
+      }
+      binding.completing = true;
+    });
+
+    let transcript: unknown;
+    let failure: unknown;
+    let status: "completed" | "failed" = "completed";
+    let stopped = false;
+    try {
+      // Settlement and RPC responses can enqueue activity; never await them inside the run queue.
+      await this.#waitForAgent(binding);
+      transcript = (await this.#whileActive(binding, binding.client.request({ type: "get_messages" }))).data;
+      this.#throwIfRunCanceled(binding.runId);
+      validateTranscript?.(transcript);
+    } catch (error) {
+      failure = error;
+      status = "failed";
+    }
+    try {
+      // Keep the binding discoverable until shutdown finishes so abortRun can join this cleanup.
+      await binding.client.stop();
+      stopped = true;
+    } catch (error) {
+      failure = status === "failed"
+        ? new AggregateError([failure, error], "Phase completion and RPC cleanup failed.")
+        : error;
+      status = "failed";
+    }
+
+    const completed = await this.#queueRun(binding, async () => {
+      try {
+        const run = await this.#options.repository.getRun(binding.runId);
+        this.#throwIfRunCanceled(binding.runId);
+        if (run.outputAdmissionFrozen || run.status === "canceled") {
+          throw Object.assign(new Error("Workflow run was canceled during completion."), { code: "CANCELED" });
+        }
+        await this.#authorize(request, run.version);
+        const mutation = await this.#options.repository.updateAttempt({
+          attemptId: binding.attemptId,
+          claimToken: binding.claimToken,
+          controllerId: binding.controllerId,
+          details: {},
+          event: {
+            attemptId: binding.attemptId,
+            category: "domain",
+            kind: `agent.attempt_${status}`,
+            logicalAgentId: binding.logicalAgentId,
+            phaseId: binding.phaseId,
+            source: "runtime",
+          },
+          expectedVersion: run.version,
+          ...(status === "failed" ? { failureCategory: classifyAttemptFailure(failure, 1, 1, false).category } : {}),
+          runId: binding.runId,
+          status,
+        });
+        this.#advanceRunState(binding.runState, mutation.version, true);
+        return mutation;
+      } catch (error) {
+        const current = await this.#options.repository.getRun(binding.runId).catch(() => undefined);
+        if (current?.outputAdmissionFrozen) {
+          throw Object.assign(new Error("Workflow run was canceled during completion."), { code: "CANCELED" });
+        }
+        throw error;
+      } finally {
+        // Every event emitted before child exit is ahead of this finalization in the run queue.
+        binding.acceptActivity = false;
+        if (stopped && this.#sessions.get(binding.logicalAgentId) === binding) {
+          this.#sessions.delete(binding.logicalAgentId);
+        }
+      }
+    });
+    this.#throwIfRunCanceled(binding.runId);
+    if (status === "failed") throw failure;
+    return { transcript, version: completed.version };
   }
 
   async control(request: AgentControlRequest, control: AgentControl): Promise<unknown> {
@@ -392,7 +518,7 @@ export class PhaseSessionSupervisor {
       throw new Error("Agent control authority does not match the active run.");
     }
     const prepared = await this.#queueRun(binding, async () => {
-      if (binding.runState.authorityGeneration !== authorityGeneration) {
+      if (binding.runState.authorityGeneration !== authorityGeneration || binding.completing) {
         throw new Error("Agent control authority does not match the active run.");
       }
       const authorizedVersion = Math.max(binding.runState.version, expectedVersion);
@@ -453,6 +579,10 @@ export class PhaseSessionSupervisor {
     await authorized.client.stop();
     return await this.#queueRun(authorized, async () => {
       const run = await this.#options.repository.getRun(authorized.runId);
+      if (run.status !== "running" || run.outputAdmissionFrozen || this.#canceledRuns.has(authorized.runId)) {
+        this.#sessions.delete(authorized.logicalAgentId);
+        return { version: run.version };
+      }
       const agent = await this.#options.repository.getAgent(authorized.runId, authorized.logicalAgentId);
       if (agent.attempts.find((attempt) => attempt.id === authorized.attemptId)?.status === "canceled") {
         this.#sessions.delete(authorized.logicalAgentId);
@@ -474,6 +604,10 @@ export class PhaseSessionSupervisor {
         expectedVersion: run.version,
         runId: authorized.runId,
         status: "canceled",
+      }).catch(async (error: unknown) => {
+        const current = await this.#options.repository.getRun(authorized.runId).catch(() => undefined);
+        if (!current?.outputAdmissionFrozen) throw error;
+        return { version: current.version };
       });
       this.#advanceRunState(authorized.runState, settled.version, true);
       this.#sessions.delete(authorized.logicalAgentId);
@@ -483,6 +617,32 @@ export class PhaseSessionSupervisor {
 
   #throwIfCanceled(launch: StartingSession): void {
     if (launch.canceled) throw Object.assign(new Error("Phase launch was canceled."), { code: "CANCELED" });
+  }
+
+  #throwIfRunCanceled(runId: string): void {
+    if (this.#canceledRuns.has(runId)) {
+      throw Object.assign(new Error("Workflow run was canceled."), { code: "CANCELED" });
+    }
+  }
+
+  async #whileActive<T>(binding: BoundSession, operation: Promise<T>): Promise<T> {
+    const result = await Promise.race([
+      operation,
+      binding.runState.canceled.then(() => {
+        throw Object.assign(new Error("Workflow run was canceled."), { code: "CANCELED" });
+      }),
+    ]);
+    this.#throwIfRunCanceled(binding.runId);
+    return result;
+  }
+
+  async #waitForAgent(binding: BoundSession): Promise<void> {
+    await this.#whileActive(binding, Promise.race([
+      binding.agentSettled,
+      binding.client.waitForExit().then(() => {
+        throw new JsonlRpcError("Pi RPC process exited before the phase settled.", "process");
+      }),
+    ]));
   }
 
   #queueRun<T>(binding: BoundSession, operation: () => Promise<T>): Promise<T> {
@@ -500,12 +660,17 @@ export class PhaseSessionSupervisor {
       this.#advanceRunState(existing, version, true);
       return existing;
     }
+    let cancel!: () => void;
+    const canceled = new Promise<void>((resolve) => { cancel = resolve; });
     const state: RunSessionState = {
       activity: Promise.resolve(),
       authorityGeneration: 0,
+      cancel,
+      canceled,
       version,
     };
     this.#runStates.set(runId, state);
+    if (this.#canceledRuns.has(runId)) cancel();
     return state;
   }
 
@@ -518,11 +683,13 @@ export class PhaseSessionSupervisor {
   async #authorize(request: AgentControlRequest, expectedVersion: number): Promise<BoundSession> {
     const binding = this.#sessions.get(request.logicalAgentId);
     if (!binding || !binding.acceptActivity) throw new Error("Logical agent has no bound RPC session.");
+    this.#throwIfRunCanceled(request.runId);
     const run = await this.#options.repository.getRun(request.runId);
     if (
       run.controllerId !== request.controllerId ||
       run.targetPath !== resolve(request.targetPath) ||
       run.status !== "running" ||
+      run.outputAdmissionFrozen ||
       run.version !== expectedVersion
     ) {
       throw new Error("Agent control authority does not match the active run.");
@@ -579,8 +746,14 @@ export class PhaseSessionSupervisor {
 
   async #monitorExit(binding: BoundSession): Promise<void> {
     await binding.client.waitForExit();
+    const launch = this.#launches.get(binding.logicalAgentId);
+    if (launch?.client === binding.client) await launch.finished;
     await this.#drainActivity(binding);
-    if (this.#sessions.get(binding.logicalAgentId) !== binding || !binding.acceptActivity) return;
+    if (
+      this.#sessions.get(binding.logicalAgentId) !== binding
+      || !binding.acceptActivity
+      || binding.completing
+    ) return;
     binding.acceptActivity = false;
     this.#sessions.delete(binding.logicalAgentId);
     await this.#queueRun(binding, async () => {
@@ -622,6 +795,8 @@ export function classifyAttemptFailure(
   }
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
   switch (code) {
+    case "CANCELED":
+      return { category: "canceled", replace: false };
     case "POLICY_DENIED":
       return { category: "policy", replace: false };
     case "AUTHORITY_MISMATCH":

@@ -124,17 +124,20 @@ export function createArtifactWorkflowServices(options: {
         scanId: options.scanId,
         threatModel: report.threatModel,
       };
-      const writeContext = await context(true);
-      await recordPiSecurityScanDraftViaWorkbench(
-        writeContext,
-        input,
-        options.runWorkbench,
-      );
-      const completionArguments = ["complete-scan", "--scan-id", options.scanId];
-      if (options.handoffClaimToken) {
-        completionArguments.push("--claim-token", options.handoffClaimToken);
+      const existing = await context(false);
+      if (existing.status !== "complete") {
+        await recordPiSecurityScanDraftViaWorkbench(
+          await context(true),
+          input,
+          options.runWorkbench,
+        );
+        await options.runWorkbench([
+          "complete-scan",
+          "--scan-id",
+          options.scanId,
+          ...(options.handoffClaimToken ? ["--claim-token", options.handoffClaimToken] : []),
+        ]);
       }
-      await options.runWorkbench(completionArguments);
       await getPiSecurityCompletedScan(
         await context(false),
         { handoffClaimToken: options.handoffClaimToken, scanId: options.scanId },

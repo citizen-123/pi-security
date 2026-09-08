@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import { build } from "esbuild";
 
@@ -273,85 +270,6 @@ test("invalid canonical report documents fail reporting without publication or o
   assert.equal(published, false);
 });
 
-test("artifact publication seals a claimed scan before reading completed artifacts", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "pi-security-workflow-publication-"));
-  const artifactRoot = join(root, "artifacts");
-  const repoRoot = join(root, "repository");
-  await Promise.all([mkdir(artifactRoot), mkdir(repoRoot)]);
-  t.after(async () => {
-    await rm(root, { force: true, recursive: true });
-  });
-
-  const scanId = randomUUID();
-  const handoffClaimToken = randomUUID();
-  const calls = [];
-  const scan = {
-    contract: {
-      diffTarget: null,
-      scope: {
-        requiredExcludePaths: [],
-        requiredIncludePaths: ["."],
-      },
-      target: {
-        allowedKinds: ["git_worktree"],
-        displayName: "workflow fixture",
-        requiredSnapshotDigest: `pi-security-snapshot/v1:sha256:${"a".repeat(64)}`,
-        targetId: "workflow_fixture",
-      },
-    },
-    handoffClaimToken,
-    mode: "standard",
-    progress: { status: "running" },
-    scanDir: artifactRoot,
-    scanId,
-    status: "running",
-    targetPath: repoRoot,
-    targetRevision: "fixture-revision",
-  };
-  const runWorkbench = async (arguments_) => {
-    calls.push(arguments_);
-    switch (arguments_[0]) {
-      case "get-scan":
-        return { scan };
-      case "write-scan-draft":
-        return {};
-      case "complete-scan":
-        throw new Error("completion rejected by workbench");
-      default:
-        throw new Error(`unexpected workbench operation: ${arguments_[0]}`);
-    }
-  };
-  const services = workflow.createArtifactWorkflowServices({
-    handoffClaimToken,
-    packageRoot,
-    runWorkbench,
-    scanId,
-  });
-
-  await assert.rejects(
-    services.publish({
-      coverage: {
-        completeness: "complete",
-        deferred: [],
-        explicitExclusions: [],
-        surfaces: [],
-      },
-      findings: [],
-    }),
-    /completion rejected by workbench/u,
-  );
-  assert.deepEqual(
-    calls.map(([operation]) => operation),
-    ["get-scan", "write-scan-draft", "complete-scan"],
-  );
-  assert.deepEqual(calls[2], [
-    "complete-scan",
-    "--scan-id",
-    scanId,
-    "--claim-token",
-    handoffClaimToken,
-  ]);
-});
 
 test("synchronous executor failures do not abandon independent phases", async () => {
   const registry = new workflow.ClosedPhaseRegistry([

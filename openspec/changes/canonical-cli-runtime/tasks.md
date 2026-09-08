@@ -57,9 +57,9 @@
 
 ## 8. Documentation and End-to-End Verification
 
-- [ ] 8.1 Document CLI commands, TOML precedence, role settings, credential forms and redaction, foreground ownership, terminal outcomes, cancellation, explicit resume, and linked retry in package and root user documentation; verify every documented command appears in generated CLI help.
-- [ ] 8.2 Add synthetic end-to-end fixtures for completed, failed, canceled, interrupted/resumed, and failed/retried full-repository runs; verify each scenario exercises the packaged CLI against a temporary repository and fake Pi RPC process.
-- [ ] 8.3 Add credential-canary coverage across SQLite state, domain/activity events, artifacts, reports, rendered output, errors, and child-process arguments; verify the synthetic credential is absent from every captured durable and user-facing output.
-- [ ] 8.4 Run `npm run typecheck` from the repository root and resolve every reported TypeScript error.
-- [ ] 8.5 Run `npm test` from the repository root and resolve every Node and Python behavioral regression.
-- [ ] 8.6 Run `npm run test:pack` from the repository root and verify both publication archives contain the CLI and required assets without tests, caches, state, or undeclared files.
+- [x] 8.1 Document CLI commands, TOML precedence, role settings, credential forms and redaction, foreground ownership, terminal outcomes, cancellation, explicit resume, and linked retry in package and root user documentation; verify every documented command appears in generated CLI help.
+- [x] 8.2 Add synthetic end-to-end fixtures for completed, failed, canceled, interrupted/resumed, and failed/retried full-repository runs; verify each scenario exercises the packaged CLI against a temporary repository and fake Pi RPC process.
+- [x] 8.3 Add credential-canary coverage across SQLite state, domain/activity events, artifacts, reports, rendered output, errors, and child-process arguments; verify the synthetic credential is absent from every captured durable and user-facing output.
+- [x] 8.4 Run `npm run typecheck` from the repository root and resolve every reported TypeScript error.
+- [x] 8.5 Run `npm test` from the repository root and resolve every Node and Python behavioral regression.
+- [x] 8.6 Run `npm run test:pack` from the repository root and verify both publication archives contain the CLI and required assets without tests, caches, state, or undeclared files.
