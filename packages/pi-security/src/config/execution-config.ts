@@ -210,7 +210,7 @@ export function createExecutionSnapshot(config: ResolvedExecutionConfig): Execut
 export function executionSnapshotDigest(resolved: SanitizedExecutionConfig): string {
   const { provenance: _provenance, roles, ...settings } = resolved;
   const semanticRoles = Object.fromEntries(Object.entries(roles).map(([id, { credential: _credential, ...role }]) => [id, role]));
-  return createHash("sha256").update(stableJson({ ...settings, roles: semanticRoles })).digest("hex");
+  return `sha256:${createHash("sha256").update(stableJson({ ...settings, roles: semanticRoles })).digest("hex")}`;
 }
 
 export async function resolveCredential(
