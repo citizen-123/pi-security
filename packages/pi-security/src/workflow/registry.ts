@@ -56,6 +56,9 @@ export class ClosedPhaseRegistry {
   constructor(definitions: readonly PhaseTypeDefinition[]) {
     const entries: Array<[string, PhaseTypeDefinition]> = [];
     for (const definition of definitions) {
+      if (!definition.type.trim() || !Number.isInteger(definition.version) || definition.version < 1) {
+        throw new Error("Workflow phase type identity and version are required.");
+      }
       const key = phaseTypeKey(definition.type, definition.version);
       if (entries.some(([existing]) => existing === key)) {
         throw new Error(`Duplicate workflow phase type: ${key}`);
@@ -95,6 +98,21 @@ export function validateWorkflow(
   if (!workflow.id.trim() || !Number.isInteger(workflow.version) || workflow.version < 1) {
     throw new Error("Workflow identity and version are required.");
   }
+  workflow = {
+    ...workflow,
+    phases: workflow.phases.map((phase) => {
+      const snapshot = {
+        ...phase,
+        bindings: Object.freeze(Object.fromEntries(
+          Object.entries(phase.bindings ?? {}).map(([name, binding]) => [name, Object.freeze({ ...binding })]),
+        )),
+        dependencies: [...phase.dependencies],
+      };
+      Object.freeze(snapshot.dependencies);
+      return Object.freeze(snapshot);
+    }),
+  };
+  Object.freeze(workflow.phases);
   const phases = new Map<string, WorkflowPhaseDefinition>();
   for (const phase of workflow.phases) {
     if (!phase.id.trim()) throw new Error("Workflow phase identity is required.");
@@ -122,7 +140,7 @@ export function validateWorkflow(
       }
     }
     for (const required of Object.keys(definition.inputContracts)) {
-      if (!phase.bindings?.[required]) {
+      if (!Object.hasOwn(phase.bindings ?? {}, required)) {
         throw new Error(`Workflow phase ${phase.id} is missing input binding ${required}.`);
       }
     }
@@ -142,7 +160,8 @@ export function validateWorkflow(
       for (const dependencies of pendingDependencies.values()) dependencies.delete(phase.id);
     }
   }
-  return { definition: workflow, order };
+  Object.freeze(order);
+  return Object.freeze({ definition: Object.freeze(workflow), order });
 }
 
 export const jsonObjectSchema = z.record(z.string(), z.unknown());
