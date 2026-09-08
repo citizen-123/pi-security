@@ -39,6 +39,10 @@ export function parsePhaseResultEnvelope(
   expected: { outputSchema: ZodType; phaseId: string; runId: string }
 ): unknown {
   if (
+    !envelope ||
+    typeof envelope !== "object" ||
+    Array.isArray(envelope) ||
+    !Object.hasOwn(envelope, "output") ||
     envelope.schemaVersion !== 1 ||
     envelope.runId !== expected.runId ||
     envelope.phaseId !== expected.phaseId ||
@@ -67,20 +71,22 @@ interface SettledExecution {
 }
 
 export class PhaseResultAdmission {
-  readonly #admittedPhases = new Set<string>();
-  readonly #deliveredAttempts = new Set<string>();
+  readonly #admittedPhases = new Map<string, Set<string>>();
 
   admit(
     envelope: PhaseResultEnvelope,
     expected: { outputSchema: ZodType; phaseId: string; runId: string }
   ): { accepted: boolean; output?: unknown } {
-    const output = parsePhaseResultEnvelope(envelope, expected);
-    const deliveryKey = `${envelope.phaseId}:${envelope.attemptId}`;
-    if (this.#deliveredAttempts.has(deliveryKey) || this.#admittedPhases.has(envelope.phaseId)) {
+    if (this.#admittedPhases.get(expected.runId)?.has(expected.phaseId)) {
       return { accepted: false };
     }
-    this.#deliveredAttempts.add(deliveryKey);
-    this.#admittedPhases.add(envelope.phaseId);
+    const output = parsePhaseResultEnvelope(envelope, expected);
+    let phases = this.#admittedPhases.get(expected.runId);
+    if (!phases) {
+      phases = new Set();
+      this.#admittedPhases.set(expected.runId, phases);
+    }
+    phases.add(expected.phaseId);
     return { accepted: true, output };
   }
 }
@@ -89,11 +95,16 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
   if (!Number.isInteger(options.maxParallel) || options.maxParallel < 1) {
     throw new Error("Workflow maxParallel must be a positive integer.");
   }
+  for (const phase of options.workflow.definition.phases) {
+    if (!Object.hasOwn(options.executors, phase.type) || typeof options.executors[phase.type] !== "function") {
+      throw new Error(`No workflow executor is registered for ${phase.type}.`);
+    }
+  }
   const states: Record<string, WorkflowPhaseState> = Object.fromEntries(
     options.workflow.definition.phases.map((phase) => [phase.id, "pending"])
   );
-  const outputs: Record<string, unknown> = {};
-  const errors: Record<string, string> = {};
+  const outputs = new Map<string, unknown>();
+  const errors = new Map<string, string>();
   const running = new Map<string, Promise<SettledExecution>>();
   const admission = new PhaseResultAdmission();
   const signal = options.signal ?? new AbortController().signal;
@@ -110,16 +121,18 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
     }
     if (!signal.aborted) {
       for (const phaseId of options.workflow.order) {
-        if (running.size >= options.maxParallel) break;
+        if (signal.aborted || running.size >= options.maxParallel) break;
         if (states[phaseId] !== "ready") continue;
         const phase = phaseById(options.workflow, phaseId);
         const executor = options.executors[phase.type];
-        if (!executor) throw new Error(`No workflow executor is registered for ${phase.type}.`);
         setState(states, phase.id, "running", options.onStateChange);
         const inputs = Object.fromEntries(
-          Object.entries(phase.bindings ?? {}).map(([name, binding]) => [name, outputs[binding.from]])
+          Object.entries(phase.bindings ?? {}).map(([name, binding]) => [name, outputs.get(binding.from)])
         );
-        const execution = executor({ inputs, phase, runId: options.runId, signal })
+        const execution = Promise.resolve().then(() => {
+          signal.throwIfAborted();
+          return executor({ inputs, phase, runId: options.runId, signal });
+        })
           .then((result): SettledExecution => ({
             deliveries: Array.isArray(result) ? result : [result],
             phaseId: phase.id,
@@ -151,8 +164,8 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
       setState(states, settled.phaseId, "canceled", options.onStateChange);
       continue;
     }
-    if (settled.error !== undefined) {
-      errors[settled.phaseId] = errorMessage(settled.error);
+    if ("error" in settled) {
+      errors.set(settled.phaseId, errorMessage(settled.error));
       setState(states, settled.phaseId, "failed", options.onStateChange);
       continue;
     }
@@ -167,13 +180,14 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
           runId: options.runId,
         });
         if (!result.accepted) continue;
-        outputs[phase.id] = result.output;
+        outputs.set(phase.id, result.output);
         accepted = true;
+        break;
       }
       if (!accepted) throw new Error("Phase execution produced no admissible structured result.");
       setState(states, phase.id, "completed", options.onStateChange);
     } catch (error) {
-      errors[settled.phaseId] = errorMessage(error);
+      errors.set(settled.phaseId, errorMessage(error));
       setState(states, settled.phaseId, "failed", options.onStateChange);
     }
   }
@@ -183,7 +197,7 @@ export async function scheduleWorkflow(options: WorkflowSchedulerOptions): Promi
     : Object.values(states).includes("failed")
       ? "failed"
       : "completed";
-  return { errors, outputs, states, status };
+  return { errors: Object.fromEntries(errors), outputs: Object.fromEntries(outputs), states, status };
 }
 
 function updateReadyAndSkipped(
@@ -216,7 +230,11 @@ function setState(
   notify?: (phaseId: string, state: WorkflowPhaseState) => void
 ): void {
   states[phaseId] = state;
-  notify?.(phaseId, state);
+  try {
+    notify?.(phaseId, state);
+  } catch {
+    // Optional progress observers must not stop workflow execution.
+  }
 }
 
 function errorMessage(error: unknown): string {

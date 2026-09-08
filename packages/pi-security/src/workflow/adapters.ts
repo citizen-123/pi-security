@@ -50,7 +50,9 @@ export function createBuiltInPhaseExecutors(
   runModel: ModelPhaseRunner
 ): Readonly<Record<string, PhaseExecutor>> {
   const model = (sideEffect?: (output: unknown) => Promise<void>): PhaseExecutor => async (context) => {
+    context.signal.throwIfAborted();
     const delivery = await runModel(context);
+    context.signal.throwIfAborted();
     const definition = BUILT_IN_PHASE_REGISTRY.get(context.phase.type, context.phase.version);
     const output = parsePhaseResultEnvelope(delivery, {
       outputSchema: definition.outputSchema,
@@ -64,8 +66,12 @@ export function createBuiltInPhaseExecutors(
   return Object.freeze({
     "attack-path": model((output) => services.recordAttackPaths(output as AttackPathOutput)),
     discovery: model((output) => services.recordDiscovery(output as DiscoveryOutput)),
-    preflight: async (context) => hostDelivery(context, await services.prepareReviewItems()),
+    preflight: async (context) => {
+      context.signal.throwIfAborted();
+      return hostDelivery(context, await services.prepareReviewItems());
+    },
     publication: async (context) => {
+      context.signal.throwIfAborted();
       const report = context.inputs.report as {
         coverage: Record<string, unknown>;
         findings: Record<string, unknown>[];
@@ -118,11 +124,17 @@ export function createArtifactWorkflowServices(options: {
         scanId: options.scanId,
         threatModel: report.threatModel,
       };
+      const writeContext = await context(true);
       await recordPiSecurityScanDraftViaWorkbench(
-        await context(true),
+        writeContext,
         input,
         options.runWorkbench,
       );
+      const completionArguments = ["complete-scan", "--scan-id", options.scanId];
+      if (options.handoffClaimToken) {
+        completionArguments.push("--claim-token", options.handoffClaimToken);
+      }
+      await options.runWorkbench(completionArguments);
       await getPiSecurityCompletedScan(
         await context(false),
         { handoffClaimToken: options.handoffClaimToken, scanId: options.scanId },

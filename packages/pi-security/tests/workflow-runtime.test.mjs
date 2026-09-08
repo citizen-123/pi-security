@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { build } from "esbuild";
 
@@ -188,6 +191,13 @@ test("phase result validation rejects free-form, absent, malformed, and incompat
   const expected = { outputSchema: z.object({ value: z.string() }).strict(), phaseId: "phase", runId: "run" };
   assert.throws(() => admission.admit("done", expected));
   assert.throws(() => admission.admit({ attemptId: "a", phaseId: "phase", runId: "run", schemaVersion: 1 }, expected));
+  assert.throws(
+    () => admission.admit(
+      { attemptId: "a", phaseId: "phase", runId: "run", schemaVersion: 1 },
+      { ...expected, outputSchema: z.unknown() },
+    ),
+    (error) => error.code === "CONTRACT_INCOMPATIBLE",
+  );
   assert.throws(() => admission.admit({ attemptId: "a", output: { value: 1 }, phaseId: "phase", runId: "run", schemaVersion: 1 }, expected));
   assert.throws(
     () => admission.admit({ attemptId: "a", output: { value: "ok" }, phaseId: "other", runId: "run", schemaVersion: 1 }, expected),
@@ -198,76 +208,376 @@ test("phase result validation rejects free-form, absent, malformed, and incompat
   assert.deepEqual(admission.admit(valid, expected), { accepted: false });
 });
 
-test("built-in workflow snapshot, explicit inputs, and fake-agent adapters preserve canonical artifacts", async () => {
-  assert.deepEqual(
-    workflow.FULL_REPOSITORY_WORKFLOW.phases.map((entry) => [entry.id, entry.type, entry.roleId ?? null]),
-    [
-      ["preflight", "preflight", null],
-      ["threat-model", "threat-model", "threat_modeler"],
-      ["discovery", "discovery", "discoverer"],
-      ["reduction", "reduction", "reducer"],
-      ["validation", "validation", "validator"],
-      ["attack-path", "attack-path", "attack_path_analyst"],
-      ["reporting", "reporting", "reporter"],
-      ["publication", "publication", null],
-    ],
-  );
-  const discovery = workflow.FULL_REPOSITORY_WORKFLOW.phases.find((entry) => entry.id === "discovery");
-  const input = workflow.assemblePhaseInputPackage({
-    artifactRoot: "/synthetic/artifacts",
-    evidenceReferences: ["artifacts/01_threat_model.json"],
-    outputs: {
-      preflight: { reviewItemsTotal: 2 },
-      "threat-model": { threatModel: { surfaces: [] } },
+test("model input packages expose executable output schemas without unbound upstream outputs", () => {
+  const outputs = {
+    preflight: { reviewItemsTotal: 2 },
+    "threat-model": { threatModel: { summary: "Synthetic repository trust boundaries." } },
+    discovery: { candidates: [] },
+    reduction: { findings: [] },
+    validation: { validations: [] },
+    "attack-path": { attackPaths: [] },
+    reporting: {
+      coverage: { completeness: "complete", surfaces: [], explicitExclusions: [], deferred: [] },
+      findings: [],
     },
-    phase: discovery,
-    role: { instructions: "Discover candidates.", model: "fixture-model", provider: "fixture", thinking: "medium" },
-    scanId: "synthetic-scan",
-    runId: "synthetic-run",
-    target: { path: "/synthetic/repository", revision: "fixture-revision" },
-  });
-  assert.deepEqual(Object.keys(input.requiredInputs), ["inventory", "threatModel"]);
-  assert.equal(input.role.model, "fixture-model");
-  assert.equal(JSON.stringify(input).includes("transcript"), false);
+  };
+  for (const current of workflow.FULL_REPOSITORY_WORKFLOW.phases.filter((entry) => entry.roleId)) {
+    const input = workflow.assemblePhaseInputPackage({
+      artifactRoot: "/synthetic/artifacts",
+      evidenceReferences: [],
+      outputs,
+      phase: current,
+      role: { instructions: "Return the phase result.", model: "fixture-model", provider: "fixture", thinking: "medium" },
+      scanId: "synthetic-scan",
+      runId: "synthetic-run",
+      target: { path: "/synthetic/repository", revision: "fixture-revision" },
+    });
+    const contract = JSON.parse(JSON.stringify(input.outputContract));
+    const schema = z.fromJSONSchema(contract.schema);
+    assert.deepEqual(schema.parse(outputs[current.id]), outputs[current.id]);
+    assert.equal(schema.safeParse({}).success, false);
+    for (const [name, binding] of Object.entries(current.bindings)) {
+      assert.deepEqual(input.requiredInputs[name], outputs[binding.from]);
+    }
+    assert.equal(Object.hasOwn(input.requiredInputs, "reporting"), false);
+  }
+});
 
-  const calls = [];
-  const artifacts = {
-    coverage: "coverage.json",
-    findings: "findings.json",
-    manifest: "scan-manifest.json",
-    report: "report.md",
-    sarif: "exports/results.sarif",
-  };
-  const services = {
-    prepareReviewItems: async () => ({ reviewItemsTotal: 2 }),
-    publish: async (report) => {
-      calls.push(["publication", report]);
-      return { artifacts };
-    },
-    recordAttackPaths: async (output) => calls.push(["attack-path", output]),
-    recordDiscovery: async (output) => calls.push(["discovery", output]),
-    recordValidations: async (output) => calls.push(["validation", output]),
-  };
-  const outputByType = {
+test("invalid canonical report documents fail reporting without publication or output admission", async () => {
+  let published = false;
+  const executors = workflow.createBuiltInPhaseExecutors({
+    prepareReviewItems: async () => ({ reviewItemsTotal: 0 }),
+    publish: async () => { published = true; throw new Error("Invalid report reached publication."); },
+    recordAttackPaths: async () => {},
+    recordDiscovery: async () => {},
+    recordValidations: async () => {},
+  }, async (context) => delivery(context, {
     "attack-path": { attackPaths: [] },
     discovery: { candidates: [] },
     reduction: { findings: [] },
-    reporting: { coverage: { surfaces: [] }, findings: [], threatModel: { surfaces: [] } },
-    "threat-model": { threatModel: { surfaces: [] } },
+    reporting: { coverage: { surfaces: [] }, findings: [{}] },
+    "threat-model": { threatModel: { summary: "Synthetic repository trust boundaries." } },
     validation: { validations: [] },
-  };
-  const runId = randomUUID();
-  const executors = workflow.createBuiltInPhaseExecutors(services, async (context) =>
-    delivery(context, outputByType[context.phase.type])
-  );
+  }[context.phase.type]));
   const result = await workflow.scheduleWorkflow({
     executors,
     maxParallel: 3,
     registry: workflow.BUILT_IN_PHASE_REGISTRY,
-    runId,
+    runId: randomUUID(),
     workflow: workflow.VALIDATED_FULL_REPOSITORY_WORKFLOW,
   });
+  assert.equal(result.status, "failed");
+  assert.equal(result.states.reporting, "failed");
+  assert.equal(result.states.publication, "skipped");
+  assert.equal(Object.hasOwn(result.outputs, "reporting"), false);
+  assert.equal(published, false);
+});
+
+test("artifact publication seals a claimed scan before reading completed artifacts", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "pi-security-workflow-publication-"));
+  const artifactRoot = join(root, "artifacts");
+  const repoRoot = join(root, "repository");
+  await Promise.all([mkdir(artifactRoot), mkdir(repoRoot)]);
+  t.after(async () => {
+    await rm(root, { force: true, recursive: true });
+  });
+
+  const scanId = randomUUID();
+  const handoffClaimToken = randomUUID();
+  const calls = [];
+  const scan = {
+    contract: {
+      diffTarget: null,
+      scope: {
+        requiredExcludePaths: [],
+        requiredIncludePaths: ["."],
+      },
+      target: {
+        allowedKinds: ["git_worktree"],
+        displayName: "workflow fixture",
+        requiredSnapshotDigest: `pi-security-snapshot/v1:sha256:${"a".repeat(64)}`,
+        targetId: "workflow_fixture",
+      },
+    },
+    handoffClaimToken,
+    mode: "standard",
+    progress: { status: "running" },
+    scanDir: artifactRoot,
+    scanId,
+    status: "running",
+    targetPath: repoRoot,
+    targetRevision: "fixture-revision",
+  };
+  const runWorkbench = async (arguments_) => {
+    calls.push(arguments_);
+    switch (arguments_[0]) {
+      case "get-scan":
+        return { scan };
+      case "write-scan-draft":
+        return {};
+      case "complete-scan":
+        throw new Error("completion rejected by workbench");
+      default:
+        throw new Error(`unexpected workbench operation: ${arguments_[0]}`);
+    }
+  };
+  const services = workflow.createArtifactWorkflowServices({
+    handoffClaimToken,
+    packageRoot,
+    runWorkbench,
+    scanId,
+  });
+
+  await assert.rejects(
+    services.publish({
+      coverage: {
+        completeness: "complete",
+        deferred: [],
+        explicitExclusions: [],
+        surfaces: [],
+      },
+      findings: [],
+    }),
+    /completion rejected by workbench/u,
+  );
+  assert.deepEqual(
+    calls.map(([operation]) => operation),
+    ["get-scan", "write-scan-draft", "complete-scan"],
+  );
+  assert.deepEqual(calls[2], [
+    "complete-scan",
+    "--scan-id",
+    scanId,
+    "--claim-token",
+    handoffClaimToken,
+  ]);
+});
+
+test("synchronous executor failures do not abandon independent phases", async () => {
+  const registry = new workflow.ClosedPhaseRegistry([
+    type("root", {}, "value.v1"),
+    type("child", { input: "value.v1" }),
+  ]);
+  const result = await workflow.scheduleWorkflow({
+    executors: {
+      root: (context) => {
+        if (context.phase.id === "broken") throw new Error("Synthetic executor failure.");
+        return Promise.resolve(delivery(context));
+      },
+      child: async (context) => delivery(context),
+    },
+    maxParallel: 2,
+    registry,
+    runId: randomUUID(),
+    workflow: workflow.validateWorkflow({
+      id: "sync-failure",
+      version: 1,
+      phases: [
+        phase("broken", "root"),
+        phase("independent", "root"),
+        phase("dependent", "child", ["broken"], { input: { contract: "value.v1", from: "broken" } }),
+      ],
+    }, registry),
+  });
+  assert.equal(result.status, "failed");
+  assert.deepEqual(result.states, { broken: "failed", independent: "completed", dependent: "skipped" });
+  assert.equal(result.errors.broken, "Synthetic executor failure.");
+  assert.deepEqual(result.outputs, { independent: { value: "independent" } });
+});
+
+test("progress observer failures cannot turn admitted output into failed work", async () => {
+  const registry = new workflow.ClosedPhaseRegistry([type("root")]);
+  const result = await workflow.scheduleWorkflow({
+    executors: { root: async (context) => delivery(context) },
+    maxParallel: 1,
+    onStateChange: () => { throw new Error("Synthetic progress failure."); },
+    registry,
+    runId: randomUUID(),
+    workflow: workflow.validateWorkflow({ id: "progress", version: 1, phases: [phase("root", "root")] }, registry),
+  });
   assert.equal(result.status, "completed");
-  assert.deepEqual(result.outputs.publication, { artifacts });
-  assert.deepEqual(calls.map(([kind]) => kind), ["discovery", "validation", "attack-path", "publication"]);
+  assert.deepEqual(result.outputs, { root: { value: "root" } });
+  assert.deepEqual(result.errors, {});
+});
+
+test("cancellation prevents starting another ready executor in the same scheduling wave", async () => {
+  const registry = new workflow.ClosedPhaseRegistry([type("root")]);
+  const controller = new AbortController();
+  const started = [];
+  const result = await workflow.scheduleWorkflow({
+    executors: {
+      root: async (context) => {
+        started.push(context.phase.id);
+        controller.abort();
+        return delivery(context);
+      },
+    },
+    maxParallel: 2,
+    registry,
+    runId: randomUUID(),
+    signal: controller.signal,
+    workflow: workflow.validateWorkflow({
+      id: "cancel-wave", version: 1, phases: [phase("first", "root"), phase("second", "root")],
+    }, registry),
+  });
+  assert.deepEqual(started, ["first"]);
+  assert.equal(result.status, "canceled");
+  assert.deepEqual(result.states, { first: "canceled", second: "canceled" });
+  assert.deepEqual(result.outputs, {});
+});
+
+test("a late canceled model result cannot write discovery artifacts", async () => {
+  const controller = new AbortController();
+  const context = {
+    inputs: {},
+    phase: workflow.FULL_REPOSITORY_WORKFLOW.phases.find((entry) => entry.id === "discovery"),
+    runId: randomUUID(),
+    signal: controller.signal,
+  };
+  let release;
+  let recorded = false;
+  const modelResult = new Promise((resolve) => { release = resolve; });
+  const executors = workflow.createBuiltInPhaseExecutors({
+    recordDiscovery: async () => { recorded = true; },
+  }, async () => modelResult);
+  const execution = executors.discovery(context);
+  controller.abort(new Error("Synthetic cancellation."));
+  release(delivery(context, { candidates: [] }));
+  await assert.rejects(execution, /Synthetic cancellation/u);
+  assert.equal(recorded, false);
+});
+
+test("an accepted result remains terminal when a malformed duplicate follows", async () => {
+  const registry = new workflow.ClosedPhaseRegistry([type("root")]);
+  const result = await workflow.scheduleWorkflow({
+    executors: {
+      root: async (context) => [
+        delivery(context),
+        delivery(context, { value: 42 }),
+      ],
+    },
+    maxParallel: 1,
+    registry,
+    runId: randomUUID(),
+    workflow: workflow.validateWorkflow({ id: "duplicates", version: 1, phases: [phase("root", "root")] }, registry),
+  });
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.outputs, { root: { value: "root" } });
+  assert.deepEqual(result.errors, {});
+});
+
+test("result admission is independent across runs and ignores late completed-phase deliveries", () => {
+  const admission = new workflow.PhaseResultAdmission();
+  const expected = { outputSchema: z.object({ value: z.string() }), phaseId: "phase", runId: "run-a" };
+  const envelope = { attemptId: "attempt", output: { value: "first" }, phaseId: "phase", runId: "run-a", schemaVersion: 1 };
+  assert.deepEqual(admission.admit(envelope, expected), { accepted: true, output: { value: "first" } });
+  assert.deepEqual(admission.admit({ ...envelope, output: null }, expected), { accepted: false });
+  assert.deepEqual(
+    admission.admit({ ...envelope, runId: "run-b", output: { value: "second" } }, { ...expected, runId: "run-b" }),
+    { accepted: true, output: { value: "second" } },
+  );
+});
+
+test("prototype-named phase identities retain outputs for their dependents", async () => {
+  const registry = new workflow.ClosedPhaseRegistry([
+    type("root", {}, "value.v1"),
+    type("child", { input: "value.v1" }),
+  ]);
+  const result = await workflow.scheduleWorkflow({
+    executors: {
+      root: async (context) => delivery(context),
+      child: async (context) => delivery(context, { value: context.inputs.input.value }),
+    },
+    maxParallel: 1,
+    registry,
+    runId: randomUUID(),
+    workflow: workflow.validateWorkflow({
+      id: "phase-identities",
+      version: 1,
+      phases: [
+        phase("__proto__", "root"),
+        phase("child", "child", ["__proto__"], { input: { contract: "value.v1", from: "__proto__" } }),
+      ],
+    }, registry),
+  });
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.outputs.child, { value: "__proto__" });
+  assert.deepEqual(JSON.parse(JSON.stringify(result.outputs))["__proto__"], { value: "__proto__" });
+});
+
+test("validated graph execution is isolated from later source definition mutation", async () => {
+  const registry = new workflow.ClosedPhaseRegistry([
+    type("root", {}, "value.v1"),
+    type("child", { input: "value.v1" }),
+  ]);
+  const source = {
+    id: "snapshot",
+    version: 1,
+    phases: [
+      phase("root", "root"),
+      phase("child", "child", ["root"], { input: { contract: "value.v1", from: "root" } }),
+    ],
+  };
+  const validated = workflow.validateWorkflow(source, registry);
+  source.phases[0].type = "unknown";
+  source.phases[1].dependencies.length = 0;
+  source.phases[1].bindings.input.from = "missing";
+  source.phases.push(phase("extra", "unknown"));
+  const result = await workflow.scheduleWorkflow({
+    executors: {
+      root: async (context) => delivery(context),
+      child: async (context) => delivery(context, context.inputs.input),
+    },
+    maxParallel: 2,
+    registry,
+    runId: randomUUID(),
+    workflow: validated,
+  });
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.outputs.child, { value: "root" });
+  assert.deepEqual(result.states, { root: "completed", child: "completed" });
+});
+
+test("inherited properties cannot satisfy required workflow bindings", () => {
+  const registry = new workflow.ClosedPhaseRegistry([
+    type("root", {}, "value.v1"),
+    type("child", { toString: "value.v1" }),
+  ]);
+  assert.throws(() => workflow.validateWorkflow({
+    id: "bindings",
+    version: 1,
+    phases: [phase("root", "root"), phase("child", "child", ["root"])],
+  }, registry), /missing input binding/u);
+});
+
+test("executor configuration errors are detected before any phase starts", async () => {
+  const registry = new workflow.ClosedPhaseRegistry([
+    type("root", {}, "value.v1"),
+    type("child", { input: "value.v1" }),
+  ]);
+  let started = false;
+  await assert.rejects(workflow.scheduleWorkflow({
+    executors: {
+      root: async (context) => { started = true; return delivery(context); },
+    },
+    maxParallel: 1,
+    registry,
+    runId: randomUUID(),
+    workflow: workflow.validateWorkflow({
+      id: "executors",
+      version: 1,
+      phases: [
+        phase("root", "root"),
+        phase("child", "child", ["root"], { input: { contract: "value.v1", from: "root" } }),
+      ],
+    }, registry),
+  }), /No workflow executor/u);
+  assert.equal(started, false);
+});
+
+test("a registry cannot legitimize an unsupported phase version", () => {
+  assert.throws(
+    () => new workflow.ClosedPhaseRegistry([{ ...type("root"), version: 0 }]),
+    /identity and version/u,
+  );
 });
