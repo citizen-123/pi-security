@@ -9,7 +9,7 @@ import { JsonlRpcClient, JsonlRpcError, type RpcEvent } from "./jsonl-client.js"
 export interface PhaseCapabilityProfile {
   allowDelegation: boolean;
   allowTargetMutation: boolean;
-  tools: string[];
+  tools: readonly string[];
 }
 
 export interface PhaseInputPackage {
@@ -19,11 +19,19 @@ export interface PhaseInputPackage {
     targetPath: string;
   };
   capabilityProfile: PhaseCapabilityProfile;
+  evidenceReferences: string[];
   outputContract: Record<string, unknown>;
   phaseId: string;
   requiredInputs: Record<string, unknown>;
   roleId: string;
   runId: string;
+  role: {
+    instructions: string;
+    model?: string;
+    provider?: string;
+    thinking: PhaseRoleSettings["thinking"];
+  };
+  scanId: string;
   target: {
     path: string;
     revision: string | null;
@@ -211,7 +219,7 @@ export class PhaseSessionSupervisor {
   }
 
   async #launchSession(request: LaunchPhaseSessionInput, launch: StartingSession): Promise<{ piSessionId: string; version: number }> {
-    validatePhaseInput(request.input);
+    validatePhaseInput(request.input, request.role);
     const ownedRun = await this.#options.repository.getRun(request.input.runId);
     this.#throwIfCanceled(launch);
     if (
@@ -648,12 +656,20 @@ function buildEnvironment(
   return result;
 }
 
-function validatePhaseInput(input: PhaseInputPackage): void {
+function validatePhaseInput(input: PhaseInputPackage, role: PhaseRoleSettings): void {
   if (resolve(input.target.path) !== resolve(input.authority.targetPath)) {
     throw Object.assign(new Error("Phase target does not match issued authority."), { code: "AUTHORITY_MISMATCH" });
   }
   if (resolve(input.artifactRoot) !== resolve(input.authority.artifactRoot)) {
     throw Object.assign(new Error("Phase artifact root does not match issued authority."), { code: "AUTHORITY_MISMATCH" });
+  }
+  if (
+    input.role.instructions !== role.instructions ||
+    input.role.model !== role.model ||
+    input.role.provider !== role.provider ||
+    input.role.thinking !== role.thinking
+  ) {
+    throw Object.assign(new Error("Phase role settings do not match the issued input package."), { code: "AUTHORITY_MISMATCH" });
   }
   if (input.capabilityProfile.allowDelegation) {
     throw Object.assign(new Error("P0 phase sessions cannot delegate authority."), { code: "POLICY_DENIED" });

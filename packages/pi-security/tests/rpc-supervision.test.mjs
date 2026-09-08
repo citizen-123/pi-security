@@ -24,6 +24,19 @@ const rpc = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString("base64")}`,
 );
 
+function phaseRequest(request) {
+  const { instructions, model, provider, thinking } = request.role;
+  return {
+    ...request,
+    input: {
+      evidenceReferences: [],
+      scanId: randomUUID(),
+      role: { instructions, model, provider, thinking },
+      ...request.input,
+    },
+  };
+}
+
 function client(mode, options = {}) {
   return new rpc.JsonlRpcClient({
     command: process.execPath,
@@ -304,7 +317,7 @@ test("phase supervisor applies role and capability settings and mediates control
     commandArgs: [fixture],
     repository,
   });
-  const launched = await supervisor.launch({
+  const launched = await supervisor.launch(phaseRequest({
     attemptId,
     claimToken: "claim-a",
     controllerId: "controller-a",
@@ -313,11 +326,19 @@ test("phase supervisor applies role and capability settings and mediates control
       artifactRoot: targetPath,
       authority: { artifactRoot: targetPath, targetPath },
       capabilityProfile: { allowDelegation: false, allowTargetMutation: false, tools: ["read", "grep"] },
+      evidenceReferences: [],
       outputContract: { type: "object" },
       phaseId: "discovery",
       requiredInputs: { inventory: "sha256:fixture" },
       roleId: "discoverer",
       runId,
+      role: {
+        instructions: "Return the required structured result.",
+        model: "fixture-model",
+        provider: "fixture-provider",
+        thinking: "high",
+      },
+      scanId: randomUUID(),
       target: { path: targetPath, revision: "fixture-revision" },
     },
     logicalAgentId,
@@ -330,7 +351,7 @@ test("phase supervisor applies role and capability settings and mediates control
       provider: "fixture-provider",
       thinking: "high",
     },
-  });
+  }));
   assert.equal(launched.piSessionId, "fixture-session");
   await new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -408,7 +429,7 @@ test("phase stop persists cancellation and clears its binding after an abort tim
     repository,
     requestTimeoutMs: 1_000,
   });
-  await supervisor.launch({
+  await supervisor.launch(phaseRequest({
     attemptId,
     claimToken: "claim-a",
     controllerId: "controller-a",
@@ -433,7 +454,7 @@ test("phase stop persists cancellation and clears its binding after an abort tim
       provider: "fixture-provider",
       thinking: "medium",
     },
-  });
+  }));
   const request = {
     claimToken: "claim-a",
     controllerId: "controller-a",
@@ -465,7 +486,7 @@ test("phase launch returns while prompt activity continues", async () => {
     commandArgs: [fixture, "--prompt-activity-flood", "--continuous-activity-flood"],
     repository,
   });
-  const launch = supervisor.launch({
+  const launch = supervisor.launch(phaseRequest({
     attemptId,
     claimToken: "claim-a",
     controllerId: "controller-a",
@@ -490,7 +511,7 @@ test("phase launch returns while prompt activity continues", async () => {
       provider: "fixture-provider",
       thinking: "medium",
     },
-  });
+  }));
   let launched;
   try {
     await waitForCondition(() => repository.activityRecords > 0, 2_000);
@@ -522,7 +543,7 @@ test("phase interrupt queues ahead of later activity instead of starving abort",
     runId,
     targetPath,
   };
-  await supervisor.launch({
+  await supervisor.launch(phaseRequest({
     attemptId,
     claimToken: request.claimToken,
     controllerId: request.controllerId,
@@ -547,7 +568,7 @@ test("phase interrupt queues ahead of later activity instead of starving abort",
       provider: "fixture-provider",
       thinking: "medium",
     },
-  });
+  }));
   let interrupt;
   try {
     await supervisor.control(
@@ -593,7 +614,7 @@ test("phase sessions share a run version across logical agents", async () => {
   const launched = new Set();
   try {
     for (const agent of agents) {
-      await supervisor.launch({
+      await supervisor.launch(phaseRequest({
         attemptId: agent.attemptId,
         claimToken: "claim-a",
         controllerId: "controller-a",
@@ -618,7 +639,7 @@ test("phase sessions share a run version across logical agents", async () => {
           provider: "fixture-provider",
           thinking: "medium",
         },
-      });
+      }));
       launched.add(agent.logicalAgentId);
     }
 
@@ -695,7 +716,7 @@ test("phase control rejects authority changed during asynchronous authorization"
     runId,
     target: { path: targetPath, revision: "fixture-revision" },
   };
-  await supervisor.launch({
+  await supervisor.launch(phaseRequest({
     attemptId: randomUUID(),
     claimToken: "claim-a",
     controllerId: "controller-a",
@@ -710,7 +731,7 @@ test("phase control rejects authority changed during asynchronous authorization"
       provider: "fixture-provider",
       thinking: "medium",
     },
-  });
+  }));
   let staleStatus;
   let secondLaunch;
   let secondLaunched = false;
@@ -725,7 +746,7 @@ test("phase control rejects authority changed during asynchronous authorization"
     }, { kind: "status" });
     assert.equal(await settlesWithin(lookupReached), true);
 
-    secondLaunch = supervisor.launch({
+    secondLaunch = supervisor.launch(phaseRequest({
       attemptId: randomUUID(),
       claimToken: "claim-a",
       controllerId: "controller-a",
@@ -740,7 +761,7 @@ test("phase control rejects authority changed during asynchronous authorization"
         provider: "fixture-provider",
         thinking: "medium",
       },
-    });
+    }));
     await waitForCondition(() => repository.agentAttempts.has(agentB));
     releaseLookup();
 
@@ -802,7 +823,7 @@ test("phase session binding uses the current run version after queued activity",
   let launchB;
   let launchedB = false;
   try {
-    await supervisor.launch({
+    await supervisor.launch(phaseRequest({
       attemptId: randomUUID(),
       claimToken: "claim-a",
       controllerId: "controller-a",
@@ -817,11 +838,11 @@ test("phase session binding uses the current run version after queued activity",
         provider: "fixture-provider",
         thinking: "medium",
       },
-    });
+    }));
     launchedA = true;
     await rm(stateRelease, { force: true });
 
-    launchB = supervisor.launch({
+    launchB = supervisor.launch(phaseRequest({
       attemptId: randomUUID(),
       claimToken: "claim-a",
       controllerId: "controller-a",
@@ -836,7 +857,7 @@ test("phase session binding uses the current run version after queued activity",
         provider: "fixture-provider",
         thinking: "medium",
       },
-    });
+    }));
     await waitForCondition(() => repository.agentAttempts.has(agentB));
     repository.activityRecords = 0;
     await supervisor.control({
@@ -916,7 +937,7 @@ test("phase interrupt bypasses a stalled RPC control on another session", async 
   let stalledStatus;
   let interrupted;
   try {
-    await supervisor.launch({
+    await supervisor.launch(phaseRequest({
       attemptId: randomUUID(),
       claimToken: "claim-a",
       controllerId: "controller-a",
@@ -931,9 +952,9 @@ test("phase interrupt bypasses a stalled RPC control on another session", async 
         provider: "fixture-provider",
         thinking: "medium",
       },
-    });
+    }));
     launchedA = true;
-    await supervisor.launch({
+    await supervisor.launch(phaseRequest({
       attemptId: randomUUID(),
       claimToken: "claim-a",
       controllerId: "controller-a",
@@ -948,7 +969,7 @@ test("phase interrupt bypasses a stalled RPC control on another session", async 
         provider: "fixture-provider",
         thinking: "medium",
       },
-    });
+    }));
     launchedB = true;
 
     stalledStatus = supervisor.control({
@@ -1009,7 +1030,7 @@ test("phase capability ceiling rejects mutating tools before process launch", as
     repository,
   });
   await assert.rejects(
-    supervisor.launch({
+    supervisor.launch(phaseRequest({
       attemptId: randomUUID(),
       claimToken: "claim-a",
       controllerId: "controller-a",
@@ -1018,12 +1039,20 @@ test("phase capability ceiling rejects mutating tools before process launch", as
         artifactRoot: targetPath,
         authority: { artifactRoot: targetPath, targetPath },
         capabilityProfile: { allowDelegation: false, allowTargetMutation: false, tools: ["read", "bash"] },
+        evidenceReferences: [],
         outputContract: { type: "object" },
         phaseId: "discovery",
         requiredInputs: {},
         roleId: "discoverer",
         runId,
+        role: {
+          instructions: "Return the required structured result.",
+          model: "fixture-model",
+          provider: "fixture-provider",
+          thinking: "medium",
+        },
         target: { path: targetPath, revision: "fixture-revision" },
+        scanId: randomUUID(),
       },
       logicalAgentId: randomUUID(),
       maxAttempts: 1,
@@ -1034,7 +1063,7 @@ test("phase capability ceiling rejects mutating tools before process launch", as
         provider: "fixture-provider",
         thinking: "medium",
       },
-    }),
+    })),
     (error) => error.code === "POLICY_DENIED",
   );
   assert.equal(repository.attempt, undefined);
@@ -1058,7 +1087,7 @@ test("phase launch records failed attempts for startup and request timeouts", as
       requestTimeoutMs: 20,
     });
     await assert.rejects(
-      supervisor.launch({
+      supervisor.launch(phaseRequest({
         attemptId,
         claimToken: "claim-a",
         controllerId: "controller-a",
@@ -1083,7 +1112,7 @@ test("phase launch records failed attempts for startup and request timeouts", as
           provider: "fixture-provider",
           thinking: "medium",
         },
-      }),
+      })),
       (error) => error instanceof rpc.JsonlRpcError
         && error.kind === "process"
         && scenario.expected.test(error.message),
@@ -1136,7 +1165,7 @@ test("phase launch rejects a self-consistent foreign target and missing policy b
       repository,
     });
     const selected = scenario === "foreign-target" ? path.dirname(targetPath) : targetPath;
-    await assert.rejects(supervisor.launch({
+    await assert.rejects(supervisor.launch(phaseRequest({
       attemptId: randomUUID(),
       claimToken: "claim-a",
       controllerId: "controller-a",
@@ -1156,7 +1185,7 @@ test("phase launch rejects a self-consistent foreign target and missing policy b
       maxAttempts: 1,
       ordinal: 1,
       role: { instructions: "Inspect synthetic source.", model: "fixture-model", provider: "fixture", thinking: "off" },
-    }), (error) => error.code === (scenario === "foreign-target" ? "AUTHORITY_MISMATCH" : "CONTRACT_INCOMPATIBLE"));
+    })), (error) => error.code === (scenario === "foreign-target" ? "AUTHORITY_MISMATCH" : "CONTRACT_INCOMPATIBLE"));
     if (scenario === "foreign-target") assert.equal(repository.attempt, undefined);
     else assert.equal(repository.attempt.status, "failed");
     assert.equal(repository.events.some((event) => event.kind === "agent.session_bound"), false);
@@ -1236,7 +1265,7 @@ test("run cancellation drains launches before claim, during startup, and after b
       ordinal: 1,
       role: { instructions: "Inspect synthetic source.", model: "fixture-model", provider: "fixture", thinking: "off" },
     };
-    const launch = supervisor.launch(request).then((value) => ({ value }), (error) => ({ error }));
+    const launch = supervisor.launch(phaseRequest(request)).then((value) => ({ value }), (error) => ({ error }));
     if (stage === "before-claim") await readEntered;
     else if (stage === "during-startup") await waitForCondition(() => existsSync(startupMarker), 2_000);
     else assert.equal((await launch).value.piSessionId, "fixture-session");
@@ -1258,7 +1287,7 @@ test("run cancellation drains launches before claim, during startup, and after b
       const pid = Number(await readFile(startupMarker, "utf8"));
       assert.throws(() => process.kill(pid, 0), (error) => error.code === "ESRCH");
     }
-    await assert.rejects(supervisor.launch({ ...request, attemptId: randomUUID(), ordinal: 2 }), (error) => error.code === "CANCELED");
+    await assert.rejects(supervisor.launch(phaseRequest({ ...request, attemptId: randomUUID(), ordinal: 2 })), (error) => error.code === "CANCELED");
     await assert.rejects(supervisor.control({
       claimToken: "claim-a", controllerId: "controller-a", expectedVersion: repository.version,
       logicalAgentId, runId, targetPath,

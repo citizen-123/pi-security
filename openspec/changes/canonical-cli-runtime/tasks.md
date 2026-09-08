@@ -25,12 +25,12 @@
 
 ## 4. Typed Workflow Runtime
 
-- [ ] 4.1 Define versioned phase types, phase instances, input/output bindings, lifecycle states, capability ceilings, and attempt policies in a closed registry; verify duplicate IDs, missing dependencies, cycles, incompatible bindings, and unknown phase types fail graph validation.
-- [ ] 4.2 Implement the deterministic DAG scheduler with dependency readiness, bounded parallel workers, output admission, and terminal aggregation; verify sequential, fan-out/fan-in, failure, skip, cancellation, and duplicate-completion scenarios.
-- [ ] 4.3 Define the versioned built-in full-repository workflow covering preflight, threat model, discovery, reduction, validation, attack path, reporting, and publication; verify its graph, role bindings, and required phase contracts through a snapshot test.
-- [ ] 4.4 Implement explicit phase input-package assembly from target identity, role, scoped upstream typed outputs, evidence references, artifact authority, and output schema; verify completed private Pi transcripts are not required by downstream phases.
-- [ ] 4.5 Implement structured phase-result parsing and schema validation before state admission; verify free-form completion text, process success without output, malformed data, and duplicate delivery cannot complete a phase.
-- [ ] 4.6 Connect deterministic preflight/publication and model-executed threat-model, discovery, reduction, validation, attack-path, and narrative-reporting phase adapters to existing artifact and permission-profile contracts; verify an end-to-end fake-agent run publishes the existing manifest, findings, coverage, report, and SARIF contract.
+- [x] 4.1 Define versioned phase types, phase instances, input/output bindings, lifecycle states, capability ceilings, and attempt policies in a closed registry; verify duplicate IDs, missing dependencies, cycles, incompatible bindings, and unknown phase types fail graph validation.
+- [x] 4.2 Implement the deterministic DAG scheduler with dependency readiness, bounded parallel workers, output admission, and terminal aggregation; verify sequential, fan-out/fan-in, failure, skip, cancellation, and duplicate-completion scenarios.
+- [x] 4.3 Define the versioned built-in full-repository workflow covering preflight, threat model, discovery, reduction, validation, attack path, reporting, and publication; verify its graph, role bindings, and required phase contracts through a snapshot test.
+- [x] 4.4 Implement explicit phase input-package assembly from target identity, role, scoped upstream typed outputs, evidence references, artifact authority, and output schema; verify completed private Pi transcripts are not required by downstream phases.
+- [x] 4.5 Implement structured phase-result parsing and schema validation before state admission; verify free-form completion text, process success without output, malformed data, and duplicate delivery cannot complete a phase.
+- [x] 4.6 Connect deterministic preflight/publication and model-executed threat-model, discovery, reduction, validation, attack-path, and narrative-reporting phase adapters to existing artifact and permission-profile contracts; verify an end-to-end fake-agent run publishes the existing manifest, findings, coverage, report, and SARIF contract.
 
 ## 5. Run Lifecycle and Recovery
 
