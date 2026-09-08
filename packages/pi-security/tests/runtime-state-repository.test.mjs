@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -86,4 +86,58 @@ test("workbench adapter converts process and response failures to stable errors"
       && error.command === "parse-run"
       && /invalid workflow run/u.test(error.message),
   );
+
+  await assert.rejects(
+    invalid.recordEvent({
+      claimToken: "synthetic-claim",
+      controllerId: "controller-a",
+      expectedVersion: 1,
+      runId: randomUUID(),
+      event: { category: "domain", kind: "run.progressed", source: "runtime" },
+    }),
+    (error) => error instanceof runtime.RuntimeStateRepositoryError
+      && error.command === "parse-record-event"
+      && /invalid workflow event mutation/u.test(error.message),
+  );
+  await assert.rejects(
+    invalid.listEvents(randomUUID()),
+    (error) => error instanceof runtime.RuntimeStateRepositoryError
+      && error.command === "parse-list-events"
+      && /invalid workflow events/u.test(error.message),
+  );
+});
+
+test("executor preserves JSON diagnostics when helper stderr is empty", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "pi-security-runtime-json-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, "scripts"));
+  await writeFile(path.join(root, "scripts", "workbench_db.py"), "print('not-json')\n");
+  const execute = runtime.createWorkbenchRuntimeExecutor({ packageRoot: root });
+  await assert.rejects(
+    execute("runtime-get-run"),
+    (error) => error instanceof runtime.RuntimeStateRepositoryError
+      && error.command === "runtime-get-run"
+      && /JSON/u.test(error.message),
+  );
+});
+
+test("executor rejects unserializable payloads without launching a helper", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "pi-security-runtime-input-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, "scripts"));
+  const marker = path.join(root, "spawned");
+  await writeFile(
+    path.join(root, "scripts", "workbench_db.py"),
+    "from pathlib import Path\nPath('spawned').write_text('started')\nprint('{}')\n",
+  );
+  const execute = runtime.createWorkbenchRuntimeExecutor({ packageRoot: root });
+  const payload = {};
+  payload.self = payload;
+  await assert.rejects(
+    execute("runtime-record-event", payload),
+    (error) => error instanceof runtime.RuntimeStateRepositoryError
+      && error.command === "runtime-record-event"
+      && /circular/iu.test(error.message),
+  );
+  await assert.rejects(access(marker), { code: "ENOENT" });
 });
