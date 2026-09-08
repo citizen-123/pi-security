@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { CLI_HELP, CliUsageError, parseCliArgs, type CliCommand } from "./args.js";
 
@@ -44,6 +45,15 @@ async function commandUnavailable(command: Exclude<CliCommand, { kind: "help" }>
   throw new Error(`The ${command.kind} runtime command is unavailable.`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+function isDirectEntry(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectEntry()) {
   process.exitCode = await runCli(process.argv.slice(2));
 }

@@ -1,6 +1,9 @@
+import commonSchema from "../../schemas/definitions/artifact-common.schema.json" with { type: "json" };
+import scanDraftSchema from "../../schemas/tools/scan-draft.schema.json" with { type: "json" };
 import { candidateAttackPathSchema } from "../artifact-attack-path.js";
 import { discoveryCandidatesInputSchema } from "../artifact-discovery.js";
 import { candidateValidationRecordSchema } from "../artifact-validation-phase.js";
+import { loadArtifactZodSchema, type SchemaDocument } from "../artifact-schema-loader.js";
 import {
   issuePiPackagedAgentContext,
   piPackagedAgentToolAllowlist,
@@ -17,6 +20,8 @@ import {
 } from "./registry.js";
 
 const object = z.record(z.string(), z.unknown());
+const scanDraftDocuments = [commonSchema, scanDraftSchema] as SchemaDocument[];
+const threatModelSchema = loadArtifactZodSchema(scanDraftDocuments, scanDraftSchema.$id, "threatModel");
 const readOnlyCapability = Object.freeze({
   allowDelegation: false,
   allowTargetMutation: false,
@@ -30,7 +35,7 @@ const hostCapability = Object.freeze({
 
 const PHASE_TYPES: readonly PhaseTypeDefinition[] = [
   phaseType("preflight", "inventory.v1", {}, z.object({ reviewItemsTotal: z.number().int().nonnegative() }).strict(), "deterministic"),
-  phaseType("threat-model", "threat-model.v1", { inventory: "inventory.v1" }, z.object({ threatModel: object }).strict()),
+  phaseType("threat-model", "threat-model.v1", { inventory: "inventory.v1" }, z.object({ threatModel: threatModelSchema }).strict()),
   phaseType("discovery", "discovery.v1", { inventory: "inventory.v1", threatModel: "threat-model.v1" }, discoveryCandidatesInputSchema),
   phaseType("reduction", "reduction.v1", { discovery: "discovery.v1" }, z.object({ findings: z.array(object) }).strict()),
   phaseType(
@@ -65,9 +70,9 @@ const PHASE_TYPES: readonly PhaseTypeDefinition[] = [
       validation: "validation.v1",
     },
     z.object({
-      coverage: object,
-      findings: z.array(object),
-      threatModel: object.optional(),
+      coverage: loadArtifactZodSchema(scanDraftDocuments, scanDraftSchema.$id, "coverage"),
+      findings: z.array(loadArtifactZodSchema(scanDraftDocuments, scanDraftSchema.$id, "finding")),
+      threatModel: threatModelSchema.optional(),
     }).strict(),
   ),
   phaseType(
@@ -140,7 +145,7 @@ export function assemblePhaseInputPackage(options: {
   const definition = BUILT_IN_PHASE_REGISTRY.get(options.phase.type, options.phase.version);
   const requiredInputs = Object.fromEntries(
     Object.entries(options.phase.bindings ?? {}).map(([name, binding]) => {
-      if (!(binding.from in options.outputs)) {
+      if (!Object.hasOwn(options.outputs, binding.from)) {
         throw new Error(`Phase input ${name} is unavailable from ${binding.from}.`);
       }
       return [name, options.outputs[binding.from]];
@@ -167,6 +172,7 @@ export function assemblePhaseInputPackage(options: {
     outputContract: {
       name: definition.outputContract,
       schemaVersion: definition.version,
+      schema: z.toJSONSchema(definition.outputSchema, { io: "input" }),
     },
     phaseId: options.phase.id,
     requiredInputs,
