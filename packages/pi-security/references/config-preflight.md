@@ -6,6 +6,8 @@ Run preflight after resolving the authoritative target and before substantive an
 <python_command> <package_dir>/scripts/config_preflight.py --profile <capability-profile> --cwd <scan-working-directory> [--runtime-check <name>=<true|false>]...
 ```
 
+Resolve `<python_command>` from `PI_SECURITY_PYTHON_COMMAND`, then `PYTHON`, then a resolved cached primary Python runtime supplied by Pi when available. Otherwise use `python3` on Unix-like systems or `python` on Windows. Quote configured executable paths when invoking them, and reuse the selected interpreter for later bundled scripts; do not assume an unconfigured `python` command exists on Unix.
+
 Profiles are `security_scan`, `security_diff_scan`, and `deep_security_scan`.
 
 Derive runtime checks from the active host's actual tool surface. Useful checks include `delegation_available`, `goal_tools_available`, and `user_input_available`. Missing optional capabilities produce an `unknown` suggestion and use the workflow's single-agent or plain-chat fallback; they do not block the scan. An inaccessible target is blocking.

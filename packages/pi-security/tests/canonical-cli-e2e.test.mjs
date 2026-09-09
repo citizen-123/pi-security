@@ -83,7 +83,7 @@ function parsed(result) {
   return JSON.parse(result.stdout.trim());
 }
 
-test("packaged CLI completes a fake-RPC scan and excludes credential material everywhere", async (t) => {
+test("packaged CLI admits schema-only native output and redacts decoded credential material", async (t) => {
   const fixture = await setup(t, true);
   fixture.environment.FAKE_RPC_ECHO_CREDENTIAL = "escaped";
   const result = await invoke(fixture.environment, ["scan", "--config", fixture.config]);
@@ -92,12 +92,101 @@ test("packaged CLI completes a fake-RPC scan and excludes credential material ev
   assert.equal(completed.status, "completed");
   assert.equal(completed.progress.coverageConclusion, "complete");
   assert.equal(completed.phases.every((phase) => phase.state === "completed"), true);
+  assert.equal(completed.phases.find((phase) => phase.id === "threat-model").output.threatModel.summary, "[REDACTED]");
   const sealed = await invokeWorkbench(fixture, ["get-scan", "--scan-id", completed.scanId]);
   assert.equal(sealed.scan.progress.status, "complete");
   await rm(fixture.config);
   const captured = await collectText(fixture.root);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}\n${captured}`, new RegExp(SECRET, "u"));
   assert.match(await readFile(fixture.capture, "utf8"), /"credentialPresent":true/u);
+});
+
+test("packaged CLI publishes a finding using the canonical identity supplied to later phases", async (t) => {
+  const fixture = await setup(t);
+  await writeFile(path.join(fixture.target, "fixture.py"),
+    'def lookup(connection, name):\n    return connection.execute("SELECT email FROM accounts WHERE name = \'" + name + "\'").fetchall()\n');
+  const candidateId = "$canonicalCandidateId";
+  const evidence = "The caller-controlled name is concatenated into the SQLite query in fixture.py:2.";
+  const candidate = {
+    summary: "Caller-controlled SQL in account lookup.",
+    cwe_ids: ["CWE-89"],
+    locations: [{ path: "fixture.py", start_line: 2, role: "sink" }],
+    evidence,
+  };
+  fixture.environment.FAKE_RPC_BIND_CANONICAL_ID = "1";
+  fixture.environment.FAKE_RPC_PHASE_OUTPUTS = JSON.stringify({
+    ...validOutputs,
+    discovery: { candidates: [candidate] },
+    reduction: { findings: [{ candidate_id: candidateId }] },
+    validation: { validations: [{
+      candidateId,
+      validation: {
+        disposition: "reportable",
+        method: "Static source-to-sink trace.",
+        confidence: "high",
+        confidence_rationale: "The supplied name is inserted directly into SQL.",
+        rubric: "Untrusted input crosses a SQL query boundary.",
+        evidence,
+        counterevidence_or_proof_gap: "The query does not use parameter binding.",
+        remaining_uncertainty: "",
+      },
+    }] },
+    "attack-path": { attackPaths: [{
+      candidateId,
+      attackPath: {
+        decision: "reportable",
+        dataflow: evidence,
+        reachability: "The lookup function accepts the caller-controlled name.",
+        counterevidence: "No parameter binding is present.",
+        impact: "high",
+        likelihood: "medium",
+        severity: "high",
+        severity_rationale: "Query manipulation can disclose account records.",
+        change_conditions: "Parameter binding would remove the issue.",
+      },
+    }] },
+    reporting: {
+      ...validOutputs.reporting,
+      coverage: {
+        completeness: "complete",
+        deferred: [],
+        explicitExclusions: [],
+        surfaces: [{ label: "Account lookup", disposition: "reported", notes: evidence }],
+      },
+      findings: [{
+        ruleId: "sql-injection.account-lookup",
+        title: "SQL injection in account lookup",
+        summary: candidate.summary,
+        severity: { level: "high" },
+        confidence: { level: "high", rationale: evidence },
+        taxonomy: { category: "sql-injection", cwe: ["CWE-89"] },
+        locations: [{ path: "fixture.py", startLine: 2 }],
+        remediation: "Bind the name as a query parameter.",
+        provenance: { source: "local_package", candidateId },
+      }],
+    },
+  });
+  const result = await invoke(fixture.environment, ["scan", "--config", fixture.config]);
+  const completed = parsed(result);
+  const failures = result.code === 0 ? [] : (await invokeWorkbench(fixture, [
+    "runtime-list-events", "--run-id", completed.id,
+  ])).events.filter((event) => event.kind === "phase.failed");
+  assert.equal(result.code, 0, `${result.stderr}\n${JSON.stringify(failures)}`);
+  assert.equal(completed.status, "completed");
+  const persisted = await invokeWorkbench(fixture, ["get-scan", "--scan-id", completed.scanId]);
+  assert.equal(persisted.scan.progress.status, "complete");
+  const scanDir = persisted.scan.scanDir;
+  const ledger = (await readFile(path.join(scanDir, "artifacts/02_discovery/candidate_ledger.jsonl"), "utf8"))
+    .trim().split("\n").map(JSON.parse);
+  assert.equal(ledger.length, 1);
+  assert.match(ledger[0].candidate_id, /^candidate-[0-9a-f]+$/u);
+  assert.equal(ledger[0].validation.disposition, "reportable");
+  assert.equal(ledger[0].attack_path.decision, "reportable");
+  const published = JSON.parse(await readFile(path.join(scanDir, "findings.json"), "utf8"));
+  assert.equal(published.findings.length, 1);
+  assert.equal(published.findings[0].provenance.candidateId, ledger[0].candidate_id);
+  const sarif = JSON.parse(await readFile(path.join(scanDir, "exports/results.sarif"), "utf8"));
+  assert.equal(sarif.runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri, "fixture.py");
 });
 
 test("packaged CLI preserves failed history and executes a linked retry", async (t) => {
@@ -172,6 +261,53 @@ test("assistant provider errors cannot admit an otherwise valid phase result", a
   assert.equal(failed.phases.find((phase) => phase.id === "threat-model").state, "failed");
 });
 
+
+test("native reply admission rejects prose, malformed finals, and model-owned envelopes before completion", async (t) => {
+  const valid = JSON.stringify(validOutputs["threat-model"]);
+  const replies = [
+    ["JSON embedded in prose", `Here is the result:\n${valid}`],
+    ["valid commentary cannot rescue a malformed final", [
+      {
+        type: "text",
+        text: valid,
+        textSignature: JSON.stringify({ v: 1, id: "msg_commentary", phase: "commentary" }),
+      },
+      {
+        type: "text",
+        text: '{"threatModel":',
+        textSignature: JSON.stringify({ v: 1, id: "msg_final", phase: "final_answer" }),
+      },
+    ]],
+    ["model cannot submit an execution envelope", JSON.stringify({
+      attemptId: "model-selected-attempt",
+      output: validOutputs["threat-model"],
+      phaseId: "threat-model",
+      runId: "model-selected-run",
+      schemaVersion: 1,
+    })],
+  ];
+  for (const [name, reply] of replies) {
+    await t.test(name, async (t) => {
+      const fixture = await setup(t);
+      const result = await invoke({
+        ...fixture.environment,
+        FAKE_RPC_PHASE_REPLIES: JSON.stringify({ "threat-model": reply }),
+      }, ["scan", "--config", fixture.config]);
+      assert.equal(result.code, 1, `${result.stderr}\n${result.stdout}`);
+      const failed = parsed(result);
+      assert.equal(failed.status, "failed");
+      const phase = failed.phases.find((phase) => phase.id === "threat-model");
+      assert.equal(phase.state, "failed");
+      assert.equal(phase.output, null);
+      const events = await invokeWorkbench(fixture, ["runtime-list-events", "--run-id", failed.id]);
+      assert.equal(events.events.some((event) => event.phaseId === phase.id && event.kind === "agent.attempt_failed"), true);
+      assert.equal(events.events.some((event) => event.phaseId === phase.id && event.kind === "agent.attempt_completed"), false);
+      for (const line of (await readFile(fixture.capture, "utf8")).trim().split(/\r?\n/u)) {
+        assert.throws(() => process.kill(JSON.parse(line).pid, 0), (error) => error.code === "ESRCH");
+      }
+    });
+  }
+});
 test("retry restores an inline credential supplied through ambient config and stays recoverable", async (t) => {
   const fixture = await setup(t, true);
   const failedEnvironment = {

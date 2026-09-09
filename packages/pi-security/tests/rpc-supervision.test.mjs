@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const packageRoot = new URL("..", import.meta.url).pathname;
@@ -305,6 +308,143 @@ class FakeRepository {
     };
   }
 }
+
+test("real phase subprocess activates only guarded read/search tools and denies mutation", { timeout: 30_000 }, async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "pi-security-native-rpc-"));
+  const targetPath = path.join(root, "target");
+  const artifactRoot = path.join(root, "artifacts");
+  const agentDir = path.join(root, "agent");
+  await Promise.all([targetPath, artifactRoot, agentDir].map((directory) => mkdir(directory)));
+  const sourcePath = path.join(targetPath, "source.txt");
+  const source = "approved native tool content\n";
+  const outsidePath = path.join(root, "private.txt");
+  const shellMarker = path.join(targetPath, "shell-marker");
+  await writeFile(sourcePath, source);
+  await writeFile(outsidePath, "native-outside-canary\n");
+  const requests = [];
+  const providerErrors = [];
+  const calls = [
+    ["read", { path: sourcePath }],
+    ["grep", { path: targetPath, pattern: "approved" }],
+    ["find", { path: targetPath, pattern: "*.txt" }],
+    ["ls", { path: targetPath }],
+    ["read", { path: outsidePath }],
+    ["bash", { command: `printf unguarded > ${JSON.stringify(shellMarker)}` }],
+    ["write", { path: sourcePath, content: "unguarded write" }],
+    ["edit", { path: sourcePath, oldText: source, newText: "unguarded edit" }],
+  ];
+  const server = createServer(async (request, response) => {
+    try {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      const first = requests.length === 1;
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      const chunk = (delta, finishReason) => ({
+        id: "native-policy-response",
+        object: "chat.completion.chunk",
+        created: 1,
+        model: "native-policy-model",
+        choices: [{ index: 0, delta, finish_reason: finishReason }],
+      });
+      const delta = first ? {
+        role: "assistant",
+        tool_calls: calls.map(([name, args], index) => ({
+          index,
+          id: `native-call-${index}`,
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) },
+        })),
+      } : { role: "assistant", content: "{}" };
+      response.write(`data: ${JSON.stringify(chunk(delta, null))}\n\n`);
+      response.write(`data: ${JSON.stringify(chunk({}, first ? "tool_calls" : "stop"))}\n\n`);
+      response.end("data: [DONE]\n\n");
+    } catch (error) {
+      providerErrors.push(error);
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: String(error) } }));
+    }
+  });
+  const runId = randomUUID();
+  const logicalAgentId = randomUUID();
+  const repository = new FakeRepository(runId, targetPath, "native-controller");
+  const supervisor = new rpc.PhaseSessionSupervisor({
+    command: process.execPath,
+    commandArgs: [fileURLToPath(new URL("./cli.js", import.meta.resolve("@earendil-works/pi-coding-agent")))],
+    environment: { ...process.env, PI_CODING_AGENT_DIR: agentDir },
+    repository,
+    requestTimeoutMs: 10_000,
+  });
+  t.after(async () => {
+    await supervisor.abortRun(runId);
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(root, { recursive: true, force: true });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  await writeFile(path.join(agentDir, "models.json"), JSON.stringify({
+    providers: {
+      "native-policy": {
+        api: "openai-completions",
+        apiKey: "synthetic-local-provider-key",
+        baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+        models: [{ id: "native-policy-model", reasoning: false, input: ["text"], contextWindow: 16_384, maxTokens: 1_024 }],
+      },
+    },
+  }));
+  await supervisor.launch(phaseRequest({
+    attemptId: randomUUID(),
+    claimToken: "native-claim",
+    controllerId: "native-controller",
+    expectedVersion: repository.version,
+    input: {
+      artifactRoot,
+      authority: { artifactRoot, targetPath },
+      capabilityProfile: { allowDelegation: false, allowTargetMutation: false, tools: ["read", "grep", "find", "ls"] },
+      outputContract: { schema: { type: "object", additionalProperties: false } },
+      phaseId: "discovery",
+      requiredInputs: {},
+      roleId: "discoverer",
+      runId,
+      target: { path: targetPath, revision: null },
+    },
+    logicalAgentId,
+    maxAttempts: 1,
+    ordinal: 1,
+    role: {
+      instructions: "Inspect only the issued roots.",
+      model: "native-policy-model",
+      provider: "native-policy",
+      thinking: "off",
+    },
+  }));
+  const completed = await supervisor.complete({
+    claimToken: "native-claim",
+    controllerId: "native-controller",
+    expectedVersion: repository.version,
+    logicalAgentId,
+    runId,
+    targetPath,
+  });
+  assert.deepEqual(providerErrors, []);
+  assert.deepEqual(requests[0].tools.map((tool) => tool.function.name).sort(), ["find", "grep", "ls", "read"]);
+  const results = new Map(completed.transcript.messages
+    .filter((message) => message.role === "toolResult")
+    .map((message) => [message.toolCallId, message]));
+  for (const index of [0, 1, 2, 3]) {
+    assert.equal(results.get(`native-call-${index}`)?.isError, false);
+  }
+  const text = (index) => results.get(`native-call-${index}`).content.map((block) => block.text ?? "").join("\n");
+  assert.match(text(0), /approved native tool content/u);
+  assert.match(text(1), /source\.txt:1:approved native tool content/u);
+  assert.equal(text(2).trim(), "source.txt");
+  assert.match(text(3), /source\.txt/u);
+  for (const index of [4, 5, 6, 7]) assert.equal(results.get(`native-call-${index}`)?.isError, true);
+  assert.doesNotMatch(JSON.stringify(completed.transcript), /native-outside-canary/u);
+  assert.equal(await readFile(sourcePath, "utf8"), source);
+  assert.equal(existsSync(shellMarker), false);
+});
 
 test("phase supervisor applies role and capability settings and mediates controls", async () => {
   const runId = randomUUID();

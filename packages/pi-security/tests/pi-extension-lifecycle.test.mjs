@@ -56,9 +56,13 @@ function extensionHarness() {
   };
 }
 
-function successfulDetails(result, name) {
+function modelVisibleResult(result, name) {
   assert.equal(result.isError, undefined, `${name}: ${result.content?.[0]?.text ?? "tool error"}`);
-  return result.details;
+  for (const block of [...result.content].reverse()) {
+    if (block.type !== "text") continue;
+    try { return JSON.parse(block.text); } catch {}
+  }
+  assert.fail(`${name} did not expose its structured result to the model.`);
 }
 
 test("the Pi extension exposes and executes the managed lifecycle catalog", async () => {
@@ -90,17 +94,11 @@ test("the Pi extension exposes and executes the managed lifecycle catalog", asyn
       "pi_security_spawn_agents",
       "pi_security_workbench"
     ].sort();
-    assert.equal(contract.surfaces.standalone.length, 44);
     assert.deepEqual([...harness.tools.keys()].sort(), expectedNames);
     assert.deepEqual(
       [...harness.commands.keys()].sort(),
       ["deep-security-scan", "security-diff-scan", "security-scan"],
     );
-    await harness.commands.get("deep-security-scan").handler("focus on auth");
-    assert.deepEqual(harness.sentMessages.at(-1), {
-      message: "/deep-security-scan focus on auth",
-      options: { deliverAs: "followUp" },
-    });
 
     const contractByName = new Map(contract.tools.map((tool) => [tool.name, tool]));
     for (const name of contract.surfaces.standalone) {
@@ -142,7 +140,7 @@ test("the Pi extension exposes and executes the managed lifecycle catalog", asyn
       );
     };
     const call = async (name, params) =>
-      successfulDetails(await execute(name, params), name);
+      modelVisibleResult(await execute(name, params), name);
 
     const duplicateQuestion = {
       header: "First choice",

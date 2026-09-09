@@ -351,7 +351,11 @@ export class PhaseSessionSupervisor {
       void this.#monitorExit(binding).catch(() => undefined);
       await client.request({
         type: "prompt",
-        message: `${request.role.instructions}\n\nPhase input:\n${JSON.stringify(request.input)}`,
+        message: [
+          request.role.instructions,
+          "Return only a JSON value matching input.outputContract.schema. That schema describes the phase output itself, not a result envelope. Do not add runId, phaseId, attemptId, or schemaVersion; the host owns execution identity.",
+          `Phase input:\n${JSON.stringify(request.input)}`,
+        ].join("\n\n"),
       });
       await this.#waitForAgent(binding);
       const activity = runState.activity;
@@ -817,7 +821,7 @@ function buildPiArguments(base: string[], request: LaunchPhaseSessionInput): str
     "--no-context-files",
     "--no-skills",
     "--no-prompt-templates",
-    "--no-tools",
+    "--no-builtin-tools",
     "--extension", fileURLToPath(new URL("./pi-security-rpc-policy.mjs", import.meta.url)),
     ...(request.role.provider ? ["--provider", request.role.provider] : []),
     ...(request.role.model ? ["--model", request.role.model] : []),

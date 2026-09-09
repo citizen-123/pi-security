@@ -126,9 +126,12 @@ function piToolResult(result: unknown): AgentToolResult<unknown> {
   if (result.isError === true) {
     throw new Error(content.map((item) => item.text).join("\n"));
   }
+  const structuredContent = result.structuredContent;
   return {
-    content,
-    details: result.structuredContent ?? {}
+    content: structuredContent === undefined
+      ? content
+      : [...content, { type: "text", text: JSON.stringify(structuredContent) }],
+    details: structuredContent ?? {}
   };
 }
 

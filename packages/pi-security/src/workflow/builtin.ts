@@ -1,9 +1,10 @@
 import commonSchema from "../../schemas/definitions/artifact-common.schema.json" with { type: "json" };
 import scanDraftSchema from "../../schemas/tools/scan-draft.schema.json" with { type: "json" };
 import { candidateAttackPathSchema } from "../artifact-attack-path.js";
-import { discoveryCandidatesInputSchema } from "../artifact-discovery.js";
+import { compactDiscoveryCandidateSchema, discoveryCandidatesInputSchema } from "../artifact-discovery.js";
 import { candidateValidationRecordSchema } from "../artifact-validation-phase.js";
 import { loadArtifactZodSchema, type SchemaDocument } from "../artifact-schema-loader.js";
+import { candidateSchemaV1 } from "../deep-scan/artifact-contracts.js";
 import {
   issuePiPackagedAgentContext,
   piPackagedAgentToolAllowlist,
@@ -19,9 +20,13 @@ import {
   validateWorkflow,
 } from "./registry.js";
 
-const object = z.record(z.string(), z.unknown());
 const scanDraftDocuments = [commonSchema, scanDraftSchema] as SchemaDocument[];
 const threatModelSchema = loadArtifactZodSchema(scanDraftDocuments, scanDraftSchema.$id, "threatModel");
+const reductionSelectionSchema = z.object({
+  findings: z.array(candidateSchemaV1.pick({ candidate_id: true }).strict()).describe(
+    "Select discovery candidates by their existing canonical candidate_id. Never invent or rename candidate identities; the host preserves their evidence.",
+  ),
+}).strict();
 const readOnlyCapability = Object.freeze({
   allowDelegation: false,
   allowTargetMutation: false,
@@ -36,28 +41,30 @@ const hostCapability = Object.freeze({
 const PHASE_TYPES: readonly PhaseTypeDefinition[] = [
   phaseType("preflight", "inventory.v1", {}, z.object({ reviewItemsTotal: z.number().int().nonnegative() }).strict(), "deterministic"),
   phaseType("threat-model", "threat-model.v1", { inventory: "inventory.v1" }, z.object({ threatModel: threatModelSchema }).strict()),
-  phaseType("discovery", "discovery.v1", { inventory: "inventory.v1", threatModel: "threat-model.v1" }, discoveryCandidatesInputSchema),
-  phaseType("reduction", "reduction.v1", { discovery: "discovery.v1" }, z.object({ findings: z.array(object) }).strict()),
+  phaseType("discovery", "discovery.v1", { inventory: "inventory.v1", threatModel: "threat-model.v1" },
+    z.object({ candidates: z.array(compactDiscoveryCandidateSchema) }).strict()),
+  phaseType("reduction", "reduction.v1", { discovery: "discovery.v1" },
+    z.object({ findings: z.array(compactDiscoveryCandidateSchema) }).strict()),
   phaseType(
     "validation",
     "validation.v1",
-    { reduction: "reduction.v1" },
+    { discovery: "discovery.v1", reduction: "reduction.v1" },
     z.object({
       validations: z.array(z.object({
         candidateId: z.string(),
         validation: candidateValidationRecordSchema,
-      }).strict()),
+      }).strict()).describe("Include every discovery candidate, including candidates not selected by reduction, using its canonical candidate_id as candidateId."),
     }).strict(),
   ),
   phaseType(
     "attack-path",
     "attack-path.v1",
-    { validation: "validation.v1" },
+    { discovery: "discovery.v1", validation: "validation.v1" },
     z.object({
       attackPaths: z.array(z.object({
         attackPath: candidateAttackPathSchema,
         candidateId: z.string(),
-      }).strict()),
+      }).strict()).describe("Include every candidate with reportable or deferred validation, using its canonical discovery candidate_id as candidateId."),
     }).strict(),
   ),
   phaseType(
@@ -65,6 +72,7 @@ const PHASE_TYPES: readonly PhaseTypeDefinition[] = [
     "report.v1",
     {
       attackPaths: "attack-path.v1",
+      discovery: "discovery.v1",
       reduction: "reduction.v1",
       threatModel: "threat-model.v1",
       validation: "validation.v1",
@@ -109,14 +117,17 @@ export const FULL_REPOSITORY_WORKFLOW: WorkflowDefinition = Object.freeze({
     phase("reduction", "reduction", ["discovery"], "reducer", {
       discovery: { contract: "discovery.v1", from: "discovery" },
     }),
-    phase("validation", "validation", ["reduction"], "validator", {
+    phase("validation", "validation", ["discovery", "reduction"], "validator", {
+      discovery: { contract: "discovery.v1", from: "discovery" },
       reduction: { contract: "reduction.v1", from: "reduction" },
     }),
-    phase("attack-path", "attack-path", ["validation"], "attack_path_analyst", {
+    phase("attack-path", "attack-path", ["discovery", "validation"], "attack_path_analyst", {
+      discovery: { contract: "discovery.v1", from: "discovery" },
       validation: { contract: "validation.v1", from: "validation" },
     }),
-    phase("reporting", "reporting", ["threat-model", "reduction", "validation", "attack-path"], "reporter", {
+    phase("reporting", "reporting", ["threat-model", "discovery", "reduction", "validation", "attack-path"], "reporter", {
       attackPaths: { contract: "attack-path.v1", from: "attack-path" },
+      discovery: { contract: "discovery.v1", from: "discovery" },
       reduction: { contract: "reduction.v1", from: "reduction" },
       threatModel: { contract: "threat-model.v1", from: "threat-model" },
       validation: { contract: "validation.v1", from: "validation" },
@@ -131,6 +142,14 @@ export const VALIDATED_FULL_REPOSITORY_WORKFLOW: ValidatedWorkflow = validateWor
   FULL_REPOSITORY_WORKFLOW,
   BUILT_IN_PHASE_REGISTRY,
 );
+
+/** Models create fresh discovery candidates or select existing IDs; the host owns canonical records. */
+export function modelPhaseOutputSchema(type: string, version: number): PhaseTypeDefinition["outputSchema"] {
+  const definition = BUILT_IN_PHASE_REGISTRY.get(type, version);
+  if (type === "discovery") return discoveryCandidatesInputSchema;
+  if (type === "reduction") return reductionSelectionSchema;
+  return definition.outputSchema;
+}
 
 export function assemblePhaseInputPackage(options: {
   artifactRoot: string;
@@ -170,9 +189,11 @@ export function assemblePhaseInputPackage(options: {
     capabilityProfile,
     evidenceReferences: [...options.evidenceReferences],
     outputContract: {
-      name: definition.outputContract,
+      name: options.phase.type === "discovery"
+        ? "discovery-candidates.v1"
+        : options.phase.type === "reduction" ? "reduction-selection.v1" : definition.outputContract,
       schemaVersion: definition.version,
-      schema: z.toJSONSchema(definition.outputSchema, { io: "input" }),
+      schema: z.toJSONSchema(modelPhaseOutputSchema(options.phase.type, options.phase.version), { io: "input" }),
     },
     phaseId: options.phase.id,
     requiredInputs,

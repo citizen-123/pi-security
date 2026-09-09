@@ -10,13 +10,13 @@ import {
   type PhaseRoleSettings,
 } from "../rpc/phase-session.js";
 import { JsonlRpcClient, JsonlRpcError } from "../rpc/jsonl-client.js";
-import { assemblePhaseInputPackage, BUILT_IN_PHASE_REGISTRY, FULL_REPOSITORY_WORKFLOW } from "../workflow/builtin.js";
+import { assemblePhaseInputPackage, FULL_REPOSITORY_WORKFLOW, modelPhaseOutputSchema } from "../workflow/builtin.js";
 import {
   createArtifactWorkflowServices,
   createBuiltInPhaseExecutors,
   type ModelPhaseRunner,
 } from "../workflow/adapters.js";
-import { parsePhaseResultEnvelope, type PhaseExecutionContext, type PhaseResultEnvelope } from "../workflow/scheduler.js";
+import type { PhaseExecutionContext, PhaseResultEnvelope } from "../workflow/scheduler.js";
 import type { CliLifecycle } from "../cli/operations.js";
 import { CanonicalPreflightError, CanonicalRunLifecycle, type RuntimeOwnership } from "./lifecycle.js";
 import {
@@ -345,12 +345,14 @@ export class DefaultCanonicalRuntimeGateway implements CliLifecycle {
           await getSupervisor().complete(
             controlRequest(current, logicalAgentId, ownership),
             (transcript) => {
-              envelope = parseTranscriptEnvelope(transcript, role.credential?.value);
-              parsePhaseResultEnvelope(envelope, {
-                outputSchema: BUILT_IN_PHASE_REGISTRY.get(context.phase.type, context.phase.version).outputSchema,
+              envelope = {
+                attemptId,
+                output: modelPhaseOutputSchema(context.phase.type, context.phase.version)
+                  .parse(parseTranscriptOutput(transcript, role.credential?.value)),
                 phaseId: context.phase.id,
                 runId: context.runId,
-              });
+                schemaVersion: 1,
+              };
             },
           );
           return envelope;
@@ -391,7 +393,7 @@ async function phaseRole(config: RoleExecutionConfig, environment: NodeJS.Proces
   }
   return {
     ...(credential ? { credential: { environmentVariable: environmentVariable!, value: credential.value } } : {}),
-    instructions: config.instructions ?? "Complete this phase and return only the required JSON result envelope.",
+    instructions: config.instructions ?? "Complete this phase using the issued inputs and read-only tools.",
     model: config.model,
     provider: config.provider,
     thinking: config.thinking ?? "medium",
@@ -405,7 +407,7 @@ function upstreamOutputs(context: PhaseExecutionContext): Record<string, unknown
   ]));
 }
 
-function parseTranscriptEnvelope(value: unknown, credential?: string): PhaseResultEnvelope {
+function parseTranscriptOutput(value: unknown, credential?: string): unknown {
   const transcript = asRecord(value);
   const messages = transcript.messages;
   if (!Array.isArray(messages)) throw new Error("Pi RPC transcript has no messages.");
@@ -419,12 +421,14 @@ function parseTranscriptEnvelope(value: unknown, credential?: string): PhaseResu
   const content = typeof assistant?.content === "string"
     ? assistant.content.trim()
     : Array.isArray(assistant?.content)
-      ? assistant.content.filter((block: Record<string, unknown>) => block?.type === "text" && typeof block.text === "string")
+      ? assistant.content.filter((block: Record<string, unknown>) => (
+        block?.type === "text" && typeof block.text === "string" && !isNativeCommentary(block.textSignature)
+      ))
         .map((block: { text: string }) => block.text).join("").trim()
       : "";
   const fenced = content.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/u)?.[1] ?? content;
   try {
-    return asRecord(JSON.parse(fenced, (_key, entry: unknown) => {
+    return JSON.parse(fenced, (_key, entry: unknown) => {
       if (!credential) return entry;
       if (typeof entry === "string") return redactKnownSecrets(entry, [credential]);
       if (entry && typeof entry === "object" && !Array.isArray(entry)) {
@@ -433,9 +437,20 @@ function parseTranscriptEnvelope(value: unknown, credential?: string): PhaseResu
         ]));
       }
       return entry;
-    })) as unknown as PhaseResultEnvelope;
+    });
   } catch {
-    throw Object.assign(new Error("Pi RPC assistant did not return a valid JSON result envelope."), { code: "CONTRACT_INCOMPATIBLE" });
+    throw Object.assign(new Error("Pi RPC assistant did not return a valid JSON phase output."), { code: "CONTRACT_INCOMPATIBLE" });
+  }
+}
+
+function isNativeCommentary(signature: unknown): boolean {
+  if (typeof signature !== "string" || !signature.startsWith("{")) return false;
+  try {
+    // Pi preserves the Responses API message phase in its versioned text signature.
+    const value = JSON.parse(signature);
+    return value?.v === 1 && typeof value.id === "string" && value.phase === "commentary";
+  } catch {
+    return false;
   }
 }
 

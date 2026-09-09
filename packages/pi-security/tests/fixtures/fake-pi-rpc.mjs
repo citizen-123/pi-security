@@ -175,23 +175,40 @@ function handle(command) {
       const input = lastPrompt?.match(/Phase input:\n(.*)$/su)?.[1];
       const phase = input ? JSON.parse(input) : undefined;
       let content = outputs && phase
-        ? JSON.stringify({
-            attemptId: `fixture:${phase.phaseId}`,
-            output: process.env.FAKE_RPC_ECHO_CREDENTIAL && phase.phaseId === "threat-model"
-              ? { threatModel: { summary: process.env.OPENAI_API_KEY } }
-              : outputs[phase.phaseId],
-            phaseId: phase.phaseId,
-            runId: phase.runId,
-            schemaVersion: 1,
-          })
+        ? JSON.stringify(process.env.FAKE_RPC_ECHO_CREDENTIAL && phase.phaseId === "threat-model"
+          ? { threatModel: { summary: process.env.OPENAI_API_KEY } }
+          : outputs[phase.phaseId])
         : "synthetic\u2028transcript";
+      if (process.env.FAKE_RPC_BIND_CANONICAL_ID === "1" && outputs && phase) {
+        content = JSON.stringify(JSON.parse(content, (_key, value) => (
+          value === "$canonicalCandidateId"
+            ? phase.requiredInputs?.discovery?.candidates?.[0]?.candidate_id ?? "missing-canonical-candidate"
+            : value
+        )));
+      }
       if (process.env.FAKE_RPC_ECHO_CREDENTIAL === "escaped" && process.env.OPENAI_API_KEY) {
         content = content.replaceAll(process.env.OPENAI_API_KEY,
           [...process.env.OPENAI_API_KEY].map((character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`).join(""));
       }
+      const replies = process.env.FAKE_RPC_PHASE_REPLIES ? JSON.parse(process.env.FAKE_RPC_PHASE_REPLIES) : undefined;
+      const reply = phase && replies && Object.hasOwn(replies, phase.phaseId)
+        ? replies[phase.phaseId]
+        : outputs ? [
+          { type: "thinking", thinking: "Synthetic private reasoning." },
+          {
+            type: "text",
+            text: "I will inspect the issued inputs before returning the structured phase output.",
+            textSignature: JSON.stringify({ v: 1, id: "msg_commentary", phase: "commentary" }),
+          },
+          {
+            type: "text",
+            text: content,
+            textSignature: JSON.stringify({ v: 1, id: "msg_final", phase: "final_answer" }),
+          },
+        ] : content;
       response(command, { messages: [{
         role: "assistant",
-        content: outputs ? [{ type: "thinking", thinking: "Synthetic private reasoning." }, { type: "text", text: content }] : content,
+        content: reply,
         stopReason: process.env.FAKE_RPC_ASSISTANT_ERROR === "1" ? "error" : "stop",
         ...(process.env.FAKE_RPC_ASSISTANT_ERROR === "1" ? { errorMessage: "Synthetic provider failure." } : {}),
       }] });
