@@ -8,7 +8,7 @@ Standalone security scanning workbench and native Pi extension package. Analysis
 - Python 3.11 or newer for the bundled workbench
 - Git for Git-aware targets and diff scans
 
-No model-provider CLI or SDK, provider account or API key, or hosted security service is required.
+Analysis uses the configured native Pi model and its authentication. No separate security service or provider-specific CLI or SDK is required. The standalone canonical CLI also requires the native `pi` executable.
 
 ## Install in Pi
 
@@ -144,6 +144,8 @@ Standard and diff scans do not make model-provider calls from the workbench. The
 
 Standard scans audit the requested repository scope. Diff scans first bind an exact local Git change set and keep discovery, validation, and attack-path decisions scoped to that review. Both retain explicit incomplete coverage rather than inventing results.
 
+Managed Standard and Diff starts return their scan identity and `handoffClaimToken` in model-visible native tool content as well as UI details. Preserve that token for ownership-sensitive lifecycle writes; compact artifact tools use the authenticated creator or rejoin identity cached by the host. An owned rejoin retains the scan and claim rather than adopting another continuation's scan.
+
 In Pi, the skills prefer `pi_security_spawn_agents` and `pi_security_control_agents`. If bundled orchestration is unavailable, they may use a host-provided generic subagent tool and then perform the documented sequential parent-agent fallback. This fallback does not turn the local workbench into a model executor.
 
 ## Bundled subagents
@@ -174,7 +176,7 @@ Each native discovery worker receives only coordinator-bound local tools:
 
 Reducers receive scan context, validated reducer inputs, and a schema-bound reduction recorder rather than source tools. Paths remain bound to the authorized target, and source-tool symlinks are not followed.
 
-The executor persists native Pi messages, completed tool results, and an application-owned continuation ID in worker artifacts. Retries and resumes restore that state without relying on a provider conversation or thread identifier. A top-level worker may create at most the configured number of delegated investigations; delegated children run with `subagents: 0`, so delegation is one level deep rather than recursive. The default is disabled (`subagents = 0`).
+The executor persists native Pi messages, completed tool results, and an application-owned continuation ID in worker artifacts. Retries and resumes restore that state without relying on a provider conversation or thread identifier. A top-level worker may create at most the configured number of delegated investigations; delegated children run with `subagents: 0`, so delegation is one level deep rather than recursive. The default is `subagents = 3`; set it to `0` to disable delegation.
 
 ### Model, reasoning, and usage reporting
 
@@ -205,6 +207,8 @@ Resume and retry restore non-secret execution settings from the persisted snapsh
 
 Omitted provider/model settings are resolved with a no-prompt native Pi RPC preflight before creating the run, with tools and repository resource discovery disabled. The effective model identity is persisted for recovery. Phase RPC sessions do not write native session transcripts; canonical attempts, events, and validated outputs provide durable history, and recovery launches replacement phase sessions.
 
+Phase workers disable built-in tools while loading the explicit guarded read-only extension tools; shell and source-write tools remain unavailable. Models return only their phase's JSON payload. The host supplies the run/phase/attempt/schema envelope, assigns canonical candidate IDs, resolves reduction selections by those IDs, and preserves the full candidate ledger for validation and reporting.
+
 ## State and configuration
 
 Defaults:
@@ -212,6 +216,8 @@ Defaults:
 - Workbench state: `$PI_HOME/security/workbench.sqlite3`, with `PI_HOME` defaulting to `~/.pi`
 - Deep Scan settings: `$PI_HOME/pi-security/config.toml`
 - Managed scan output: a private temporary directory unless `PI_SECURITY_SCAN_ROOT` is set
+
+Missing state-directory parents and managed output-directory parents are created privately (`0700` on POSIX). Existing directories are not chmodded; unsafe existing managed output directories fail before scan creation.
 
 Supported environment variables:
 

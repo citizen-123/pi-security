@@ -5,7 +5,9 @@ import json
 import os
 import runpy
 import sqlite3
+import stat
 import subprocess
+import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -656,7 +658,7 @@ def test_repeat_start_returns_active_scan_when_target_disappeared(
 
 
 def test_generated_scan_roots_are_private_without_chmodding_configured_roots(
-    tmp_path: Path,
+    tmp_path: Path, workbench_api: dict[str, Any],
 ) -> None:
     state_dir = tmp_path / "state"
     private_target = tmp_path / "private-target"
@@ -664,7 +666,7 @@ def test_generated_scan_roots_are_private_without_chmodding_configured_roots(
     private_target.mkdir()
     configured_target.mkdir()
     private_workspace = create_saved_workspace(state_dir, private_target, mode="standard")
-    private_root = tmp_path / "generated-private-root"
+    private_root = tmp_path / "generated" / "nested" / "private-root"
     private_started = run_workbench(
         state_dir,
         "start-scan",
@@ -687,6 +689,7 @@ def test_generated_scan_roots_are_private_without_chmodding_configured_roots(
         assert private_root.stat().st_mode & 0o777 == 0o700
         assert private_target_root.stat().st_mode & 0o777 == 0o700
         assert private_scan_dir.stat().st_mode & 0o777 == 0o700
+    assert workbench_api["require_canonical_scan_directory"](private_scan_dir) == private_scan_dir
 
     configured_workspace = create_saved_workspace(
         state_dir,
@@ -695,9 +698,12 @@ def test_generated_scan_roots_are_private_without_chmodding_configured_roots(
     )
     configured_root = tmp_path / "configured-root"
     configured_root.mkdir(mode=0o755)
+    configured_target_root = configured_root / configured_target.name
+    configured_target_root.mkdir(mode=0o755)
     if os.name != "nt":
         configured_root.chmod(0o755)
-    run_workbench(
+        configured_target_root.chmod(0o755)
+    configured_started = run_workbench(
         state_dir,
         "start-scan",
         "--workspace-id",
@@ -712,6 +718,209 @@ def test_generated_scan_roots_are_private_without_chmodding_configured_roots(
     assert configured_root.is_dir()
     if os.name != "nt":
         assert configured_root.stat().st_mode & 0o777 == 0o755
+        assert configured_target_root.stat().st_mode & 0o777 == 0o755
+    configured_scan_dir = Path(str(configured_started["results"]["scanDir"]))
+    assert workbench_api["require_canonical_scan_directory"](configured_scan_dir) == configured_scan_dir
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX umask and permission bits")
+@pytest.mark.parametrize("root_kind", ("configured", "default", "generated"))
+def test_scan_creation_keeps_missing_ancestors_private_under_shared_umask(
+    tmp_path: Path, workbench_api: dict[str, Any], root_kind: str,
+) -> None:
+    state_dir = tmp_path / "runtime" / "state"
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "app.py").write_text("print('scan fixture')\n")
+    existing_mode = stat.S_IMODE(tmp_path.stat().st_mode)
+    scan_root = (
+        state_dir / "scans"
+        if root_kind == "default"
+        else tmp_path / "output" / "nested" / "scans"
+    )
+    if root_kind == "generated":
+        workspace = create_saved_workspace(state_dir, target)
+        arguments = [
+            "start-scan", "--workspace-id", str(workspace["id"]),
+            "--scan-root", str(scan_root), "--private-scan-root",
+        ]
+    else:
+        arguments = [
+            "start-headless-standard-scan", "--thread-id", "private-root-regression",
+            "--target-path", str(target), "--scope", ".",
+        ]
+        if root_kind == "configured":
+            arguments.extend(["--scan-root", str(scan_root)])
+
+    # Keep the permissive umask local to the real create-scan subprocess.
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT), *arguments],
+        env={**os.environ, "PI_SECURITY_STATE_DIR": str(state_dir)},
+        umask=0o002,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    started = json.loads(completed.stdout)
+    scan = started["results"] if root_kind == "generated" else started["scan"]
+    scan_dir = Path(scan["scanDir"])
+
+    assert workbench_api["require_canonical_scan_directory"](scan_dir) == scan_dir
+    for directory in (scan_dir, *scan_dir.parents):
+        if directory == tmp_path:
+            break
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+    assert stat.S_IMODE(state_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(state_dir.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(tmp_path.stat().st_mode) == existing_mode
+    with sqlite3.connect(state_dir / "workbench.sqlite3") as connection:
+        assert connection.execute(
+            "SELECT scan_dir FROM scans WHERE id = ?", (scan["scanId"],)
+        ).fetchone() == (str(scan_dir),)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX permission bits")
+@pytest.mark.parametrize("root_kind", ("configured", "default", "generated"))
+def test_scan_creation_rejects_unsafe_output_parent_before_creating_scan(
+    tmp_path: Path, root_kind: str,
+) -> None:
+    state_dir = tmp_path / "state"
+    target = tmp_path / "target"
+    target.mkdir()
+    workspace = create_saved_workspace(state_dir, target)
+    unsafe_parent = state_dir / "scans" if root_kind == "default" else tmp_path / "unsafe"
+    unsafe_parent.mkdir()
+    unsafe_parent.chmod(0o775)
+    if root_kind == "generated":
+        arguments = [
+            "start-scan", "--workspace-id", str(workspace["id"]),
+            "--scan-root", str(unsafe_parent / "missing" / "scans"), "--private-scan-root",
+        ]
+    else:
+        arguments = [
+            "start-headless-standard-scan", "--thread-id", "unsafe-root-regression",
+            "--target-path", str(target), "--scope", ".",
+        ]
+        if root_kind == "configured":
+            arguments.extend(["--scan-root", str(unsafe_parent / "missing" / "scans")])
+
+    rejected = run_workbench(state_dir, *arguments, check=False)
+
+    assert rejected["returncode"] != 0
+    assert list(unsafe_parent.iterdir()) == []
+    assert stat.S_IMODE(unsafe_parent.stat().st_mode) == 0o775
+    with sqlite3.connect(state_dir / "workbench.sqlite3") as connection:
+        assert connection.execute("SELECT COUNT(*) FROM scans").fetchone() == (0,)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX permission bits")
+def test_existing_state_permissions_do_not_block_a_separate_safe_scan_root(
+    tmp_path: Path, workbench_api: dict[str, Any],
+) -> None:
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    state_dir.chmod(0o775)
+    target = tmp_path / "target"
+    target.mkdir()
+    arguments = ["--target-path", str(target), "--scope", "."]
+
+    started = run_workbench(
+        state_dir, "start-headless-standard-scan", "--thread-id", "configured-safe-root",
+        *arguments, "--scan-root", str(tmp_path / "safe-scans"),
+    )
+    scan_dir = Path(str(started["scan"]["scanDir"]))
+    assert workbench_api["require_canonical_scan_directory"](scan_dir) == scan_dir
+    assert stat.S_IMODE(state_dir.stat().st_mode) == 0o775
+
+    rejected = run_workbench(
+        state_dir, "start-headless-standard-scan", "--thread-id", "unsafe-default-root",
+        *arguments, check=False,
+    )
+    assert rejected["returncode"] != 0
+    assert not (state_dir / "scans").exists()
+    assert stat.S_IMODE(state_dir.stat().st_mode) == 0o775
+    with sqlite3.connect(state_dir / "workbench.sqlite3") as connection:
+        assert connection.execute("SELECT COUNT(*) FROM scans").fetchone() == (1,)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX sticky-bit semantics")
+def test_scan_creation_accepts_safe_sticky_output_parent(
+    tmp_path: Path, workbench_api: dict[str, Any],
+) -> None:
+    state_dir = tmp_path / "state"
+    target = tmp_path / "target"
+    target.mkdir()
+    shared_parent = tmp_path / "shared-tmp"
+    shared_parent.mkdir()
+    shared_parent.chmod(0o1777)
+    scan_root = shared_parent / "private" / "scans"
+
+    started = run_workbench(
+        state_dir, "start-headless-standard-scan", "--thread-id", "sticky-root-regression",
+        "--target-path", str(target), "--scope", ".", "--scan-root", str(scan_root),
+    )
+    scan_dir = Path(str(started["scan"]["scanDir"]))
+
+    assert workbench_api["require_canonical_scan_directory"](scan_dir) == scan_dir
+    assert stat.S_IMODE(scan_root.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(shared_parent.stat().st_mode) == 0o1777
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX permission bits")
+@pytest.mark.parametrize("nonprivate_directory", ("root", "target"))
+def test_private_generated_scan_rejects_preexisting_nonprivate_directory_without_chmod(
+    tmp_path: Path, nonprivate_directory: str,
+) -> None:
+    state_dir = tmp_path / "state"
+    target = tmp_path / "target"
+    target.mkdir()
+    workspace = create_saved_workspace(state_dir, target)
+    scan_root = tmp_path / "generated"
+    scan_root.mkdir(mode=0o700)
+    existing = scan_root if nonprivate_directory == "root" else scan_root / target.name
+    if existing != scan_root:
+        existing.mkdir()
+    existing.chmod(0o755)
+    sentinel = existing / "keep"
+    sentinel.write_text("user-owned directory\n")
+
+    rejected = run_workbench(
+        state_dir, "start-scan", "--workspace-id", str(workspace["id"]),
+        "--scan-root", str(scan_root), "--private-scan-root", check=False,
+    )
+
+    assert rejected["returncode"] != 0
+    assert stat.S_IMODE(existing.stat().st_mode) == 0o755
+    assert list(existing.iterdir()) == [sentinel]
+    assert sentinel.read_text() == "user-owned directory\n"
+    with sqlite3.connect(state_dir / "workbench.sqlite3") as connection:
+        assert connection.execute("SELECT COUNT(*) FROM scans").fetchone() == (0,)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX descriptor-relative directories")
+def test_scan_output_creation_rejects_symlink_substitution(
+    tmp_path: Path, workbench_api: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "raced-output"
+    target_root = root / "target"
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o755)
+    outside_mode = stat.S_IMODE(outside.stat().st_mode)
+    original_mkdir = os.mkdir
+
+    def substitute_directory(path, mode=0o777, *, dir_fd=None):
+        if path == root.name and dir_fd is not None:
+            root.symlink_to(outside, target_is_directory=True)
+        return original_mkdir(path, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "mkdir", substitute_directory)
+    monkeypatch.setattr(os, "supports_dir_fd", {*os.supports_dir_fd, substitute_directory})
+
+    with pytest.raises(SystemExit):
+        workbench_api["create_owned_scan_target_root"](target_root)
+
+    assert list(outside.iterdir()) == []
+    assert stat.S_IMODE(outside.stat().st_mode) == outside_mode
 
 
 def test_workbench_reopens_workspace_only_from_owning_thread(tmp_path: Path) -> None:

@@ -563,7 +563,7 @@ function registerPiSecurityLifecycleTools(registrar: LifecycleToolRegistrar): vo
 
   registrar.registerTool("start_pi_security_standard_scan", {
     title: "Start or Join Pi Security Standard Scan",
-    description: "Headless and CLI only. Start or rejoin a Standard security scan. Do not use for desktop scans, Review changes, Deep Scan, or an existing externally managed scan. Use the returned authoritative scanId, scanDir, and handoffClaimToken throughout preflight, reporting, and completion.",
+    description: "Headless and CLI only. Start or rejoin a Standard security scan. Do not use for desktop scans, Review changes, Deep Scan, or an existing externally managed scan. Use the returned authoritative scanId, scanDir, and handoffClaimToken throughout preflight, reporting, and completion. Keep the token out of user-facing summaries.",
     inputSchema: startHeadlessStandardScanSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _meta: modelActionMeta
@@ -577,53 +577,25 @@ function registerPiSecurityLifecycleTools(registrar: LifecycleToolRegistrar): vo
       threadId,
       piModelSettingsFromExtra(extra)
     );
-    const scan = isJsonObject(started.scan) ? started.scan : undefined;
-    const progress = isJsonObject(scan?.progress) ? scan.progress : undefined;
-    const workspace = isJsonObject(started.workspace) ? started.workspace : undefined;
-    const workspaceResults = isJsonObject(workspace?.results) ? workspace.results : undefined;
-    const scanId = scan?.scanId;
-    const scanDir = scan?.scanDir;
-    const handoffClaimToken = scan?.handoffClaimToken;
-    if (
-      (started.startDisposition !== "created" && started.startDisposition !== "joined")
-      || typeof scanId !== "string"
-      || !z.string().uuid().safeParse(scanId).success
-      || typeof handoffClaimToken !== "string"
-      || !z.string().uuid().safeParse(handoffClaimToken).success
-      || typeof scanDir !== "string"
-      || !scanDir.trim()
-      || scan?.mode !== "standard"
-      || scan.handoffStatus !== "delivered"
-      || scan.continuationThreadId !== threadId
-      || progress?.status !== "running"
-      || (started.startDisposition === "created" && progress.phase !== "preflight")
-      || workspaceResults?.scanId !== scanId
-    ) {
+    const ownership = ownedPromptDrivenScanStart(started, "standard", threadId);
+    if (!ownership) {
       return toolErrorResult(
         "Pi Security returned malformed Standard scan ownership; no headless scan can continue."
       );
     }
-    authenticatedArtifactClaims.set(scanId, {
-      claimToken: handoffClaimToken,
+    authenticatedArtifactClaims.set(ownership.scanId, {
+      claimToken: ownership.handoffClaimToken,
       threadId
     });
-    return {
-      content: [{
-        type: "text" as const,
-        text: `${started.startDisposition === "created" ? "Started" : "Rejoined"} Standard scan ${scanId}. When the scan is in preflight, complete security_scan preflight before reviewing the target or creating a goal. Preserve the returned handoffClaimToken for scan progress, the semantic draft, and completion.`
-      }],
-      structuredContent: {
-        ...redactHandoffClaimToken(started),
-        scanId,
-        scanDir,
-        handoffClaimToken
-      }
-    };
+    return scanActionResult({
+      ...redactHandoffClaimToken(started),
+      ...ownership
+    }, `${started.startDisposition === "created" ? "Started" : "Rejoined"} Standard scan ${ownership.scanId}. When the scan is in preflight, complete security_scan preflight before reviewing the target or creating a goal. Pass the returned handoffClaimToken on scan context, progress, semantic draft, completion, and failure writes; keep it out of user-facing summaries.`);
   });
 
   registrar.registerTool("start_pi_security_prompt_only_scan", {
     title: "Start Pi Security Prompt-Only Scan",
-    description: "Start or rejoin a Standard or diff Pi Security scan from its owning conversation. Use the returned authoritative scanId and scanDir. Standard and diff scans save progress checkpoints before their final semantic draft; the workbench writes the unsealed canonical artifacts. Complete the same scan once. Deep Scan uses start_pi_security_deep_scan instead.",
+    description: "Start or rejoin a Standard or diff Pi Security scan from its owning conversation. Use the returned authoritative scanId, scanDir, and handoffClaimToken. Pass the token on lifecycle context, progress, semantic draft, completion, and failure writes, and keep it out of user-facing summaries. Standard and diff scans save progress checkpoints before their final semantic draft; the workbench writes the unsealed canonical artifacts. Complete the same scan once. Deep Scan uses start_pi_security_deep_scan instead.",
     inputSchema: startPromptOnlyScanSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _meta: modelActionMeta
@@ -646,7 +618,20 @@ function registerPiSecurityLifecycleTools(registrar: LifecycleToolRegistrar): vo
       threadId,
       piModelSettingsFromExtra(extra)
     );
-    return promptOnlyScanResult(promptOnly);
+    const ownership = ownedPromptDrivenScanStart(promptOnly, mode, threadId);
+    if (!ownership) {
+      return toolErrorResult(
+        "Pi Security returned malformed prompt-driven scan ownership; no prompt-driven scan can continue."
+      );
+    }
+    authenticatedArtifactClaims.set(ownership.scanId, {
+      claimToken: ownership.handoffClaimToken,
+      threadId
+    });
+    return scanActionResult({
+      ...redactHandoffClaimToken(promptOnly),
+      ...ownership
+    }, `${promptOnly.startDisposition === "joined" ? "Rejoined" : "Started"} prompt-driven scan ${ownership.scanId}. Use the returned scanId and scanDir for every phase. Pass the returned handoffClaimToken on lifecycle context, progress, semantic draft, completion, and failure writes; keep it out of user-facing summaries. Record the final semantic draft with record_pi_security_scan_draft; the workbench writes the unsealed canonical artifacts. Then call complete_pi_security_scan once to seal and index the completed findings.`);
   });
 
   registrar.registerTool("request_pi_security_user_input", {
@@ -1794,33 +1779,36 @@ function workspaceResult(workspace: WorkspaceState) {
   };
 }
 
-function promptOnlyScanResult(promptOnly: JsonObject) {
-  const startDisposition = promptOnly.startDisposition;
-  const scan = isJsonObject(promptOnly.scan) ? promptOnly.scan : undefined;
-  const workspace = isJsonObject(promptOnly.workspace) ? promptOnly.workspace : undefined;
+function ownedPromptDrivenScanStart(
+  started: JsonObject,
+  mode: "standard" | "diff",
+  threadId: string
+) {
+  const scan = isJsonObject(started.scan) ? started.scan : undefined;
+  const progress = isJsonObject(scan?.progress) ? scan.progress : undefined;
+  const workspace = isJsonObject(started.workspace) ? started.workspace : undefined;
   const workspaceResults = isJsonObject(workspace?.results) ? workspace.results : undefined;
   const scanId = scan?.scanId;
   const scanDir = scan?.scanDir;
+  const handoffClaimToken = scan?.handoffClaimToken;
   if (
-    (startDisposition !== "created" && startDisposition !== "joined") ||
-    !z.string().uuid().safeParse(scanId).success ||
-    typeof scanDir !== "string" ||
-    !scanDir.trim() ||
-    scan?.handoffStatus !== "delivered" ||
-    workspaceResults?.scanId !== scanId
+    (started.startDisposition !== "created" && started.startDisposition !== "joined")
+    || typeof scanId !== "string"
+    || !z.string().uuid().safeParse(scanId).success
+    || typeof handoffClaimToken !== "string"
+    || !z.string().uuid().safeParse(handoffClaimToken).success
+    || typeof scanDir !== "string"
+    || !scanDir.trim()
+    || scan?.mode !== mode
+    || scan.handoffStatus !== "delivered"
+    || scan.continuationThreadId !== threadId
+    || progress?.status !== "running"
+    || (started.startDisposition === "created" && progress.phase !== "preflight")
+    || workspaceResults?.scanId !== scanId
   ) {
-    return toolErrorResult(
-      "Pi Security prompt-only scan returned malformed context; no prompt-driven scan was started."
-    );
+    return undefined;
   }
-  const disposition = startDisposition === "joined" ? "Rejoined" : "Started";
-  return {
-    content: [{
-      type: "text" as const,
-      text: `${disposition} prompt-driven scan ${scanId}. Use the returned scanId and scanDir for every phase. Author scan-manifest.json as an unsealed draft: omit scan.sealedAt and scan.artifacts because completion supplies the exact workbench timestamps, seal, artifact digests, and derived finding identities. Then call complete_pi_security_scan once to index the completed findings.`
-    }],
-    structuredContent: promptOnly
-  };
+  return { scanId, scanDir, handoffClaimToken };
 }
 
 function scanActionResult(result: JsonObject, summary: string) {

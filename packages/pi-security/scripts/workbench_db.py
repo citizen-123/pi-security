@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 import uuid
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -274,7 +274,8 @@ def connect_read_only_preflight() -> sqlite3.Connection:
 
 def connect() -> sqlite3.Connection:
     path = database_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.parent.is_dir():
+        create_private_directory_tree(path.parent)
     for attempt in range(SQLITE_RETRY_ATTEMPTS):
         connection = sqlite3.connect(path, timeout=5)
         try:
@@ -846,11 +847,85 @@ def scan_target_root(scan_root: str | None, target: Path) -> Path:
     return target_root
 
 
+def require_scan_output_parent(metadata: os.stat_result) -> None:
+    if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+        raise SystemExit("Scan output parent must be a non-symlink directory.")
+    if os.name == "nt":
+        return
+    geteuid = getattr(os, "geteuid", None)
+    effective_uid = geteuid() if geteuid is not None else None
+    if effective_uid is not None and metadata.st_uid not in {0, effective_uid}:
+        raise SystemExit("Scan output parent must have a trusted owner.")
+    if (
+        stat.S_IMODE(metadata.st_mode) & 0o022
+        and not metadata.st_mode & stat.S_ISVTX
+    ):
+        raise SystemExit(
+            "Scan output parent must not be group- or world-writable without the sticky bit."
+        )
+
+
+def create_private_directory_tree(directory: Path, *, scan_output: bool = False) -> None:
+    directory = directory.absolute()
+    try:
+        if os.path.normcase(directory.resolve()) != os.path.normcase(directory):
+            raise SystemExit("Runtime output directory must be canonical and non-symlink.")
+        if os.name == "nt":
+            from windows_scan_local_files import _open_directory
+
+            # Hold the existing Win32 backend's non-deletable, non-reparse
+            # handles while creating children, retaining mkdir's Windows ACL behavior.
+            with ExitStack() as handles:
+                for parent in (*reversed(directory.parents), directory):
+                    handle = _open_directory(parent, missing_ok=True)
+                    if handle is None:
+                        try:
+                            parent.mkdir(mode=0o700)
+                        except FileExistsError:
+                            pass
+                        handle = _open_directory(parent)
+                    assert handle is not None
+                    handles.enter_context(handle)
+            return
+        if not hasattr(os, "O_NOFOLLOW") or any(
+            operation not in os.supports_dir_fd for operation in (os.mkdir, os.open)
+        ):
+            raise SystemExit("Runtime output creation requires descriptor-relative directories.")
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
+        descriptor = os.open(directory.anchor, flags)
+        try:
+            metadata = os.fstat(descriptor)
+            if scan_output:
+                require_scan_output_parent(metadata)
+            for component in directory.parts[1:]:
+                # parents=True applies mode only to the leaf. Create each missing
+                # ancestor privately, without changing any pre-existing directory.
+                try:
+                    os.mkdir(component, mode=0o700, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+                next_descriptor = os.open(component, flags, dir_fd=descriptor)
+                os.close(descriptor)
+                descriptor = next_descriptor
+                metadata = os.fstat(descriptor)
+                if not stat.S_ISDIR(metadata.st_mode):
+                    raise SystemExit("Runtime output parent must be a non-symlink directory.")
+                if scan_output:
+                    require_scan_output_parent(metadata)
+            current = directory.lstat()
+            if (
+                (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino)
+                or os.path.normcase(directory.resolve(strict=True)) != os.path.normcase(directory)
+            ):
+                raise SystemExit("Runtime output directory changed while it was being created.")
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise SystemExit("Runtime output directory must be a canonical non-symlink directory.") from error
+
+
 def create_owned_scan_target_root(target_root: Path) -> None:
-    target_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    metadata = target_root.lstat()
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-        raise SystemExit("The scan target output root must be a non-symlink directory.")
+    create_private_directory_tree(target_root, scan_output=True)
 
 
 def create_scan_target_root(args: argparse.Namespace, target_root: Path) -> None:
@@ -861,31 +936,31 @@ def create_scan_target_root(args: argparse.Namespace, target_root: Path) -> None
         raise SystemExit("A private generated scan root requires --scan-root.")
     requested_root = Path(args.scan_root).expanduser().absolute()
     try:
-        parent = requested_root.parent.resolve(strict=True)
-    except OSError as error:
-        raise SystemExit("The private generated scan-root parent is unavailable.") from error
-    if not parent.is_dir():
-        raise SystemExit("The private generated scan-root parent must be a directory.")
-    try:
         metadata = requested_root.lstat()
     except FileNotFoundError:
         metadata = None
-    if metadata is None:
-        requested_root.mkdir(mode=0o700)
-    elif stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+    if metadata is not None and (
+        stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode)
+    ):
         raise SystemExit("The private generated scan root is not a safe directory.")
-    private_root = requested_root.resolve(strict=True)
+    private_root = requested_root.resolve()
     if target_root.parent != private_root:
         raise SystemExit("The private generated target root escaped its scan root.")
-    target_root.mkdir(mode=0o700, exist_ok=True)
     for directory in (private_root, target_root):
-        metadata = directory.lstat()
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-            raise SystemExit("The private generated scan path is not a safe directory.")
-        if os.name != "nt":
-            directory.chmod(0o700)
-            if stat.S_IMODE(directory.stat().st_mode) != 0o700:
-                raise SystemExit("The private generated scan path must have mode 0700.")
+        try:
+            directory.lstat()
+        except FileNotFoundError:
+            continue
+        require_private_generated_scan_directory(directory)
+    create_owned_scan_target_root(target_root)
+    for directory in (private_root, target_root):
+        require_private_generated_scan_directory(directory)
+
+
+def require_private_generated_scan_directory(directory: Path) -> None:
+    require_canonical_scan_directory(directory)
+    if os.name != "nt" and stat.S_IMODE(directory.lstat().st_mode) != 0o700:
+        raise SystemExit("The private generated scan path must have mode 0700.")
 
 
 def require_start_scan_preflight_binding(
@@ -1028,17 +1103,17 @@ def start_scan(connection: sqlite3.Connection, args: argparse.Namespace) -> dict
 def start_prompt_only_scan(
     connection: sqlite3.Connection, args: argparse.Namespace
 ) -> dict[str, Any]:
-    return _start_prompt_driven_scan(connection, args, headless_standard=False)
+    return _start_prompt_driven_scan(connection, args)
 
 
 def start_headless_standard_scan(
     connection: sqlite3.Connection, args: argparse.Namespace
 ) -> dict[str, Any]:
-    return _start_prompt_driven_scan(connection, args, headless_standard=True)
+    return _start_prompt_driven_scan(connection, args)
 
 
 def _start_prompt_driven_scan(
-    connection: sqlite3.Connection, args: argparse.Namespace, *, headless_standard: bool
+    connection: sqlite3.Connection, args: argparse.Namespace
 ) -> dict[str, Any]:
     thread_id = optional_text(args.thread_id, maximum=512)
     if thread_id is None:
@@ -1091,7 +1166,8 @@ def _start_prompt_driven_scan(
         existing = connection.execute(
             """
             SELECT scans.* FROM scans
-            JOIN workspaces ON workspaces.active_scan_id = scans.id
+            JOIN workspaces ON workspaces.id = scans.workspace_id
+                AND workspaces.active_scan_id = scans.id
             WHERE workspaces.thread_id = ? AND workspaces.target_path = ?
                 AND workspaces.default_scope = ? AND workspaces.default_mode = ?
                 AND workspaces.user_context IS ? AND workspaces.target_summary IS ?
@@ -1100,12 +1176,12 @@ def _start_prompt_driven_scan(
                 AND workspaces.submitted = 1 AND scans.target_revision = ?
                 AND scans.target_snapshot_digest IS ? AND scans.target_device = ?
                 AND scans.target_inode = ? AND scans.status = 'running'
-                AND scans.handoff_status = 'delivered'
+                AND scans.canceled_at IS NULL AND scans.handoff_status = 'delivered'
                 AND (
-                    (? = 0 AND scans.handoff_claim_token IS NULL)
+                    scans.continuation_thread_id = ?
                     OR (
-                        ? = 1 AND scans.handoff_claim_token IS NOT NULL
-                        AND scans.continuation_thread_id = ?
+                        scans.handoff_claim_token IS NULL
+                        AND scans.continuation_thread_id IS NULL
                     )
                 )
             ORDER BY scans.updated_at DESC, scans.started_at DESC, scans.id LIMIT 1
@@ -1119,79 +1195,84 @@ def _start_prompt_driven_scan(
                 target_summary,
                 *diff_identity,
                 *target_identity,
-                int(headless_standard),
-                int(headless_standard),
                 thread_id,
             ),
         ).fetchone()
         if existing is not None:
-            connection.commit()
-            return {
-                **scan_context(connection, existing["id"]),
-                "startDisposition": "joined",
-            }
-        create_owned_scan_target_root(target_root)
-        workspace_id = str(uuid.uuid4())
-        scan_id = str(uuid.uuid4())
-        timestamp = now()
-        target_id = ensure_security_target(connection, target_path)
-        connection.execute(
-            """
-            INSERT INTO workspaces (
-                id, thread_id, target_id, target_path, target_title, target_summary, default_scope,
-                default_mode, user_context, diff_target_kind, diff_base_revision,
-                diff_head_revision, diff_content_digest, submitted, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-            """,
-            (
-                workspace_id,
-                thread_id,
-                target_id,
-                target_path,
-                target.name,
-                target_summary,
-                scope,
-                args.mode,
-                user_context,
-                *diff_identity,
-                timestamp,
-                timestamp,
-            ),
-        )
-        workspace = require_workspace(connection, workspace_id)
-        insert_running_scan(
-            connection,
-            scan_id=scan_id,
-            workspace=workspace,
-            target=target,
-            scope=scope,
-            diff_target=diff_target,
-            target_identity=target_identity,
-            target_root=target_root,
-            target_summary=target_summary,
-            scope_file_count=scope_file_count,
-            timestamp=timestamp,
-            handoff_status="delivered",
-            model=args.model,
-            reasoning_effort=args.reasoning_effort,
-        )
-        if headless_standard:
+            scan_id = existing["id"]
+        else:
+            create_owned_scan_target_root(target_root)
+            workspace_id = str(uuid.uuid4())
+            scan_id = str(uuid.uuid4())
+            timestamp = now()
+            target_id = ensure_security_target(connection, target_path)
+            connection.execute(
+                """
+                INSERT INTO workspaces (
+                    id, thread_id, target_id, target_path, target_title, target_summary, default_scope,
+                    default_mode, user_context, diff_target_kind, diff_base_revision,
+                    diff_head_revision, diff_content_digest, submitted, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    workspace_id,
+                    thread_id,
+                    target_id,
+                    target_path,
+                    target.name,
+                    target_summary,
+                    scope,
+                    args.mode,
+                    user_context,
+                    *diff_identity,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            workspace = require_workspace(connection, workspace_id)
+            insert_running_scan(
+                connection,
+                scan_id=scan_id,
+                workspace=workspace,
+                target=target,
+                scope=scope,
+                diff_target=diff_target,
+                target_identity=target_identity,
+                target_root=target_root,
+                target_summary=target_summary,
+                scope_file_count=scope_file_count,
+                timestamp=timestamp,
+                handoff_status="delivered",
+                model=args.model,
+                reasoning_effort=args.reasoning_effort,
+            )
+        if existing is None or existing["handoff_claim_token"] is None:
             claimed = connection.execute(
                 """
                 UPDATE scans
-                SET handoff_claim_token = ?, continuation_thread_id = ?
-                WHERE id = ? AND status = 'running' AND handoff_status = 'delivered'
-                    AND handoff_claim_token IS NULL AND continuation_thread_id IS NULL
+                SET handoff_claim_token = ?, continuation_thread_id = ?, updated_at = ?
+                WHERE id = ? AND status = 'running' AND canceled_at IS NULL
+                    AND handoff_status = 'delivered' AND handoff_claim_token IS NULL
+                    AND (continuation_thread_id IS NULL OR continuation_thread_id = ?)
+                    AND EXISTS (
+                        SELECT 1 FROM workspaces
+                        WHERE workspaces.id = scans.workspace_id
+                            AND workspaces.active_scan_id = scans.id
+                            AND workspaces.thread_id = ?
+                    )
                 """,
-                (str(uuid.uuid4()), thread_id, scan_id),
+                (str(uuid.uuid4()), thread_id, now(), scan_id, thread_id, thread_id),
             )
             if claimed.rowcount != 1:
-                raise SystemExit("Pi Security headless scan ownership could not be recorded.")
+                raise SystemExit("Pi Security scan ownership could not be recorded.")
         connection.commit()
     except BaseException:
         connection.rollback()
         raise
-    return {**scan_context(connection, scan_id), "startDisposition": "created"}
+    return {
+        **scan_context(connection, scan_id),
+        "startDisposition": "joined" if existing is not None else "created",
+    }
 
 
 def scan_local_file_digest(scan_dir: Path, relative_path: str) -> str:
@@ -1633,6 +1714,10 @@ def complete_scan_locked(
         if isinstance(manifest_scan, dict) and manifest_scan.get("sealedAt") is not None:
             completion_binding["startedAt"] = manifest_scan.get("startedAt")
             completion_binding["completedAt"] = manifest_scan.get("completedAt")
+    elif already_sealed and scan["handoff_claim_token"] is not None:
+        # An owned prompt scan may have sealed artifacts from prepare-scan-completion.
+        # Keep its completion instant while still checking the authoritative start.
+        completion_binding["completedAt"] = current_manifest["scan"].get("completedAt")
     wrote = False
     try:
         prepared = _prepare_scan_finalization(
@@ -3436,20 +3521,7 @@ def require_canonical_scan_directory(scan_dir: Path) -> Path:
                 parent_metadata = parent.lstat()
             except OSError as exc:
                 raise SystemExit("Scan output parent could not be inspected.") from exc
-            if not stat.S_ISDIR(parent_metadata.st_mode) or stat.S_ISLNK(parent_metadata.st_mode):
-                raise SystemExit("Scan output parent must be a non-symlink directory.")
-            if effective_uid is not None and parent_metadata.st_uid not in {
-                0,
-                effective_uid,
-            }:
-                raise SystemExit("Scan output parent must have a trusted owner.")
-            if (
-                stat.S_IMODE(parent_metadata.st_mode) & 0o022
-                and not parent_metadata.st_mode & stat.S_ISVTX
-            ):
-                raise SystemExit(
-                    "Scan output parent must not be group- or world-writable without the sticky bit."
-                )
+            require_scan_output_parent(parent_metadata)
     return scan_dir
 
 

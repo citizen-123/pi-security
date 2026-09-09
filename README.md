@@ -78,6 +78,8 @@ pi-security scan --target /path/to/repository
 pi-security scan --config /path/to/pi-security.toml
 ```
 
+The CLI requires the native `pi` executable and usable model authentication through Pi or a configured role credential.
+
 Inspect durable state or operate on an existing run:
 
 ```sh
@@ -93,11 +95,11 @@ pi-security run retry <run-id>
 
 ### Standard Scan
 
-A repository-wide audit scheduled by the canonical runtime. It can be invoked from the current Pi session or the standalone `pi-security` CLI.
+A repository-wide audit scheduled by the canonical runtime, invoked from Pi or the standalone `pi-security` CLI. Scoped scans and invocations with an existing host-owned scan use the host-led Standard workflow instead.
 
 ### Diff Scan
 
-Reviews an exact Git change set and the supporting code needed to understand it. Use it before merging a branch or when reviewing a security-sensitive patch.
+Reviews an exact Git change set and the supporting code needed to understand it: a working-tree patch, one commit, or an explicit revision range. A working-tree baseline must match `HEAD`; committed reviews preserve their resolved base and head revisions. Use it before merging a branch or when reviewing a security-sensitive patch.
 
 ### Deep Scan
 
@@ -124,6 +126,8 @@ Default locations:
 - Managed scan output: a private temporary directory unless `PI_SECURITY_SCAN_ROOT` is set
 
 `PI_HOME` defaults to `~/.pi`.
+
+New managed output directories and their missing parents are private (`0700` on POSIX). Unsafe existing output directories are rejected rather than silently changing their permissions.
 
 A completed managed scan can contain:
 

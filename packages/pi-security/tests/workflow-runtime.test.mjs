@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { build } from "esbuild";
 
@@ -240,13 +243,265 @@ test("model input packages expose executable output schemas without unbound upst
   }
 });
 
+const freshCandidate = {
+  cwe_ids: ["cwe-079", "CWE-79"],
+  locations: [
+    { path: "src/handler.ts", start_line: 1, role: "source" },
+    { path: "src/handler.ts", start_line: 2, role: "sink" },
+  ],
+  summary: "Request content reaches an HTML response.",
+  evidence: "The handler sends the request parameter without escaping.",
+};
+const preparedOutputs = {
+  preflight: { reviewItemsTotal: 1 },
+  "threat-model": { threatModel: { summary: "An untrusted HTTP request crosses the HTML response boundary." } },
+};
+const preparedStates = { preflight: "completed", "threat-model": "completed" };
+const workflowWithoutPublication = workflow.validateWorkflow({
+  ...workflow.FULL_REPOSITORY_WORKFLOW,
+  phases: workflow.FULL_REPOSITORY_WORKFLOW.phases.filter((entry) => entry.id !== "publication"),
+}, workflow.BUILT_IN_PHASE_REGISTRY);
+
+async function workflowArtifactFixture(t) {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "pi-security-workflow-artifacts-")));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const repoRoot = path.join(root, "repository");
+  const scanRoot = path.join(root, "scan");
+  const discoveryRoot = path.join(scanRoot, "artifacts", "02_discovery");
+  await Promise.all([
+    mkdir(path.join(repoRoot, "src"), { recursive: true, mode: 0o700 }),
+    mkdir(discoveryRoot, { recursive: true, mode: 0o700 }),
+  ]);
+  await Promise.all([
+    writeFile(path.join(repoRoot, "src", "handler.ts"), "const input = request.query.name;\nresponse.send(input);\n", { mode: 0o600 }),
+    writeFile(path.join(discoveryRoot, "in_scope_files.txt"), "src/handler.ts\n", { mode: 0o600 }),
+  ]);
+  const scanId = randomUUID();
+  const services = workflow.createArtifactWorkflowServices({
+    packageRoot,
+    scanId,
+    runWorkbench: async (args) => {
+      assert.deepEqual(args, ["get-scan", "--scan-id", scanId]);
+      return { scanId, scanDir: scanRoot, status: "running", targetPath: repoRoot, mode: "standard" };
+    },
+  });
+  return {
+    ledgerPath: path.join(discoveryRoot, "candidate_ledger.jsonl"),
+    services,
+  };
+}
+
+function validationRecord(disposition) {
+  return {
+    disposition,
+    method: "Static source-to-sink trace.",
+    confidence: "high",
+    confidence_rationale: "The request and response are directly connected.",
+    rubric: "The source is untrusted and the response is an HTML sink.",
+    evidence: freshCandidate.evidence,
+    counterevidence_or_proof_gap: "No escaping is present.",
+    remaining_uncertainty: "",
+  };
+}
+
+test("models supply fresh discovery candidates and select canonical IDs without copying evidence", () => {
+  const current = workflow.FULL_REPOSITORY_WORKFLOW.phases.find((entry) => entry.id === "discovery");
+  const input = workflow.assemblePhaseInputPackage({
+    artifactRoot: "/synthetic/artifacts",
+    evidenceReferences: [],
+    outputs: preparedOutputs,
+    phase: current,
+    role: { instructions: "Find candidates.", model: "fixture-model", provider: "fixture", thinking: "medium" },
+    scanId: "synthetic-scan",
+    runId: "synthetic-run",
+    target: { path: "/synthetic/repository", revision: null },
+  });
+  const emittedSchema = z.fromJSONSchema(input.outputContract.schema);
+  assert.equal(emittedSchema.safeParse({ candidates: [freshCandidate] }).success, true);
+  assert.equal(emittedSchema.safeParse({
+    candidates: [{ ...freshCandidate, candidate_id: "model-invented" }],
+  }).success, false);
+  assert.equal(workflow.BUILT_IN_PHASE_REGISTRY.get("discovery", 1).outputSchema.safeParse({
+    candidates: [freshCandidate],
+  }).success, false);
+  assert.equal(workflow.BUILT_IN_PHASE_REGISTRY.get("reduction", 1).outputSchema.safeParse({
+    findings: [{ candidate_id: "model-invented" }],
+  }).success, false);
+  const selectionSchema = workflow.modelPhaseOutputSchema("reduction", 1);
+  assert.equal(selectionSchema.safeParse({
+    findings: [{ candidate_id: "existing-canonical-candidate" }],
+  }).success, true);
+  assert.equal(selectionSchema.safeParse({
+    findings: [{ ...freshCandidate, candidate_id: "existing-canonical-candidate" }],
+  }).success, false);
+});
+
+test("normalized candidates survive reduction and resume with persisted identities and evidence through reporting", async (t) => {
+  const fixture = await workflowArtifactFixture(t);
+  const runId = randomUUID();
+  const first = await workflow.scheduleWorkflow({
+    executors: workflow.createBuiltInPhaseExecutors(fixture.services, async (context) => {
+      if (context.phase.type === "discovery") {
+        return delivery(context, { candidates: [
+          freshCandidate,
+          { ...freshCandidate, evidence: "A second review confirms the same unescaped response." },
+          { ...freshCandidate, instance: "alternate-route" },
+        ] });
+      }
+      assert.equal(context.phase.type, "reduction");
+      const rows = (await readFile(fixture.ledgerPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+      assert.deepEqual(context.inputs.discovery.candidates, rows);
+      assert.equal(rows.length, 2);
+      for (const row of rows) {
+        assert.equal(typeof row.candidate_id, "string");
+        assert.deepEqual(row.cwe_ids, ["CWE-79"]);
+        assert.equal(row.locations.every((location) => location.end_line === location.start_line), true);
+      }
+      return delivery(context, { findings: [{ candidate_id: rows[0].candidate_id }] });
+    }),
+    initialOutputs: preparedOutputs,
+    initialStates: preparedStates,
+    maxParallel: 3,
+    registry: workflow.BUILT_IN_PHASE_REGISTRY,
+    runId,
+    workflow: workflow.validateWorkflow({
+      ...workflow.FULL_REPOSITORY_WORKFLOW,
+      phases: workflow.FULL_REPOSITORY_WORKFLOW.phases.filter((entry) =>
+        ["preflight", "threat-model", "discovery", "reduction"].includes(entry.id)),
+    }, workflow.BUILT_IN_PHASE_REGISTRY),
+  });
+  assert.equal(first.status, "completed", JSON.stringify(first.errors));
+  const canonical = first.outputs.discovery.candidates;
+  assert.deepEqual(first.outputs.reduction.findings, [canonical[0]]);
+  const selected = first.outputs.reduction.findings[0];
+  const snapshot = JSON.stringify(first.outputs);
+  const resumedOutputs = JSON.parse(snapshot);
+  const resumed = await workflow.scheduleWorkflow({
+    executors: workflow.createBuiltInPhaseExecutors(fixture.services, async (context) => {
+      assert.deepEqual(context.inputs.discovery.candidates, canonical);
+      if (context.phase.type === "validation") {
+        assert.deepEqual(context.inputs.reduction.findings, [selected]);
+        return delivery(context, {
+          validations: context.inputs.discovery.candidates.map((candidate) => ({
+            candidateId: candidate.candidate_id,
+            validation: validationRecord(candidate.candidate_id === selected.candidate_id ? "reportable" : "suppressed"),
+          })),
+        });
+      }
+      if (context.phase.type === "attack-path") {
+        assert.deepEqual(context.inputs.validation.validations.map((update) => update.candidateId), canonical.map((candidate) => candidate.candidate_id));
+        return delivery(context, { attackPaths: [{
+          candidateId: selected.candidate_id,
+          attackPath: {
+            decision: "reportable",
+            dataflow: selected.evidence,
+            reachability: "The HTTP handler sends the supplied request parameter.",
+            counterevidence: "No escaping control is present.",
+            impact: "high",
+            likelihood: "medium",
+            severity: "high",
+            severity_rationale: "Untrusted markup crosses the response boundary.",
+            change_conditions: "Contextual output escaping would remove the issue.",
+          },
+        }] });
+      }
+      assert.equal(context.phase.type, "reporting", "Completed discovery and reduction must not rerun on resume.");
+      assert.deepEqual(context.inputs.reduction.findings, [selected]);
+      assert.equal(context.inputs.attackPaths.attackPaths[0].candidateId, selected.candidate_id);
+      assert.equal(context.inputs.validation.validations.length, canonical.length);
+      return delivery(context, {
+        coverage: { completeness: "complete", surfaces: [], explicitExclusions: [], deferred: [] },
+        findings: [{
+          ruleId: "xss.unescaped-response",
+          title: "Unescaped request content",
+          summary: selected.summary,
+          severity: { level: "high" },
+          confidence: { level: "high", rationale: selected.evidence },
+          taxonomy: { category: "xss", cwe: selected.cwe_ids },
+          locations: selected.locations.map((location) => ({
+            path: location.path, startLine: location.start_line, endLine: location.end_line,
+          })),
+          remediation: "Escape request content before rendering.",
+          provenance: { source: "local_package", candidateId: selected.candidate_id },
+        }],
+      });
+    }),
+    initialOutputs: resumedOutputs,
+    initialStates: first.states,
+    maxParallel: 3,
+    registry: workflow.BUILT_IN_PHASE_REGISTRY,
+    runId,
+    workflow: workflowWithoutPublication,
+  });
+  assert.equal(resumed.status, "completed", JSON.stringify(resumed.errors));
+  const persisted = (await readFile(fixture.ledgerPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(persisted.map(({ validation, attack_path, ...candidate }) => candidate), canonical);
+  assert.deepEqual(persisted.map((candidate) => candidate.validation.disposition), ["reportable", "suppressed"]);
+  assert.deepEqual(persisted[0].attack_path, resumed.outputs["attack-path"].attackPaths[0].attackPath);
+  assert.equal(resumed.outputs.reporting.findings[0].provenance.candidateId, persisted[0].candidate_id);
+  assert.equal(JSON.stringify(first.outputs), snapshot);
+  assert.equal(JSON.stringify(resumedOutputs), snapshot);
+  assert.deepEqual(resumed.outputs.discovery, first.outputs.discovery);
+});
+
+test("reduction rejects unknown and duplicate canonical selections without changing the ledger", async (t) => {
+  const fixture = await workflowArtifactFixture(t);
+  const discovery = await fixture.services.recordDiscovery({
+    candidates: [freshCandidate, { ...freshCandidate, instance: "alternate-route" }],
+  });
+  const before = await readFile(fixture.ledgerPath, "utf8");
+  const candidate = discovery.candidates[0];
+  const context = {
+    inputs: { discovery },
+    phase: workflow.FULL_REPOSITORY_WORKFLOW.phases.find((entry) => entry.id === "reduction"),
+    runId: randomUUID(),
+    signal: new AbortController().signal,
+  };
+  for (const [findings, expected] of [
+    [[{ candidate_id: "model-invented" }], /unknown candidate model-invented/u],
+    [[{ candidate_id: candidate.candidate_id }, { candidate_id: candidate.candidate_id }], /repeats candidate/u],
+  ]) {
+    const executors = workflow.createBuiltInPhaseExecutors(fixture.services, async (execution) =>
+      delivery(execution, { findings }));
+    await assert.rejects(executors.reduction(context), expected);
+    assert.equal(await readFile(fixture.ledgerPath, "utf8"), before);
+  }
+});
+
+test("empty normalized discovery completes validation, attack paths, and reporting without fabricated candidates", async (t) => {
+  const fixture = await workflowArtifactFixture(t);
+  const result = await workflow.scheduleWorkflow({
+    executors: workflow.createBuiltInPhaseExecutors(fixture.services, async (context) => delivery(context, {
+      discovery: { candidates: [] },
+      reduction: { findings: [] },
+      validation: { validations: [] },
+      "attack-path": { attackPaths: [] },
+      reporting: {
+        coverage: { completeness: "complete", surfaces: [], explicitExclusions: [], deferred: [] },
+        findings: [],
+      },
+    }[context.phase.type])),
+    initialOutputs: preparedOutputs,
+    initialStates: preparedStates,
+    maxParallel: 3,
+    registry: workflow.BUILT_IN_PHASE_REGISTRY,
+    runId: randomUUID(),
+    workflow: workflowWithoutPublication,
+  });
+  assert.equal(result.status, "completed", JSON.stringify(result.errors));
+  assert.equal(await readFile(fixture.ledgerPath, "utf8"), "");
+  assert.deepEqual(result.outputs.discovery, { candidates: [] });
+  assert.deepEqual(result.outputs.validation, { validations: [] });
+  assert.deepEqual(result.outputs.reporting.findings, []);
+});
+
 test("invalid canonical report documents fail reporting without publication or output admission", async () => {
   let published = false;
   const executors = workflow.createBuiltInPhaseExecutors({
     prepareReviewItems: async () => ({ reviewItemsTotal: 0 }),
     publish: async () => { published = true; throw new Error("Invalid report reached publication."); },
     recordAttackPaths: async () => {},
-    recordDiscovery: async () => {},
+    recordDiscovery: async () => ({ candidates: [] }),
     recordValidations: async () => {},
   }, async (context) => delivery(context, {
     "attack-path": { attackPaths: [] },
@@ -356,7 +611,7 @@ test("a late canceled model result cannot write discovery artifacts", async () =
   let recorded = false;
   const modelResult = new Promise((resolve) => { release = resolve; });
   const executors = workflow.createBuiltInPhaseExecutors({
-    recordDiscovery: async () => { recorded = true; },
+    recordDiscovery: async () => { recorded = true; return { candidates: [] }; },
   }, async () => modelResult);
   const execution = executors.discovery(context);
   controller.abort(new Error("Synthetic cancellation."));
