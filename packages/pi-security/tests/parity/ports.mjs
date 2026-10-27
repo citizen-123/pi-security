@@ -40,6 +40,7 @@ const ENTRIES = {
   schema: "src/contract/schema.ts",
   sarif: "src/contract/sarif.ts",
   paths: "src/contract/contract-paths.ts",
+  exportsModule: "src/contract/exports.ts",
 };
 const bundled = await build({
   bundle: true,
@@ -51,7 +52,7 @@ const bundled = await build({
   platform: "node",
   write: false,
 });
-const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths } = await import(
+const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths, exportsModule } = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString("base64")}`
 );
 
@@ -148,6 +149,9 @@ export const functions = {
     }),
   "test_sarif_edges.sarif_with_source": ({ manifest, findings, files }) =>
     withFiles(files, (root) => sarif.buildSarif(manifest, findings, root)),
+  "finalize_scan_contract.csv_cell": ({ value }) => exportsModule.csvCell(value),
+  "finalize_scan_contract.finding_candidate_id": ({ finding }) => exportsModule.findingCandidateId(finding),
+  "finalize_scan_contract.build_csv_projection": ({ findings, coverage }) => exportsModule.buildCsvProjection(findings, coverage),
   "finalize_scan_contract._fingerprint": ({ target_id, finding }) => identity.fingerprint(target_id, finding),
   "finalize_scan_contract._stable_id": ({ prefix, parts }) => identity.stableId(prefix, ...parts),
   "finalize_scan_contract._derived_finding_identity_rows": ({ manifest, findings }) =>

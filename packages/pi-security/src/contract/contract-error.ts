@@ -21,6 +21,13 @@ export function isBlank(value: string): boolean {
 export const WHITESPACE_CLASS = PYTHON_WHITESPACE.source.slice(1, -2);
 const SURROUNDING_WHITESPACE = new RegExp(`^${WHITESPACE_CLASS}+|${WHITESPACE_CLASS}+$`, "g");
 
+const LEADING_WHITESPACE = new RegExp(`^${WHITESPACE_CLASS}+`);
+
+/** Python `value.lstrip()`. */
+export function pythonLstrip(value: string): string {
+  return value.replace(LEADING_WHITESPACE, "");
+}
+
 /** Python `value.strip()`. */
 export function pythonStrip(value: string): string {
   return value.replace(SURROUNDING_WHITESPACE, "");

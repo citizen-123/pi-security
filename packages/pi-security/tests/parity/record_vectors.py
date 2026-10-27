@@ -51,6 +51,9 @@ TARGETS: set[tuple[str, str]] = {
     ("finalize_scan_contract.py", "_validate_schema_node"),
     ("finalize_scan_contract.py", "_validate_date_time"),
     ("finalize_scan_contract.py", "_sarif_label"),
+    ("finalize_scan_contract.py", "csv_cell"),
+    ("finalize_scan_contract.py", "finding_candidate_id"),
+    ("finalize_scan_contract.py", "build_csv_projection"),
     ("finalize_scan_contract.py", "_require_safe_relative_path"),
     ("finalize_scan_contract.py", "_require_portable_relative_path"),
     # Test-module wrappers that take file contents instead of temporary paths.
@@ -75,6 +78,7 @@ SOURCE_TESTS = {
     "test_canonical_json_edges.py",
     "test_schema_validator_edges.py",
     "test_sarif_edges.py",
+    "test_csv_export_edges.py",
     "test_report_projection.py",
     "test_sarif_projection.py",
     "test_scan_contract_examples.py",
