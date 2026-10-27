@@ -13,7 +13,8 @@ are skipped because they would not be reproducible.
 
 Requires Python 3.12+ and the packages in requirements-test.txt.
 
-Usage: record_vectors.py [--check]
+Usage: record_vectors.py [--check] [PYTEST_ARGS...]
+  Vectors are only written from a full, passing run; pass PYTEST_ARGS to debug a subset (combine with --check).
 """
 
 from __future__ import annotations
@@ -34,17 +35,17 @@ PACKAGE_ROOT = PARITY_DIR.parent.parent
 VECTORS_DIR = PARITY_DIR / "vectors"
 SCRIPTS = PACKAGE_ROOT / "scripts"
 
-# (script file, qualified name, parameters to record)
-TARGETS: dict[tuple[str, str], tuple[str, ...]] = {
-    ("report_projection.py", "build_report_markdown"): ("manifest", "findings", "coverage"),
-    ("finalize_scan_contract.py", "build_sarif"): ("manifest", "findings", "source_root"),
-    ("finalize_scan_contract.py", "build_csv_projection"): ("findings", "coverage"),
-    ("finalize_scan_contract.py", "_fingerprint"): ("target_id", "finding"),
-    ("finalize_scan_contract.py", "_stable_id"): ("prefix", "parts"),
-    ("finalize_scan_contract.py", "_json_bytes"): ("payload",),
-    ("normalize_candidates.py", "combine"): ("rows",),
-    ("normalize_candidates.py", "identity"): ("row",),
-    ("normalize_candidates.py", "cwe_ids"): ("row",),
+# (script file, qualified name). Arguments are recorded under the function's own parameter names.
+TARGETS: set[tuple[str, str]] = {
+    ("report_projection.py", "build_report_markdown"),
+    ("finalize_scan_contract.py", "build_sarif"),
+    ("finalize_scan_contract.py", "build_csv_projection"),
+    ("finalize_scan_contract.py", "_fingerprint"),
+    ("finalize_scan_contract.py", "_stable_id"),
+    ("finalize_scan_contract.py", "_json_bytes"),
+    ("normalize_candidates.py", "combine"),
+    ("normalize_candidates.py", "identity"),
+    ("normalize_candidates.py", "cwe_ids"),
 }
 TARGET_FILES = {str(SCRIPTS / file) for file, _ in TARGETS}
 TOOL_ID = 4
@@ -81,22 +82,33 @@ class Recorder:
         self.vectors: dict[str, dict[str, Any]] = {}
         self.skipped: dict[str, int] = {}
         self.temp_markers = [tempfile.gettempdir(), "/private/var/folders", "pytest-of-"]
+        self.failures: list[str] = []
 
     def target(self, code: Any) -> tuple[str, ...] | None:
-        if code.co_filename not in TARGET_FILES:
+        """Parameter names of a target function's code object, or None for any other code."""
+        if code.co_filename not in TARGET_FILES or (Path(code.co_filename).name, code.co_qualname) not in TARGETS:
             return None
-        return TARGETS.get((Path(code.co_filename).name, code.co_qualname))
+        count = code.co_argcount + code.co_kwonlyargcount
+        count += bool(code.co_flags & 0x04) + bool(code.co_flags & 0x08)  # *args, **kwargs
+        return code.co_varnames[:count]
 
     def stack(self) -> list[Any]:
         if not hasattr(self.stacks, "items"):
             self.stacks.items = []
         return self.stacks.items
 
+    # Callbacks must never raise: an exception would propagate into the code under test.
     def on_start(self, code: Any, offset: int) -> Any:
+        try:
+            return self._start(code, sys._getframe(1))
+        except Exception as error:  # noqa: BLE001
+            self.failures.append(f"start {code.co_qualname}: {error!r}")
+            return None
+
+    def _start(self, code: Any, frame: Any) -> Any:
         params = self.target(code)
         if params is None:
             return sys.monitoring.DISABLE
-        frame = sys._getframe(1)
         try:
             args = {name: encode(frame.f_locals[name]) for name in params}
             text = json.dumps(args, sort_keys=True, ensure_ascii=False)
@@ -119,27 +131,39 @@ class Recorder:
             return
         name = f"{Path(code.co_filename).stem}.{code.co_qualname}"
         vector = {"function": name, "args": args, **outcome}
-        key = hashlib.sha256(json.dumps(vector, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        # ensure_ascii keeps lone surrogates (tests use them) as \uXXXX escapes, which JSON.parse restores.
+        key = hashlib.sha256(json.dumps(vector, sort_keys=True).encode()).hexdigest()
         self.vectors[key] = vector
 
     def on_return(self, code: Any, offset: int, value: Any) -> Any:
+        try:
+            return self._return(code, value)
+        except Exception as error:  # noqa: BLE001
+            self.failures.append(f"return {code.co_qualname}: {error!r}")
+            return None
+
+    def _return(self, code: Any, value: Any) -> Any:
         if self.target(code) is None:
             return sys.monitoring.DISABLE
         try:
             outcome = {"result": encode(value)}
         except Unrepresentable:
-            self.stack().pop()
+            stack = self.stack()
+            if stack and stack[-1][0] is code:
+                stack.pop()
             return None
         self.finish(code, outcome)
         return None
 
     def on_unwind(self, code: Any, offset: int, error: BaseException) -> None:
-        if self.target(code) is None:
-            return
-        self.finish(code, {"error": {"type": type(error).__name__, "message": str(error)}})
+        try:
+            if self.target(code) is not None:
+                self.finish(code, {"error": {"type": type(error).__name__, "message": str(error)}})
+        except Exception as failure:  # noqa: BLE001
+            self.failures.append(f"unwind {code.co_qualname}: {failure!r}")
 
 
-def record() -> tuple[dict[str, list[dict[str, Any]]], dict[str, int], int]:
+def record(pytest_args: list[str]) -> tuple[dict[str, list[dict[str, Any]]], dict[str, int], int]:
     import pytest
 
     recorder = Recorder()
@@ -151,9 +175,7 @@ def record() -> tuple[dict[str, list[dict[str, Any]]], dict[str, int], int]:
     monitoring.register_callback(TOOL_ID, events.PY_UNWIND, recorder.on_unwind)
     monitoring.set_events(TOOL_ID, events.PY_START | events.PY_RETURN | events.PY_UNWIND)
     try:
-        status = pytest.main(
-            [str(PACKAGE_ROOT / "tests"), "-q", "-p", "no:cacheprovider"],
-        )
+        status = pytest.main(["-q", "-p", "no:cacheprovider", *pytest_args])
     finally:
         monitoring.set_events(TOOL_ID, 0)
         monitoring.free_tool_id(TOOL_ID)
@@ -161,24 +183,28 @@ def record() -> tuple[dict[str, list[dict[str, Any]]], dict[str, int], int]:
     for key in sorted(recorder.vectors):
         vector = recorder.vectors[key]
         grouped.setdefault(vector["function"], []).append(vector)
+    if recorder.failures:
+        print("recorder errors:\n  " + "\n  ".join(recorder.failures[:20]), file=sys.stderr)
+        status = status or 1
     return grouped, recorder.skipped, int(status)
 
 
 def write(grouped: dict[str, list[dict[str, Any]]], directory: Path) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     for function, vectors in sorted(grouped.items()):
-        text = "".join(json.dumps(v, sort_keys=True, ensure_ascii=False) + "\n" for v in vectors)
+        text = "".join(json.dumps(v, sort_keys=True) + "\n" for v in vectors)
         (directory / f"{function}.jsonl").write_text(text, encoding="utf-8")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="Fail if vectors/ differs from a fresh recording.")
+    parser.add_argument("pytest_args", nargs="*", help="Pytest selection (default: the whole tests/ directory).")
     args = parser.parse_args()
     if sys.version_info < (3, 12):
         print("record_vectors.py needs Python 3.12+ (sys.monitoring)", file=sys.stderr)
         return 2
-    grouped, skipped, status = record()
+    grouped, skipped, status = record(args.pytest_args or [str(PACKAGE_ROOT / "tests")])
     if status != 0:
         print(f"pytest exited with status {status}; vectors not written", file=sys.stderr)
         return 1
