@@ -229,6 +229,7 @@ const decode = (value) => {
   if (Array.isArray(value)) return value.map(decode);
   if (isPlainObject(value)) {
     if (Object.keys(value).length === 1 && typeof value.$bytes === "string") return Buffer.from(value.$bytes, "base64");
+    if (Object.keys(value).length === 1 && typeof value.$path === "string") return join(packageRoot, value.$path);
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)]));
   }
   return value;

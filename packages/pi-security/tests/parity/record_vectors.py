@@ -29,7 +29,7 @@ import sys
 import tempfile
 import threading
 from datetime import date
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 PARITY_DIR = Path(__file__).resolve().parent
@@ -47,6 +47,14 @@ TARGETS: set[tuple[str, str]] = {
     ("finalize_scan_contract.py", "_json_bytes"),
     ("finalize_scan_contract.py", "_loads_json"),
     ("finalize_scan_contract.py", "_require_safe_json_value"),
+    ("finalize_scan_contract.py", "validate_against_schema"),
+    ("finalize_scan_contract.py", "_validate_schema_node"),
+    ("finalize_scan_contract.py", "_validate_date_time"),
+}
+# Calls to record, by a predicate on the call's arguments. The validator recurses with root_schema set; only the
+# outermost calls are vectors.
+TARGET_FILTERS = {
+    ("finalize_scan_contract.py", "_validate_schema_node"): lambda arguments: arguments.get("root_schema") is None,
 }
 # CSV export and candidate merging are reached only through subprocesses in the suite; the curated cases cover them.
 TARGET_FILES = {str(SCRIPTS / file) for file, _ in TARGETS}
@@ -57,6 +65,7 @@ SOURCE_TESTS = {
     "test_finalize_scan_contract.py",
     "test_finding_identity_edges.py",
     "test_canonical_json_edges.py",
+    "test_schema_validator_edges.py",
     "test_report_projection.py",
     "test_sarif_projection.py",
     "test_scan_contract_examples.py",
@@ -84,13 +93,19 @@ def encode(value: Any) -> Any:
         return value
     if isinstance(value, bytes):
         return {"$bytes": base64.b64encode(value).decode("ascii")}
+    if isinstance(value, PurePath):
+        # Package files are recorded relative to the package root, so vectors do not depend on the checkout path.
+        try:
+            return {"$path": Path(value).resolve().relative_to(PACKAGE_ROOT).as_posix()}
+        except ValueError:
+            raise Unrepresentable("path outside the package") from None
     # Exact types only: iterating a test's instrumented subclass would change what the test observes.
     if type(value) in (list, tuple):
         return [encode(item) for item in value]
     if type(value) is dict:
         if not all(isinstance(key, str) for key in value):
             raise Unrepresentable("non-string key")
-        if "$bytes" in value:
+        if "$bytes" in value or "$path" in value:
             raise Unrepresentable("reserved key")
         return {key: encode(item) for key, item in value.items()}
     raise Unrepresentable(type(value).__name__)
@@ -136,6 +151,9 @@ class Recorder:
                 caller = caller.f_back
             if caller is None or Path(caller.f_code.co_filename).name not in SOURCE_TESTS:
                 raise Unrepresentable("not called from a fixed-fixture test module")
+            predicate = TARGET_FILTERS.get((Path(code.co_filename).name, code.co_qualname))
+            if predicate is not None and not predicate(frame.f_locals):
+                raise Unrepresentable("filtered")
             args = {name: encode(frame.f_locals[name]) for name in params}
             text = json.dumps(args, sort_keys=True)
             if len(text) > MAX_VECTOR_BYTES:
@@ -147,8 +165,9 @@ class Recorder:
             entry: Any = (code, args)
         except Unrepresentable as reason:
             entry = (code, None)
-            key = f"{Path(code.co_filename).stem}.{code.co_qualname}: {reason}"
-            self.skipped[key] = self.skipped.get(key, 0) + 1
+            if str(reason) != "filtered":
+                key = f"{Path(code.co_filename).stem}.{code.co_qualname}: {reason}"
+                self.skipped[key] = self.skipped.get(key, 0) + 1
         self.stack().append(entry)
         return None
 

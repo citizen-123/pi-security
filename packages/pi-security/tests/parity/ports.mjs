@@ -22,6 +22,7 @@ const ENTRIES = {
   inventory: "src/target/inventory.ts",
   canonical: "src/contract/canonical-json.ts",
   pythonJson: "src/contract/python-json.ts",
+  schema: "src/contract/schema.ts",
 };
 const bundled = await build({
   bundle: true,
@@ -33,7 +34,7 @@ const bundled = await build({
   platform: "node",
   write: false,
 });
-const { identity, candidates, inventory, canonical, pythonJson } = await import(
+const { identity, candidates, inventory, canonical, pythonJson, schema } = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString("base64")}`
 );
 
@@ -111,6 +112,11 @@ export const functions = {
   "finalize_scan_contract._loads_json": ({ value }) => canonical.loadsJson(Buffer.isBuffer(value) ? value.toString("utf8") : value),
   "finalize_scan_contract._require_safe_json_value": ({ value, context, validate_strings }) =>
     canonical.requireSafeJsonValue(value, context, validate_strings) ?? null,
+  "finalize_scan_contract._validate_schema_node": ({ value, schema: node, context, root_schema }) =>
+    schema.validateSchemaNode(value, node, context, root_schema ?? undefined) ?? null,
+  "finalize_scan_contract.validate_against_schema": ({ payload, schema_path }) =>
+    schema.validateAgainstSchema(payload, schema_path) ?? null,
+  "finalize_scan_contract._validate_date_time": ({ value, context }) => schema.validateDateTime(value, context) ?? null,
   "finalize_scan_contract._fingerprint": ({ target_id, finding }) => identity.fingerprint(target_id, finding),
   "finalize_scan_contract._stable_id": ({ prefix, parts }) => identity.stableId(prefix, ...parts),
   "finalize_scan_contract._derived_finding_identity_rows": ({ manifest, findings }) =>

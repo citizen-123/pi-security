@@ -2,6 +2,7 @@
 // Port of _loads_json, _json_bytes, _contract_json_bytes, and _require_safe_json_value in
 // scripts/finalize_scan_contract.py.
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { ContractError, isJsonObject } from "./contract-error.js";
 import { dumpsPython, hasLoneSurrogate, parsePythonJson, PyFloat } from "./python-json.js";
 
@@ -67,4 +68,19 @@ export function sha256Text(value: string): string {
 
 export function sha256Bytes(value: Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+/** _read_json: a contract JSON object from a file. */
+export function readContractJsonFile(path: string): Record<string, unknown> {
+  let payload: unknown;
+  try {
+    payload = loadsJson(readFileSync(path, "utf8"));
+    requireSafeJsonValue(payload, path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new ContractError(`missing required contract artifact: ${path}`);
+    if (error instanceof ContractError) throw error;
+    throw new ContractError(`${path}: invalid JSON: ${(error as Error).message}`);
+  }
+  if (!isJsonObject(payload)) throw new ContractError(`${path}: expected a JSON object`);
+  return payload;
 }

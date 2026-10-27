@@ -17,7 +17,8 @@ export function isBlank(value: string): boolean {
   return PYTHON_WHITESPACE.test(value);
 }
 
-const WHITESPACE_CLASS = PYTHON_WHITESPACE.source.slice(1, -2);
+/** Python's whitespace set as a regular-expression character class. */
+export const WHITESPACE_CLASS = PYTHON_WHITESPACE.source.slice(1, -2);
 const SURROUNDING_WHITESPACE = new RegExp(`^${WHITESPACE_CLASS}+|${WHITESPACE_CLASS}+$`, "g");
 
 /** Python `value.strip()`. */
