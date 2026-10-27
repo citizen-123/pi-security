@@ -70,8 +70,8 @@ Runs SHALL have no wall-clock limit by default. When `max_duration` or `max_cost
 - **THEN** the orchestrator is aborted and the run ends `interrupted` with reason `cost_limit`
 
 ### Requirement: Read-only observation
-Viewers SHALL observe a run without opening its storage for writing and without acquiring the writer lock. (The mechanism is an open question in design D11: pi-durable 1.4.0 has no read-only open.)
+Viewers SHALL observe a run without opening its storage and without acquiring the writer lock, through a `progress.json` file the owning process rewrites atomically when the task graph or phase progress changes.
 
 #### Scenario: Watch a running scan
 - **WHEN** `pi-security run watch` attaches to a running scan
-- **THEN** it renders the live task graph and phase progress without acquiring the writer lock
+- **THEN** it renders the task graph and phase progress from `progress.json` without opening the storage or acquiring the writer lock
