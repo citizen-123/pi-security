@@ -17,6 +17,8 @@ Contract for porting the Python scripts to TypeScript (`openspec/changes/durable
 
 **Recorded vectors** (`vectors/`). Input/output pairs of pure functions (report rendering, SARIF, fingerprints, stable IDs, canonical JSON), captured from every call made by the fixed-fixture test modules of the existing pytest suite (`SOURCE_TESTS` in `record_vectors.py`). This reaches many more edge cases than the curated tier, including hostile strings with lone surrogates. Calls from workbench-flow tests are excluded because they carry wall-clock timestamps and random UUIDs, as are vectors over 256 KB (size-limit tests). CSV export and candidate merging only run through subprocesses in the suite, so the curated cases cover them.
 
+Functions that change their arguments (draft recovery and envelope population, `MUTATING` in `record_vectors.py`) also record those arguments after the call as `after`, which the port's arguments must match. A temporary directory argument is recorded as a `$dir` snapshot of its files, symlinks, and empty directories, and recreated for the port; environment variables a function reads are recorded under `$env`. Vectors that carry the run date or an absolute path are dropped.
+
 Ports must reproduce statuses, compared stdout, files, and vector results, including the message of every vector where Python raised `ContractError` (those messages are user-facing diagnostics). Error text in curated goldens is kept for reference only.
 
 ## Traps the goldens pin

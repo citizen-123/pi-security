@@ -42,6 +42,7 @@ const ENTRIES = {
   paths: "src/contract/contract-paths.ts",
   exportsModule: "src/contract/exports.ts",
   validation: "src/contract/validation.ts",
+  recovery: "src/contract/recovery.ts",
 };
 const bundled = await build({
   bundle: true,
@@ -53,7 +54,7 @@ const bundled = await build({
   platform: "node",
   write: false,
 });
-const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths, exportsModule, validation } = await import(
+const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths, exportsModule, validation, recovery } = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString("base64")}`
 );
 
@@ -166,6 +167,30 @@ export const functions = {
     validation.legacySealedFindingsForValidation(findings),
   "finalize_scan_contract._validate_canonical_schemas_before_projection": ({ manifest, findings, coverage, schema_dir }) =>
     validation.validateCanonicalSchemasBeforeProjection(manifest, findings, coverage, schema_dir) ?? null,
+  "finalize_scan_contract._finding_evidence_strength": ({ finding }) => recovery.findingEvidenceStrength(finding),
+  "finalize_scan_contract._finding_strength": ({ finding }) => recovery.findingStrength(finding),
+  "finalize_scan_contract._recover_unsealed_findings": ({ manifest, findings, schema_dir, scan_dir, warnings }) =>
+    recovery.recoverUnsealedFindings(manifest, findings, schema_dir, scan_dir, warnings),
+  "finalize_scan_contract._recover_unsealed_coverage": ({ coverage, schema_dir, scan_dir, warnings, discarded_findings }) =>
+    recovery.recoverUnsealedCoverage(coverage, schema_dir, scan_dir, warnings, discarded_findings) ?? null,
+  "finalize_scan_contract._recover_unsealed_hardening": ({ manifest, scan_dir, warnings }) =>
+    recovery.recoverUnsealedHardening(manifest, scan_dir, warnings) ?? null,
+  // Python passes manifest["scan"] as scan; decoded separately they would be two objects.
+  "finalize_scan_contract._populate_unsealed_manifest_envelope": ({ manifest, completion_binding, $env }) =>
+    recovery.populateUnsealedManifestEnvelope(manifest, manifest.scan, completion_binding, {
+      env: { PI_SECURITY_STARTED_AT: $env.PI_SECURITY_STARTED_AT ?? undefined },
+    }) ?? null,
+  "finalize_scan_contract._populate_unsealed_target_binding": ({ target, target_binding }) =>
+    recovery.populateUnsealedTargetBinding(target, target_binding) ?? null,
+  "finalize_scan_contract._populate_unsealed_artifact_envelope": ({ manifest, findings, coverage, completion_binding }) =>
+    recovery.populateUnsealedArtifactEnvelope(manifest, findings, coverage, completion_binding) ?? null,
+  "finalize_scan_contract._normalize_unsealed_open_questions": ({ coverage }) => recovery.normalizeUnsealedOpenQuestions(coverage) ?? null,
+  "finalize_scan_contract._normalize_unsealed_deep_repository_inventory_strategy": ({ coverage, expected_coverage_mode }) =>
+    recovery.normalizeUnsealedDeepRepositoryInventoryStrategy(coverage, expected_coverage_mode) ?? null,
+  "finalize_scan_contract._require_derived_writeup_files": ({ scan_dir, findings }) =>
+    recovery.requireDerivedWriteupFiles(scan_dir, findings) ?? null,
+  "finalize_scan_contract._require_hardening_portfolio_file": ({ scan_dir, scan }) =>
+    recovery.requireHardeningPortfolioFile(scan_dir, scan) ?? null,
   "test_contract_validation_edges.validate_coverage_with_files": ({ manifest, coverage, files }) =>
     withFiles(files, (root) => {
       validation.validateCoverage(manifest, coverage, root);

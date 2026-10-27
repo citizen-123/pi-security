@@ -5,7 +5,7 @@
 // (work directory layout, Git fixtures, symlinks, normalization) against the goldens without any port.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync, appendFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { test } from "node:test";
@@ -225,12 +225,27 @@ for (const name of caseNames) {
 // Plain JSON objects only: PyFloat values from parseVectorLine pass through untouched.
 const isPlainObject = (value) => value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
 
-const decode = (value) => {
-  if (Array.isArray(value)) return value.map(decode);
+// A {"$dir": {relative path: {"$bytes"} | {"$link"} | {"$empty"}}} snapshot becomes a temporary directory, removed by the caller.
+function materializeDirectory(files, created) {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "pi-security-parity-dir-")));
+  created.push(root);
+  for (const [relativePath, entry] of Object.entries(files)) {
+    const target = join(root, ...relativePath.split("/"));
+    mkdirSync(dirname(target), { recursive: true });
+    if (entry.$empty === true) mkdirSync(target, { recursive: true });
+    else if (typeof entry.$link === "string") symlinkSync(entry.$link, target);
+    else writeFileSync(target, Buffer.from(entry.$bytes, "base64"));
+  }
+  return root;
+}
+
+const decode = (value, created = []) => {
+  if (Array.isArray(value)) return value.map((item) => decode(item, created));
   if (isPlainObject(value)) {
     if (Object.keys(value).length === 1 && typeof value.$bytes === "string") return Buffer.from(value.$bytes, "base64");
     if (Object.keys(value).length === 1 && typeof value.$path === "string") return join(packageRoot, value.$path);
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)]));
+    if (Object.keys(value).length === 1 && isPlainObject(value.$dir)) return materializeDirectory(value.$dir, created);
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item, created)]));
   }
   return value;
 };
@@ -249,15 +264,24 @@ for (const file of vectorFiles) {
   test(`parity vectors ${name}`, { skip: port === undefined ? "no TypeScript port" : false }, () => {
     const vectors = readFileSync(join(vectorsDir, file), "utf8").split("\n").filter(Boolean).map(parseVectorLine);
     for (const [index, vector] of vectors.entries()) {
-      const args = decode(vector.args);
-      if (vector.error !== undefined) {
-        assert.throws(
-          () => port(args),
-          (error) => vector.error.type !== "ContractError" || error.message === vector.error.message,
-          `vector ${index} must throw ${vector.error.type}: ${vector.error.message}`,
-        );
-      } else {
-        assert.deepEqual(encode(port(args)), vector.result, `vector ${index}`);
+      const created = [];
+      try {
+        const args = decode(vector.args, created);
+        if (vector.error !== undefined) {
+          assert.throws(
+            () => port(args),
+            (error) => vector.error.type !== "ContractError" || error.message === vector.error.message,
+            `vector ${index} must throw ${vector.error.type}: ${vector.error.message}`,
+          );
+        } else {
+          assert.deepEqual(encode(port(args)), vector.result, `vector ${index}`);
+        }
+        // Mutating functions: the arguments they change must end up as Python left them.
+        for (const [name, expected] of Object.entries(vector.after ?? {})) {
+          assert.deepEqual(encode(args[name]), expected, `vector ${index} argument ${name} after the call`);
+        }
+      } finally {
+        for (const root of created) rmSync(root, { recursive: true, force: true });
       }
     }
   });

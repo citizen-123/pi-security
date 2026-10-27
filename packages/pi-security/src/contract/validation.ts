@@ -2,7 +2,6 @@
 // _validate_location, _validate_completion_binding, _validate_finding, _validate_coverage, _validate_manifest,
 // _validate_findings, _validate_contract_refs, _legacy_sealed_findings_for_validation, and
 // _validate_canonical_schemas_before_projection in scripts/finalize_scan_contract.py.
-import { closeSync } from "node:fs";
 import { isIPv6 } from "node:net";
 import { join } from "node:path";
 import { requireSafeJsonValue } from "./canonical-json.js";
@@ -10,7 +9,7 @@ import { requirePortableRelativePath, requireSafeRelativePath } from "./contract
 import { ContractError, isBlank, isJsonObject, requireArray, requireObject, requireString, type JsonObject } from "./contract-error.js";
 import { FINGERPRINT_ALGORITHM } from "./finding-identity.js";
 import { compareCodePoints, deepCopyJson, PyFloat, pythonEquals } from "./python-json.js";
-import { openScanLocalFile } from "./scan-files.js";
+import { requireScanLocalFile } from "./scan-files.js";
 import { validateAgainstSchema } from "./schema.js";
 
 export const SCHEMA_VERSION = "1.0";
@@ -254,10 +253,6 @@ export function validateFinding(finding: JsonObject, context: string): void {
   requireString(provenance, "source", `${context}.provenance`);
   const extensions = finding.extensions ?? null;
   if (extensions !== null && !isJsonObject(extensions)) throw new ContractError(`${context}.extensions: expected an object`);
-}
-
-function requireScanLocalFile(scanDir: string, relativePath: string, context: string): void {
-  closeSync(openScanLocalFile(scanDir, relativePath, context));
 }
 
 /** Validate coverage against the manifest; receipt references are normalized in place and must exist. */

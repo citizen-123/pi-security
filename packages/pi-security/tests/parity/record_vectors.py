@@ -23,6 +23,7 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 import re
 import shutil
 import sys
@@ -66,6 +67,18 @@ TARGETS: set[tuple[str, str]] = {
     ("finalize_scan_contract.py", "_validate_contract_refs"),
     ("finalize_scan_contract.py", "_legacy_sealed_findings_for_validation"),
     ("finalize_scan_contract.py", "_validate_canonical_schemas_before_projection"),
+    ("finalize_scan_contract.py", "_finding_strength"),
+    ("finalize_scan_contract.py", "_finding_evidence_strength"),
+    ("finalize_scan_contract.py", "_recover_unsealed_findings"),
+    ("finalize_scan_contract.py", "_recover_unsealed_coverage"),
+    ("finalize_scan_contract.py", "_recover_unsealed_hardening"),
+    ("finalize_scan_contract.py", "_populate_unsealed_manifest_envelope"),
+    ("finalize_scan_contract.py", "_populate_unsealed_target_binding"),
+    ("finalize_scan_contract.py", "_populate_unsealed_artifact_envelope"),
+    ("finalize_scan_contract.py", "_normalize_unsealed_open_questions"),
+    ("finalize_scan_contract.py", "_normalize_unsealed_deep_repository_inventory_strategy"),
+    ("finalize_scan_contract.py", "_require_derived_writeup_files"),
+    ("finalize_scan_contract.py", "_require_hardening_portfolio_file"),
     # Test-module wrappers that take file contents instead of temporary paths.
     ("test_contract_validation_edges.py", "validate_coverage_with_files"),
     ("test_sarif_edges.py", "github_line_hashes_of"),
@@ -75,6 +88,22 @@ TARGETS: set[tuple[str, str]] = {
 # outermost calls are vectors.
 TARGET_FILTERS = {
     ("finalize_scan_contract.py", "_validate_schema_node"): lambda arguments: arguments.get("root_schema") is None,
+}
+# Targets that change their arguments: the vector also records these arguments after the call ("after"), on success
+# and on error. A directory argument is recorded as a snapshot of its files, before and after.
+MUTATING: dict[tuple[str, str], tuple[str, ...]] = {
+    ("finalize_scan_contract.py", "_recover_unsealed_findings"): ("findings", "warnings"),
+    ("finalize_scan_contract.py", "_recover_unsealed_coverage"): ("coverage", "warnings"),
+    ("finalize_scan_contract.py", "_recover_unsealed_hardening"): ("manifest", "warnings"),
+    ("finalize_scan_contract.py", "_populate_unsealed_manifest_envelope"): ("manifest",),
+    ("finalize_scan_contract.py", "_populate_unsealed_target_binding"): ("target",),
+    ("finalize_scan_contract.py", "_populate_unsealed_artifact_envelope"): ("findings", "coverage"),
+    ("finalize_scan_contract.py", "_normalize_unsealed_open_questions"): ("coverage",),
+    ("finalize_scan_contract.py", "_normalize_unsealed_deep_repository_inventory_strategy"): ("coverage",),
+}
+# Environment variables a target reads, recorded as args["$env"] (None when unset).
+ENV_INPUTS: dict[tuple[str, str], tuple[str, ...]] = {
+    ("finalize_scan_contract.py", "_populate_unsealed_manifest_envelope"): ("PI_SECURITY_STARTED_AT",),
 }
 # CSV export and candidate merging are reached only through subprocesses in the suite; the curated cases cover them.
 TARGET_FILES = {
@@ -91,6 +120,7 @@ SOURCE_TESTS = {
     "test_sarif_edges.py",
     "test_csv_export_edges.py",
     "test_contract_validation_edges.py",
+    "test_recovery_edges.py",
     "test_report_projection.py",
     "test_sarif_projection.py",
     "test_scan_contract_examples.py",
@@ -108,6 +138,27 @@ class Unrepresentable(Exception):
     pass
 
 
+def snapshot_directory(path: Path) -> dict[str, Any]:
+    """{"$dir": {relative path: {"$bytes": ...}, {"$link": target}, or {"$empty": true}}} for the tree below a
+    directory; "$empty" marks a directory with no entries."""
+    files: dict[str, Any] = {}
+    for directory, dirnames, filenames in os.walk(path):
+        dirnames.sort()
+        if directory != str(path) and not dirnames and not filenames:
+            files[Path(os.path.relpath(directory, path)).as_posix()] = {"$empty": True}
+        for name in sorted(filenames) + sorted(d for d in dirnames if os.path.islink(os.path.join(directory, d))):
+            full = os.path.join(directory, name)
+            relative = Path(os.path.relpath(full, path)).as_posix()
+            if os.path.islink(full):
+                files[relative] = {"$link": os.readlink(full)}
+            elif os.path.isfile(full):
+                with open(full, "rb") as handle:
+                    files[relative] = {"$bytes": base64.b64encode(handle.read()).decode("ascii")}
+            else:
+                raise Unrepresentable("special file in a directory")
+    return {"$dir": files}
+
+
 def encode(value: Any) -> Any:
     """JSON form of a value; bytes become {"$bytes": base64}. Raises Unrepresentable otherwise."""
     if value is None or isinstance(value, (bool, int, str)):
@@ -123,14 +174,18 @@ def encode(value: Any) -> Any:
         try:
             return {"$path": Path(value).resolve().relative_to(PACKAGE_ROOT).as_posix()}
         except ValueError:
-            raise Unrepresentable("path outside the package") from None
+            pass
+        # A directory elsewhere (a test's temporary scan directory) is recorded as a snapshot of its files.
+        if os.path.isdir(value) and not os.path.islink(value):
+            return snapshot_directory(Path(value))
+        raise Unrepresentable("path outside the package")
     # Exact types only: iterating a test's instrumented subclass would change what the test observes.
     if type(value) in (list, tuple):
         return [encode(item) for item in value]
     if type(value) is dict:
         if not all(isinstance(key, str) for key in value):
             raise Unrepresentable("non-string key")
-        if "$bytes" in value or "$path" in value:
+        if "$bytes" in value or "$path" in value or "$dir" in value:
             raise Unrepresentable("reserved key")
         return {key: encode(item) for key, item in value.items()}
     raise Unrepresentable(type(value).__name__)
@@ -179,7 +234,11 @@ class Recorder:
             predicate = TARGET_FILTERS.get((Path(code.co_filename).name, code.co_qualname))
             if predicate is not None and not predicate(frame.f_locals):
                 raise Unrepresentable("filtered")
-            args = {name: encode(frame.f_locals[name]) for name in params}
+            live = {name: frame.f_locals[name] for name in params}
+            args = {name: encode(value) for name, value in live.items()}
+            environment = ENV_INPUTS.get((Path(code.co_filename).name, code.co_qualname))
+            if environment is not None:
+                args["$env"] = {name: os.environ.get(name) for name in environment}
             text = json.dumps(args, sort_keys=True)
             if len(text) > MAX_VECTOR_BYTES:
                 raise Unrepresentable("larger than MAX_VECTOR_BYTES")
@@ -187,9 +246,9 @@ class Recorder:
                 raise Unrepresentable("temporary path")
             if self.today in text or UUID4.search(text):
                 raise Unrepresentable("run date or random UUID")
-            entry: Any = (code, args)
+            entry: Any = (code, args, live)
         except Unrepresentable as reason:
-            entry = (code, None)
+            entry = (code, None, None)
             if str(reason) != "filtered":
                 key = f"{Path(code.co_filename).stem}.{code.co_qualname}: {reason}"
                 self.skipped[key] = self.skipped.get(key, 0) + 1
@@ -200,11 +259,22 @@ class Recorder:
         stack = self.stack()
         if not stack or stack[-1][0] is not code:
             return
-        _, args = stack.pop()
+        _, args, live = stack.pop()
         if args is None:
             return
         name = f"{Path(code.co_filename).stem}.{code.co_qualname}"
+        captured = MUTATING.get((Path(code.co_filename).name, code.co_qualname))
+        if captured is not None:
+            try:
+                outcome = {**outcome, "after": {param: encode(live[param]) for param in captured}}
+            except Unrepresentable:
+                return
         vector = {"function": name, "args": args, **outcome}
+        text = json.dumps(vector)
+        # Absolute package paths (in error messages) and wall-clock results are not reproducible elsewhere.
+        markers = [*self.temp_markers, str(PACKAGE_ROOT), self.today]
+        if len(text) > MAX_VECTOR_BYTES or any(marker in text for marker in markers):
+            return
         # ensure_ascii keeps lone surrogates (tests use them) as \uXXXX escapes, which JSON.parse restores.
         key = hashlib.sha256(json.dumps(vector, sort_keys=True).encode()).hexdigest()
         self.vectors[key] = vector

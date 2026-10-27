@@ -2,6 +2,7 @@
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "coverage.json", "context": "manifest.scan.artifacts[1].path", "allow_dot": false}, "result": "coverage.json"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "Findings.JSON", "context": "manifest.scan.artifacts[2].path", "allow_dot": false}, "result": "Findings.JSON"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/control.py", "context": "SARIF source location", "allow_dot": false}, "result": "src/control.py"}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "./artifacts/receipt.txt", "context": "coverage.surfaces[0].receiptRefs[1]", "allow_dot": false}, "result": "artifacts/receipt.txt"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": " ", "context": "p", "allow_dot": false}, "error": {"type": "ContractError", "message": "p: expected a safe repository-relative POSIX path"}}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/02_discovery/work_ledger.jsonl", "context": "artifact path", "allow_dot": false}, "result": "artifacts/02_discovery/work_ledger.jsonl"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "coverage.json", "context": "manifest.scan.artifacts[0].path", "allow_dot": false}, "result": "coverage.json"}
@@ -26,6 +27,7 @@
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "coverage.json", "context": "coverage.json", "allow_dot": false}, "result": "coverage.json"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "report.md", "context": "scan-local output path", "allow_dot": false}, "result": "report.md"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "a\\b", "context": "p", "allow_dot": false}, "error": {"type": "ContractError", "message": "p: expected a safe repository-relative POSIX path"}}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "notes/receipt.txt", "context": "coverage.surfaces[0].receiptRefs[2]", "allow_dot": false}, "result": "notes/receipt.txt"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "findings/archive-extraction/archive-extraction.md", "context": "findings[0].writeup.reportPath", "allow_dot": false}, "result": "findings/archive-extraction/archive-extraction.md"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/02_discovery/work_ledger.jsonl", "context": "manifest.scan.artifacts[2].path", "allow_dot": false}, "result": "artifacts/02_discovery/work_ledger.jsonl"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/extract-0.py", "context": "SARIF source location", "allow_dot": false}, "result": "src/extract-0.py"}
@@ -39,6 +41,7 @@
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "report.md", "context": "report.md", "allow_dot": false}, "result": "report.md"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "exports/extra.json", "context": "manifest.scan.artifacts[2].path", "allow_dot": false}, "result": "exports/extra.json"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/./ev2.py", "context": "SARIF evidence location", "allow_dot": false}, "result": "src/ev2.py"}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/extract.py", "context": "findings.findings[2].locations[0].path", "allow_dot": false}, "result": "src/extract.py"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/CON.txt", "context": "manifest.scan.artifacts[2].path", "allow_dot": false}, "result": "artifacts/CON.txt"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "findings.json", "context": "findings.json", "allow_dot": false}, "result": "findings.json"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "dir/com\u00b9", "context": "p", "allow_dot": false}, "result": "dir/com\u00b9"}
@@ -56,11 +59,14 @@
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "exports/extra.json", "context": "manifest.scan.artifacts[2]", "allow_dot": false}, "result": "exports/extra.json"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/report.json.", "context": "manifest.scan.artifacts[2].path", "allow_dot": false}, "result": "artifacts/report.json."}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/snake.py", "context": "SARIF evidence location", "allow_dot": false}, "result": "src/snake.py"}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "findings/archive/archive.md", "context": "findings[0].writeup.reportPath", "allow_dot": false}, "result": "findings/archive/archive.md"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "other/r.txt", "context": "coverage.surfaces[0].receiptRefs[0]", "allow_dot": false}, "result": "other/r.txt"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts//r.txt", "context": "coverage.surfaces[0].receiptRefs[0]", "allow_dot": false}, "result": "artifacts/r.txt"}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/receipt.txt", "context": "coverage.surfaces[0].receiptRefs[1]", "allow_dot": false}, "result": "artifacts/receipt.txt"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/extract-0.py", "context": "source file src/extract-0.py", "allow_dot": false}, "result": "src/extract-0.py"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "../outside.py", "context": "SARIF evidence location", "allow_dot": false}, "error": {"type": "ContractError", "message": "SARIF evidence location: expected a safe repository-relative POSIX path"}}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "scan-manifest.json", "context": "scan-manifest.json", "allow_dot": false}, "result": "scan-manifest.json"}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "findings/other/other.md", "context": "findings.findings[1].writeup.reportPath", "allow_dot": false}, "result": "findings/other/other.md"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/extract.py", "context": "findings.findings[1].locations[0].path", "allow_dot": false}, "result": "src/extract.py"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/02_discovery/./work_ledger.jsonl", "context": "sealed artifact path", "allow_dot": false}, "result": "artifacts/02_discovery/work_ledger.jsonl"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "coverage.json", "context": "artifact path", "allow_dot": false}, "result": "coverage.json"}
@@ -71,8 +77,10 @@
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/a.py", "context": "f.locations[0].path", "allow_dot": false}, "result": "src/a.py"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "./src//a.py", "context": "p", "allow_dot": false}, "result": "src/a.py"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "/abs", "context": "p", "allow_dot": false}, "error": {"type": "ContractError", "message": "p: expected a safe repository-relative POSIX path"}}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/receipt.txt", "context": "coverage.surfaces[0].receiptRefs[0]", "allow_dot": false}, "result": "artifacts/receipt.txt"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "findings.json/.", "context": "coverage.surfaces[0].receiptRefs[0]", "allow_dot": false}, "result": "findings.json"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/con.txt", "context": "manifest.scan.artifacts[2].path", "allow_dot": false}, "result": "artifacts/con.txt"}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "findings/archive/archive.md", "context": "findings.findings[0].writeup.reportPath", "allow_dot": false}, "result": "findings/archive/archive.md"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/02_discovery/./work_ledger.jsonl", "context": "coverage.surfaces[0].receiptRefs[0]", "allow_dot": false}, "result": "artifacts/02_discovery/work_ledger.jsonl"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/bad\udcff.py", "context": "findings.findings[0].locations[0].path", "allow_dot": false}, "error": {"type": "ContractError", "message": "findings.findings[0].locations[0].path: expected a safe repository-relative POSIX path"}}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "./artifacts/r.txt", "context": "coverage.surfaces[0].receiptRefs[1]", "allow_dot": false}, "result": "artifacts/r.txt"}
@@ -80,6 +88,7 @@
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/02_discovery/work_ledger.jsonl", "context": "sealed artifact path", "allow_dot": false}, "result": "artifacts/02_discovery/work_ledger.jsonl"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/app.py", "context": "SARIF source location", "allow_dot": false}, "result": "src/app.py"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "a.py", "context": "findings.findings[1].locations[0].path", "allow_dot": false}, "result": "a.py"}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/dir", "context": "coverage.surfaces[0].receiptRefs[6]", "allow_dot": false}, "result": "artifacts/dir"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "source.txt", "context": "source file source.txt", "allow_dot": false}, "result": "source.txt"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "exports/extra.json", "context": "sealed artifact path", "allow_dot": false}, "result": "exports/extra.json"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/bad\u0000.py", "context": "findings.findings[0].locations[0].path", "allow_dot": false}, "error": {"type": "ContractError", "message": "findings.findings[0].locations[0].path: expected a safe repository-relative POSIX path"}}
@@ -97,10 +106,14 @@
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/report:stream", "context": "manifest.scan.artifacts[2].path", "allow_dot": false}, "result": "artifacts/report:stream"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": ".", "context": "manifest.scan.scope.includePaths[0]", "allow_dot": true}, "result": "."}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/text_end.py", "context": "SARIF evidence location", "allow_dot": false}, "result": "src/text_end.py"}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "../artifacts/receipt.txt", "context": "coverage.surfaces[0].receiptRefs[4]", "allow_dot": false}, "error": {"type": "ContractError", "message": "coverage.surfaces[0].receiptRefs[4]: expected a safe repository-relative POSIX path"}}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "scan-manifest.json", "context": "scan-local output path", "allow_dot": false}, "result": "scan-manifest.json"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/template.html", "context": "SARIF evidence location", "allow_dot": false}, "result": "src/template.html"}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "findings/archive/archive.md", "context": "findings.findings[2].writeup.reportPath", "allow_dot": false}, "result": "findings/archive/archive.md"}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "artifacts/missing.txt", "context": "coverage.surfaces[0].receiptRefs[3]", "allow_dot": false}, "result": "artifacts/missing.txt"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/canonical.py", "context": "SARIF evidence location", "allow_dot": false}, "result": "src/canonical.py"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": ".", "context": "p", "allow_dot": false}, "error": {"type": "ContractError", "message": "p: expected a safe repository-relative POSIX path"}}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "../outside.md", "context": "findings[0].writeup.reportPath", "allow_dot": false}, "error": {"type": "ContractError", "message": "findings[0].writeup.reportPath: expected a safe repository-relative POSIX path"}}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/a.py/", "context": "p", "allow_dot": false}, "result": "src/a.py"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "\u00e9:x", "context": "p", "allow_dot": false}, "error": {"type": "ContractError", "message": "p: expected a safe repository-relative POSIX path"}}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "x ", "context": "p", "allow_dot": false}, "result": "x "}
@@ -115,6 +128,7 @@
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "FINDINGS.JSON", "context": "manifest.scan.artifacts[2].path", "allow_dot": false}, "result": "FINDINGS.JSON"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "a/nul", "context": "p", "allow_dot": false}, "result": "a/nul"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "../escape", "context": "manifest.scan.artifacts[2].path", "allow_dot": false}, "error": {"type": "ContractError", "message": "manifest.scan.artifacts[2].path: expected a safe repository-relative POSIX path"}}
+{"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "findings/archive/archive.md", "context": "findings.findings[1].writeup.reportPath", "allow_dot": false}, "result": "findings/archive/archive.md"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "src/CON.py:fixture", "context": "manifest.scan.scope.includePaths[0]", "allow_dot": true}, "result": "src/CON.py:fixture"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "scan-manifest.json", "context": "coverage.surfaces[0].receiptRefs[0]", "allow_dot": false}, "result": "scan-manifest.json"}
 {"function": "finalize_scan_contract._require_safe_relative_path", "args": {"value": "findings.json", "context": "artifact path", "allow_dot": false}, "result": "findings.json"}

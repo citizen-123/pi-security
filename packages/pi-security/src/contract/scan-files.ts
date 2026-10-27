@@ -96,3 +96,8 @@ export function openScanLocalFile(scanDir: string, relativePath: string, context
     throw error;
   }
 }
+
+/** _require_scan_local_file: a regular file inside `scanDir`. */
+export function requireScanLocalFile(scanDir: string, relativePath: string, context: string): void {
+  closeSync(openScanLocalFile(scanDir, relativePath, context));
+}
