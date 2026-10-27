@@ -43,6 +43,7 @@ const ENTRIES = {
   exportsModule: "src/contract/exports.ts",
   validation: "src/contract/validation.ts",
   recovery: "src/contract/recovery.ts",
+  report: "src/contract/report-projection.ts",
 };
 const bundled = await build({
   bundle: true,
@@ -54,7 +55,7 @@ const bundled = await build({
   platform: "node",
   write: false,
 });
-const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths, exportsModule, validation, recovery } = await import(
+const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths, exportsModule, validation, recovery, report } = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString("base64")}`
 );
 
@@ -167,6 +168,9 @@ export const functions = {
     validation.legacySealedFindingsForValidation(findings),
   "finalize_scan_contract._validate_canonical_schemas_before_projection": ({ manifest, findings, coverage, schema_dir }) =>
     validation.validateCanonicalSchemasBeforeProjection(manifest, findings, coverage, schema_dir) ?? null,
+  "report_projection.build_report_markdown": ({ manifest, findings_document, coverage }) =>
+    report.buildReportMarkdown(manifest, findings_document, coverage),
+  "report_projection.merged_root_cause": ({ value }) => report.mergedRootCause(value),
   "finalize_scan_contract._finding_evidence_strength": ({ finding }) => recovery.findingEvidenceStrength(finding),
   "finalize_scan_contract._finding_strength": ({ finding }) => recovery.findingStrength(finding),
   "finalize_scan_contract._recover_unsealed_findings": ({ manifest, findings, schema_dir, scan_dir, warnings }) =>

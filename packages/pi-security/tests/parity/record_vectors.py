@@ -41,6 +41,7 @@ SCRIPTS = PACKAGE_ROOT / "scripts"
 # (script file, qualified name). Arguments are recorded under the function's own parameter names.
 TARGETS: set[tuple[str, str]] = {
     ("report_projection.py", "build_report_markdown"),
+    ("report_projection.py", "merged_root_cause"),
     ("finalize_scan_contract.py", "build_sarif"),
     ("finalize_scan_contract.py", "_fingerprint"),
     ("finalize_scan_contract.py", "_stable_id"),
@@ -121,6 +122,7 @@ SOURCE_TESTS = {
     "test_csv_export_edges.py",
     "test_contract_validation_edges.py",
     "test_recovery_edges.py",
+    "test_report_projection_edges.py",
     "test_report_projection.py",
     "test_sarif_projection.py",
     "test_scan_contract_examples.py",
