@@ -1,15 +1,18 @@
 // Scan-local file access that never follows symbolic links out of a verified directory.
 // Port of the read side of scripts/finalize_scan_contract.py (_require_scan_directory,
-// open_scan_local_file_descriptor).
+// open_scan_local_file_descriptor, _require_scan_local_file, _read_scan_local_json_bytes, _sha256_scan_local_file);
+// writes are in scan-writes.ts.
 //
 // Python walks each component with openat(O_NOFOLLOW). Node has no openat, so a file is opened by full path with
 // O_NOFOLLOW (guarding the last component) and the opened descriptor's real path must equal the requested path
 // exactly, which rejects symlinked parent directories too. Where /proc/self/fd is unavailable the check uses
 // realpath plus the opened file's device and inode, as src/execution-boundary.ts does.
-import { closeSync, constants, fstatSync, lstatSync, openSync, readlinkSync, realpathSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { requirePortableRelativePath } from "./contract-paths.js";
-import { ContractError } from "./contract-error.js";
+import { loadsJson, requireSafeJsonValue } from "./canonical-json.js";
+import { ContractError, isJsonObject, type JsonObject } from "./contract-error.js";
 
 const caseInsensitive = process.platform === "win32" || process.platform === "darwin";
 const normcase = (path: string) => (process.platform === "win32" ? path.toLowerCase() : path);
@@ -100,4 +103,37 @@ export function openScanLocalFile(scanDir: string, relativePath: string, context
 /** _require_scan_local_file: a regular file inside `scanDir`. */
 export function requireScanLocalFile(scanDir: string, relativePath: string, context: string): void {
   closeSync(openScanLocalFile(scanDir, relativePath, context));
+}
+
+/**
+ * A scan-local JSON object and its exact bytes. The "<context>: invalid JSON:" prefix matches Python; the parser
+ * detail after it does not.
+ */
+export function readScanLocalJsonBytes(scanDir: string, relativePath: string, context: string): { payload: JsonObject; raw: Buffer } {
+  const descriptor = openScanLocalFile(scanDir, relativePath, context);
+  let raw: Buffer;
+  try {
+    raw = readFileSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+  let payload: unknown;
+  try {
+    payload = loadsJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(raw));
+  } catch (error) {
+    throw new ContractError(`${context}: invalid JSON: ${(error as Error).message}`);
+  }
+  if (!isJsonObject(payload)) throw new ContractError(`${context}: expected a JSON object`);
+  requireSafeJsonValue(payload, context, false);
+  return { payload, raw };
+}
+
+/** SHA-256 hex digest of a scan-local regular file. */
+export function sha256ScanLocalFile(scanDir: string, relativePath: string, context: string): string {
+  const descriptor = openScanLocalFile(scanDir, relativePath, context);
+  try {
+    return createHash("sha256").update(readFileSync(descriptor)).digest("hex");
+  } finally {
+    closeSync(descriptor);
+  }
 }
