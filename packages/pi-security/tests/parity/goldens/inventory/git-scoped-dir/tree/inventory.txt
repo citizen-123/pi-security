@@ -1,0 +1,4 @@
+src/app.py
+src/space name.ts
+src/util/helpers.js
+src/vues/électron_日本.py

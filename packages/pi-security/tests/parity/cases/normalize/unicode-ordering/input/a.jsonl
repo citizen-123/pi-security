@@ -1,0 +1,6 @@
+{"cwe_ids": ["CWE-89"], "locations": [{"path": "src/db.py", "start_line": 3, "end_line": 4, "role": "sink"}], "summary": "～ fullwidth tilde", "evidence": "e1"}
+{"cwe_ids": ["CWE-89"], "locations": [{"path": "src/db.py", "start_line": 3, "end_line": 4, "role": "sink"}], "summary": "😀 emoji", "evidence": "e2"}
+{"cwe_ids": ["CWE-89"], "locations": [{"path": "src/db.py", "start_line": 3, "end_line": 4, "role": "sink"}], "summary": "plain ascii", "evidence": "e3"}
+{"cwe_ids": ["CWE-79"], "locations": [{"path": "src/vues/électron_日本.py", "start_line": 2, "end_line": 9, "role": "sink"}], "summary": "Écho non échappé", "evidence": "dans électron"}
+{"cwe_ids": ["CWE-79"], "locations": [{"path": "src/db.py", "start_line": 1, "role": "sink"}], "summary": "instance 😀", "evidence": "x", "instance": "😀-variant"}
+{"cwe_ids": ["CWE-79"], "locations": [{"path": "src/db.py", "start_line": 1, "role": "sink"}], "summary": "instance fullwidth", "evidence": "y", "instance": "～-variant"}

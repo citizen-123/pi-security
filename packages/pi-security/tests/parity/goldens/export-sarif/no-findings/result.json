@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "{\n  \"$schema\": \"https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json\",\n  \"runs\": [\n    {\n      \"automationDetails\": {\n        \"id\": \"scan_parity_none\"\n      },\n      \"properties\": {\n        \"piSecuritySchemaVersion\": \"1.0\",\n        \"piSecurityTargetKind\": \"git_worktree\"\n      },\n      \"results\": [],\n      \"tool\": {\n        \"driver\": {\n          \"name\": \"Pi Security\",\n          \"rules\": [],\n          \"version\": \"0.1.0\"\n        }\n      }\n    }\n  ],\n  \"version\": \"2.1.0\"\n}\n",
+      "stderr": ""
+    }
+  ]
+}

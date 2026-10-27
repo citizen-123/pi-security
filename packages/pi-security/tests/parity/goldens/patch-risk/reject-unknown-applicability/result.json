@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stdout": "",
+      "stderr": "merge requires confirmed applicability\n"
+    }
+  ]
+}

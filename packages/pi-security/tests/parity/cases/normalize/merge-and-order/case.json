@@ -1,0 +1,20 @@
+{
+  "description": "Duplicate identities across two inputs merge; locations dedupe and sort by role; CWE forms normalize.",
+  "steps": [
+    {
+      "argv": [
+        "normalize_candidates",
+        "--input",
+        "{work}/a.jsonl",
+        "{work}/b.jsonl",
+        "--out",
+        "{work}/out.jsonl",
+        "--repo-root",
+        "{work}/repo",
+        "--in-scope-files",
+        "{work}/scope.txt"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

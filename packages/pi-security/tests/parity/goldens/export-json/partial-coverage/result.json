@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "{\n  \"documentType\": \"pi-security.findings\",\n  \"findings\": [\n    {\n      \"attackPath\": null,\n      \"confidence\": {\n        \"level\": \"high\",\n        \"rationale\": \"Direct source trace.\"\n      },\n      \"extensions\": {},\n      \"findingId\": \"csf_8fd4bda77ce597b22903088f\",\n      \"fingerprints\": {\n        \"algorithm\": \"pi-security/v1\",\n        \"primary\": \"pi-security/v1:sha256:3e9c6acd5c9dd4475b52521fd1f2377fd132cb04c1bf2313bb4a175bc454a348\"\n      },\n      \"identity\": {\n        \"anchor\": \"search-echo\"\n      },\n      \"locations\": [\n        {\n          \"endLine\": 32,\n          \"path\": \"src/search.py\",\n          \"role\": \"sink\",\n          \"startLine\": 30\n        }\n      ],\n      \"occurrenceId\": \"occ_7a434ef45992dc8b1071920f\",\n      \"provenance\": {\n        \"source\": \"local_package\"\n      },\n      \"remediation\": \"Fix search term reflected unescaped.\",\n      \"ruleId\": \"xss.reflected\",\n      \"severity\": {\n        \"level\": \"medium\"\n      },\n      \"summary\": \"Summary for Search term reflected unescaped.\",\n      \"taxonomy\": {\n        \"category\": \"xss\",\n        \"cwe\": [\n          \"CWE-20\"\n        ]\n      },\n      \"title\": \"Search term reflected unescaped\",\n      \"validation\": null\n    }\n  ],\n  \"scanId\": \"scan_parity_partial\",\n  \"schemaVersion\": \"1.0\"\n}\n",
+      "stderr": ""
+    }
+  ]
+}

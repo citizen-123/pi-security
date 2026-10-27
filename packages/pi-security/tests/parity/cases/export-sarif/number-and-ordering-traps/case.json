@@ -1,0 +1,23 @@
+{
+  "description": "SARIF export after finalizing: Integral float score (7.0), fractional score, and titles with characters above and below U+FFFF.",
+  "steps": [
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "ignore"
+    },
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan",
+        "--export-format",
+        "sarif"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

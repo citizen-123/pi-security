@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "occurrence_id,finding_id,title,summary,severity,confidence,status,close_reason,note,remediation,path,start_line,end_line\r\nocc_7a434ef45992dc8b1071920f,csf_8fd4bda77ce597b22903088f,Search term reflected unescaped,Summary for Search term reflected unescaped.,medium,high,open,,,Fix search term reflected unescaped.,src/search.py,30,32\r\n",
+      "stderr": ""
+    }
+  ]
+}

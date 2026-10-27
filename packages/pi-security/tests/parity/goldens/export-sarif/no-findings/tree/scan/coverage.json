@@ -1,0 +1,22 @@
+{
+  "completeness": "complete",
+  "deferred": [],
+  "documentType": "pi-security.coverage",
+  "excludePaths": [],
+  "explicitExclusions": [],
+  "includePaths": [
+    "src/"
+  ],
+  "inventoryStrategy": "repository",
+  "mode": "repository",
+  "scanId": "scan_parity_none",
+  "schemaVersion": "1.0",
+  "surfaces": [
+    {
+      "disposition": "no_issue_found",
+      "id": "surface_input",
+      "label": "Request input",
+      "receiptRefs": []
+    }
+  ]
+}

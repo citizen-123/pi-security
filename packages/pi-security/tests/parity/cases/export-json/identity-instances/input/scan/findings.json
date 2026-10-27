@@ -1,0 +1,81 @@
+{
+  "documentType": "pi-security.findings",
+  "schemaVersion": "1.0",
+  "scanId": "scan_parity_001",
+  "findings": [
+    {
+      "ruleId": "auth.missing-check",
+      "identity": {
+        "anchor": "admin-route-without-auth",
+        "instance": "delete-user"
+      },
+      "title": "Admin route lacks authorization",
+      "summary": "Summary for Admin route lacks authorization.",
+      "severity": {
+        "level": "high"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "auth",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/routes.py",
+          "startLine": 12,
+          "endLine": 14,
+          "role": "sink"
+        }
+      ],
+      "remediation": "Fix admin route lacks authorization.",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    },
+    {
+      "ruleId": "auth.missing-check",
+      "identity": {
+        "anchor": "admin-route-without-auth",
+        "instance": "reset-password"
+      },
+      "title": "Admin route lacks authorization (reset)",
+      "summary": "Summary for Admin route lacks authorization.",
+      "severity": {
+        "level": "high"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "auth",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/routes.py",
+          "startLine": 40,
+          "endLine": 42,
+          "role": "sink"
+        }
+      ],
+      "remediation": "Fix admin route lacks authorization.",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    }
+  ]
+}

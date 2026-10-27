@@ -1,0 +1,13 @@
+{
+  "description": "Complete scan with no findings.",
+  "steps": [
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "description": "Diff inventory listing a deleted file is accepted with --allow-missing-in-scope.",
+  "steps": [
+    {
+      "argv": [
+        "normalize_candidates",
+        "--input",
+        "{work}/a.jsonl",
+        "--out",
+        "{work}/out.jsonl",
+        "--repo-root",
+        "{work}/repo",
+        "--in-scope-files",
+        "{work}/scope.txt",
+        "--allow-missing-in-scope"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

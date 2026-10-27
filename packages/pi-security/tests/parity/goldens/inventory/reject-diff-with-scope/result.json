@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stderr": "generate_in_scope_files: --scope: diff scans must use the repository root\n"
+    }
+  ]
+}

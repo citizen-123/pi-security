@@ -1,0 +1,43 @@
+{
+  "documentType": "pi-security.findings",
+  "schemaVersion": "1.0",
+  "scanId": "scan_parity_validate",
+  "findings": [
+    {
+      "ruleId": "injection.sql",
+      "identity": {
+        "anchor": "query-concat"
+      },
+      "title": "Query built by concatenation",
+      "summary": "Summary for Query built by concatenation.",
+      "severity": {
+        "level": "high"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "injection",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/db.py",
+          "startLine": 4,
+          "endLine": 6,
+          "role": "sink"
+        }
+      ],
+      "remediation": "Fix query built by concatenation.",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "rejected",
+      "stdout": "",
+      "stderr": "scan contract validation failed: manifest.scan.artifacts[0]: sealed artifact changed or is missing\n"
+    }
+  ]
+}

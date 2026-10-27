@@ -1,0 +1,12 @@
+{
+  "description": "Must reject: hold for evidence without an evidence plan.",
+  "steps": [
+    {
+      "argv": [
+        "validate_patch_risk_assessment",
+        "{work}/assessment.json"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "description": "Must reject: merge with a decision-critical unknown.",
+  "steps": [
+    {
+      "argv": [
+        "validate_patch_risk_assessment",
+        "{work}/assessment.json"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

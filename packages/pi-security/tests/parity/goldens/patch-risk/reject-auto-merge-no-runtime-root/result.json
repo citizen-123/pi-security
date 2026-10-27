@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stdout": "",
+      "stderr": "auto_merge_candidate gate failed: affectedRuntimeRoots\n"
+    }
+  ]
+}

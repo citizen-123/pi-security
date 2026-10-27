@@ -1,0 +1,81 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "scan_parity_unicode"
+      },
+      "properties": {
+        "piSecuritySchemaVersion": "1.0",
+        "piSecurityTargetKind": "git_worktree"
+      },
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/vues/%C3%A9lectron_%E6%97%A5%E6%9C%AC.py"
+                },
+                "region": {
+                  "endLine": 5,
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Template | renders <script> & `raw` input [link](x)\n\nLine one.\n## Not a heading\n```\nfenced\n```\n\nSeverity: high\n\nCategory: Injection\n\nWeaknesses: CWE-20\n\nRemediation:\nEscape output; see <b>docs</b> | table."
+          },
+          "partialFingerprints": {
+            "piSecurity/v1": "pi-security/v1:sha256:8f50978e9a9bc3088657e97b52dcbc260f0a232dbac80e403037566ce252ba31"
+          },
+          "properties": {
+            "category": "injection",
+            "confidence": "high",
+            "findingId": "csf_595e39ec041b2774a465b81e",
+            "occurrenceId": "occ_1f89fef617bac83dbc823fcf",
+            "severity": "high"
+          },
+          "ruleId": "injection.template",
+          "ruleIndex": 0
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Pi Security",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Injection: Template. Categories: Injection. Weaknesses: CWE-20."
+              },
+              "help": {
+                "markdown": "Injection: Template. Categories: Injection. Weaknesses: CWE-20.\n\n## Remediation\n\nEscape output; see <b>docs</b> | table.",
+                "text": "Injection: Template. Categories: Injection. Weaknesses: CWE-20.\n\nRemediation:\n\nEscape output; see <b>docs</b> | table."
+              },
+              "id": "injection.template",
+              "name": "Injection: Template",
+              "properties": {
+                "security-severity": "8.0",
+                "tags": [
+                  "external/cwe/cwe-020",
+                  "injection",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Injection: Template"
+              }
+            }
+          ],
+          "version": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

@@ -1,0 +1,23 @@
+{
+  "description": "SARIF export after finalizing: Five findings covering every severity, multiple locations, validation and attack paths.",
+  "steps": [
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "ignore"
+    },
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan",
+        "--export-format",
+        "sarif"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

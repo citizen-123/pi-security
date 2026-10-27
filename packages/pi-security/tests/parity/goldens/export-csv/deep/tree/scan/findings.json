@@ -1,0 +1,153 @@
+{
+  "documentType": "pi-security.findings",
+  "findings": [
+    {
+      "attackPath": null,
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "extensions": {
+        "candidateId": "DSS-001",
+        "ledgerRowId": "R01W01-COPY",
+        "reportId": "DSS-001-COPY-a"
+      },
+      "findingId": "csf_639668e9f66508b70c0c05c8",
+      "fingerprints": {
+        "algorithm": "pi-security/v1",
+        "primary": "pi-security/v1:sha256:a63558d61aa40d938df8faa570939775f5c7631e830ae56709bab342e5c04820"
+      },
+      "identity": {
+        "anchor": "copy-without-bounds",
+        "instance": "variant-a"
+      },
+      "locations": [
+        {
+          "endLine": 79,
+          "path": "src/buffer.c",
+          "role": "sink",
+          "startLine": 77
+        }
+      ],
+      "occurrenceId": "occ_ae161acb3c1b053276b969de",
+      "provenance": {
+        "source": "local_package",
+        "sourceFindingIds": [
+          "W01-F3",
+          "W04-F1"
+        ]
+      },
+      "remediation": "Fix copy without bounds check [dss-001-copy-a].",
+      "ruleId": "memory.unchecked-length",
+      "severity": {
+        "level": "high"
+      },
+      "summary": "Summary for Copy without bounds check [DSS-001-COPY-a].",
+      "taxonomy": {
+        "category": "memory",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "title": "Copy without bounds check [DSS-001-COPY-a]",
+      "validation": null
+    },
+    {
+      "attackPath": null,
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "extensions": {
+        "candidateId": "DSS-001",
+        "ledgerRowId": "R01W01-COPY",
+        "reportId": "DSS-001-COPY-b"
+      },
+      "findingId": "csf_fc42e8d6158a1c4847801c4e",
+      "fingerprints": {
+        "algorithm": "pi-security/v1",
+        "primary": "pi-security/v1:sha256:bf6b3a58d1475f3ef0fba88036cc073e7cb8b20b3fd08c76ca8d55f8f19b475b"
+      },
+      "identity": {
+        "anchor": "copy-without-bounds",
+        "instance": "variant-b"
+      },
+      "locations": [
+        {
+          "endLine": 79,
+          "path": "src/buffer.c",
+          "role": "sink",
+          "startLine": 77
+        }
+      ],
+      "occurrenceId": "occ_5ec569f398ffb3f3e0da1bb3",
+      "provenance": {
+        "source": "local_package",
+        "sourceFindingIds": [
+          "W02-F7"
+        ]
+      },
+      "remediation": "Fix copy without bounds check [dss-001-copy-a].",
+      "ruleId": "memory.unchecked-length",
+      "severity": {
+        "level": "medium"
+      },
+      "summary": "Summary for Copy without bounds check [DSS-001-COPY-a].",
+      "taxonomy": {
+        "category": "memory",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "title": "Copy without bounds check [DSS-001-COPY-b]",
+      "validation": null
+    },
+    {
+      "attackPath": null,
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "extensions": {
+        "candidateId": "DSS-002",
+        "reportId": "DSS-002"
+      },
+      "findingId": "csf_369dab5af47fd7314ed01ca6",
+      "fingerprints": {
+        "algorithm": "pi-security/v1",
+        "primary": "pi-security/v1:sha256:479bb5a84685d17e1a076e0d5d4bb7d949094a85c1b028329e7db3e9db7aaada"
+      },
+      "identity": {
+        "anchor": "token-from-math-random"
+      },
+      "locations": [
+        {
+          "endLine": 10,
+          "path": "src/session.js",
+          "role": "sink",
+          "startLine": 8
+        }
+      ],
+      "occurrenceId": "occ_157d3af40ea2ee4376779616",
+      "provenance": {
+        "source": "local_package"
+      },
+      "remediation": "Fix session token from weak randomness.",
+      "ruleId": "crypto.weak-random",
+      "severity": {
+        "level": "low"
+      },
+      "summary": "Summary for Session token from weak randomness.",
+      "taxonomy": {
+        "category": "crypto",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "title": "Session token from weak randomness",
+      "validation": null
+    }
+  ],
+  "scanId": "scan_parity_deep",
+  "schemaVersion": "1.0"
+}

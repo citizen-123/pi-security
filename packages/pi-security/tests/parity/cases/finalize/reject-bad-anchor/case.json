@@ -1,0 +1,13 @@
+{
+  "description": "Must reject: identity.anchor that is not a lowercase slug.",
+  "steps": [
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

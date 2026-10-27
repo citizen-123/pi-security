@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "{\n  \"documentType\": \"pi-security.findings\",\n  \"findings\": [\n    {\n      \"attackPath\": null,\n      \"confidence\": {\n        \"level\": \"high\",\n        \"rationale\": \"Direct source trace.\"\n      },\n      \"extensions\": {},\n      \"findingId\": \"csf_371745240090871ed54d33ca\",\n      \"fingerprints\": {\n        \"algorithm\": \"pi-security/v1\",\n        \"primary\": \"pi-security/v1:sha256:af16fc630cad033879d80ffcf0263dd8b7402d718bb45e0b6433cd2a1f882559\"\n      },\n      \"identity\": {\n        \"anchor\": \"fetch-user-url\"\n      },\n      \"locations\": [\n        {\n          \"endLine\": 24,\n          \"path\": \"src/fetch.py\",\n          \"role\": \"sink\",\n          \"startLine\": 22\n        }\n      ],\n      \"occurrenceId\": \"occ_0814e97958b128e4dc2102fb\",\n      \"provenance\": {\n        \"source\": \"local_package\"\n      },\n      \"remediation\": \"Fix server fetches user-supplied url.\",\n      \"ruleId\": \"ssrf.unvalidated-url\",\n      \"severity\": {\n        \"level\": \"medium\"\n      },\n      \"summary\": \"Summary for Server fetches user-supplied URL.\",\n      \"taxonomy\": {\n        \"category\": \"ssrf\",\n        \"cwe\": [\n          \"CWE-20\"\n        ]\n      },\n      \"title\": \"Server fetches user-supplied URL\",\n      \"validation\": null\n    }\n  ],\n  \"scanId\": \"scan_parity_diff\",\n  \"schemaVersion\": \"1.0\"\n}\n",
+      "stderr": ""
+    }
+  ]
+}

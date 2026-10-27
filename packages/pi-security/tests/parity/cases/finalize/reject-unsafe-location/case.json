@@ -1,0 +1,13 @@
+{
+  "description": "Must reject: Location path escaping the repository.",
+  "steps": [
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

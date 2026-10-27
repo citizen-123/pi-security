@@ -1,0 +1,49 @@
+{
+  "documentType": "pi-security.findings",
+  "findings": [
+    {
+      "attackPath": null,
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "extensions": {},
+      "findingId": "csf_595e39ec041b2774a465b81e",
+      "fingerprints": {
+        "algorithm": "pi-security/v1",
+        "primary": "pi-security/v1:sha256:8f50978e9a9bc3088657e97b52dcbc260f0a232dbac80e403037566ce252ba31"
+      },
+      "identity": {
+        "anchor": "template-render-unescaped"
+      },
+      "locations": [
+        {
+          "endLine": 5,
+          "path": "src/vues/\u00e9lectron_\u65e5\u672c.py",
+          "role": "sink",
+          "startLine": 3
+        }
+      ],
+      "occurrenceId": "occ_1f89fef617bac83dbc823fcf",
+      "provenance": {
+        "source": "local_package"
+      },
+      "remediation": "Escape output; see <b>docs</b> | table.",
+      "ruleId": "injection.template",
+      "severity": {
+        "level": "high"
+      },
+      "summary": "Line one.\n## Not a heading\n```\nfenced\n```",
+      "taxonomy": {
+        "category": "injection",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "title": "Template | renders <script> & `raw` input [link](x)",
+      "validation": null
+    }
+  ],
+  "scanId": "scan_parity_unicode",
+  "schemaVersion": "1.0"
+}

@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "{\"coveragePath\": \"<WORK>/scan/coverage.json\", \"findingsPath\": \"<WORK>/scan/findings.json\", \"manifestPath\": \"<WORK>/scan/scan-manifest.json\", \"reportPath\": \"<WORK>/scan/report.md\", \"scanDir\": \"<WORK>/scan\", \"status\": \"valid\"}\n",
+      "stderr": ""
+    }
+  ]
+}

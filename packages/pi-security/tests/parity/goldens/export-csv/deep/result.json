@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "occurrence_id,finding_id,candidate_id,title,summary,severity,confidence,status,close_reason,note,remediation,path,start_line,end_line\r\nocc_ae161acb3c1b053276b969de,csf_639668e9f66508b70c0c05c8,DSS-001,Copy without bounds check [DSS-001-COPY-a],Summary for Copy without bounds check [DSS-001-COPY-a].,high,high,open,,,Fix copy without bounds check [dss-001-copy-a].,src/buffer.c,77,79\r\nocc_5ec569f398ffb3f3e0da1bb3,csf_fc42e8d6158a1c4847801c4e,DSS-001,Copy without bounds check [DSS-001-COPY-b],Summary for Copy without bounds check [DSS-001-COPY-a].,medium,high,open,,,Fix copy without bounds check [dss-001-copy-a].,src/buffer.c,77,79\r\nocc_157d3af40ea2ee4376779616,csf_369dab5af47fd7314ed01ca6,DSS-002,Session token from weak randomness,Summary for Session token from weak randomness.,low,high,open,,,Fix session token from weak randomness.,src/session.js,8,10\r\n",
+      "stderr": ""
+    }
+  ]
+}

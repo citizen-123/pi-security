@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stderr": "generate_in_scope_files: could not resolve the selected Git changes: fatal: ambiguous argument 'no-such-ref..HEAD': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n"
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "scan_parity_001"
+      },
+      "properties": {
+        "piSecuritySchemaVersion": "1.0",
+        "piSecurityTargetKind": "git_worktree"
+      },
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/routes.py"
+                },
+                "region": {
+                  "endLine": 42,
+                  "startLine": 40
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Admin route lacks authorization (reset)\n\nSummary for Admin route lacks authorization.\n\nSeverity: high\n\nCategory: Auth\n\nWeaknesses: CWE-20\n\nRemediation:\nFix admin route lacks authorization."
+          },
+          "partialFingerprints": {
+            "piSecurity/v1": "pi-security/v1:sha256:ec53629192839a96e635483989bdc251aeff1dc0cb7332528e6a9737abf8c7ba"
+          },
+          "properties": {
+            "category": "auth",
+            "confidence": "high",
+            "findingId": "csf_d5d131996b4d040f1b47f80f",
+            "occurrenceId": "occ_82919598a0647f726fd22ca4",
+            "severity": "high"
+          },
+          "ruleId": "auth.missing-check",
+          "ruleIndex": 0
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/routes.py"
+                },
+                "region": {
+                  "endLine": 14,
+                  "startLine": 12
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Admin route lacks authorization\n\nSummary for Admin route lacks authorization.\n\nSeverity: high\n\nCategory: Auth\n\nWeaknesses: CWE-20\n\nRemediation:\nFix admin route lacks authorization."
+          },
+          "partialFingerprints": {
+            "piSecurity/v1": "pi-security/v1:sha256:4d473fb769ab3fb2287d3cb5d664577d0b69a3cf993f847a44fa5819268d9ca4"
+          },
+          "properties": {
+            "category": "auth",
+            "confidence": "high",
+            "findingId": "csf_0ddfb4f3c53c1b3f6c23aae9",
+            "occurrenceId": "occ_d7a1e4d8e297494f2e510fe6",
+            "severity": "high"
+          },
+          "ruleId": "auth.missing-check",
+          "ruleIndex": 0
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Pi Security",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Auth: Missing check. Categories: Auth. Weaknesses: CWE-20."
+              },
+              "help": {
+                "markdown": "Auth: Missing check. Categories: Auth. Weaknesses: CWE-20.\n\n## Remediation\n\nFix admin route lacks authorization.",
+                "text": "Auth: Missing check. Categories: Auth. Weaknesses: CWE-20.\n\nRemediation:\n\nFix admin route lacks authorization."
+              },
+              "id": "auth.missing-check",
+              "name": "Auth: Missing check",
+              "properties": {
+                "security-severity": "8.0",
+                "tags": [
+                  "auth",
+                  "external/cwe/cwe-020",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Auth: Missing check"
+              }
+            }
+          ],
+          "version": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

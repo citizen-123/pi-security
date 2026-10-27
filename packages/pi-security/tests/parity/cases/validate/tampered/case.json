@@ -1,0 +1,29 @@
+{
+  "description": "Must reject: findings.json changed after sealing.",
+  "steps": [
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "ignore"
+    },
+    {
+      "argv": [
+        "parity_append",
+        "{work}/scan/findings.json",
+        " "
+      ],
+      "stdout": "ignore"
+    },
+    {
+      "argv": [
+        "validate_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

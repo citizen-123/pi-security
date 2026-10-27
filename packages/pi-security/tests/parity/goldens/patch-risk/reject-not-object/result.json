@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stdout": "",
+      "stderr": "assessment must be a JSON object\n"
+    }
+  ]
+}

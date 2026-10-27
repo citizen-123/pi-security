@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "occurrence_id,finding_id,title,summary,severity,confidence,status,close_reason,note,remediation,path,start_line,end_line\r\nocc_1f89fef617bac83dbc823fcf,csf_595e39ec041b2774a465b81e,Template | renders <script> & `raw` input [link](x),\"Line one.\n## Not a heading\n```\nfenced\n```\",high,high,open,,,Escape output; see <b>docs</b> | table.,src/vues/électron_日本.py,3,5\r\n",
+      "stderr": ""
+    }
+  ]
+}

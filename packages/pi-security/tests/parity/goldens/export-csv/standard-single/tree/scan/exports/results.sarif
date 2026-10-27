@@ -1,0 +1,81 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "scan_parity_001"
+      },
+      "properties": {
+        "piSecuritySchemaVersion": "1.0",
+        "piSecurityTargetKind": "git_worktree"
+      },
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/extract.py"
+                },
+                "region": {
+                  "endLine": 43,
+                  "startLine": 41
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Unsafe archive extraction\n\nSummary for Unsafe archive extraction.\n\nSeverity: high\n\nCategory: Path traversal\n\nWeaknesses: CWE-20\n\nRemediation:\nFix unsafe archive extraction."
+          },
+          "partialFingerprints": {
+            "piSecurity/v1": "pi-security/v1:sha256:eabfe846cf4887acfe1ae0e9dc1dae24e6cab67f7cbda8decf49b71b1844a081"
+          },
+          "properties": {
+            "category": "path-traversal",
+            "confidence": "high",
+            "findingId": "csf_596a4ed4ec42b7b55ad316c6",
+            "occurrenceId": "occ_5477a43d0e3745750207142e",
+            "severity": "high"
+          },
+          "ruleId": "path-traversal.archive-extraction",
+          "ruleIndex": 0
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Pi Security",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Path traversal: Archive extraction. Categories: Path traversal. Weaknesses: CWE-20."
+              },
+              "help": {
+                "markdown": "Path traversal: Archive extraction. Categories: Path traversal. Weaknesses: CWE-20.\n\n## Remediation\n\nFix unsafe archive extraction.",
+                "text": "Path traversal: Archive extraction. Categories: Path traversal. Weaknesses: CWE-20.\n\nRemediation:\n\nFix unsafe archive extraction."
+              },
+              "id": "path-traversal.archive-extraction",
+              "name": "Path traversal: Archive extraction",
+              "properties": {
+                "security-severity": "8.0",
+                "tags": [
+                  "external/cwe/cwe-020",
+                  "path-traversal",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Path traversal: Archive extraction"
+              }
+            }
+          ],
+          "version": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

@@ -1,0 +1,12 @@
+{
+  "description": "Strict low-risk auto-merge candidate.",
+  "steps": [
+    {
+      "argv": [
+        "validate_patch_risk_assessment",
+        "{work}/assessment.json"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

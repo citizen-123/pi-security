@@ -1,0 +1,81 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "scan_parity_diff"
+      },
+      "properties": {
+        "piSecuritySchemaVersion": "1.0",
+        "piSecurityTargetKind": "git_diff"
+      },
+      "results": [
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/fetch.py"
+                },
+                "region": {
+                  "endLine": 24,
+                  "startLine": 22
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Server fetches user-supplied URL\n\nSummary for Server fetches user-supplied URL.\n\nSeverity: medium\n\nCategory: SSRF\n\nWeaknesses: CWE-20\n\nRemediation:\nFix server fetches user-supplied url."
+          },
+          "partialFingerprints": {
+            "piSecurity/v1": "pi-security/v1:sha256:af16fc630cad033879d80ffcf0263dd8b7402d718bb45e0b6433cd2a1f882559"
+          },
+          "properties": {
+            "category": "ssrf",
+            "confidence": "high",
+            "findingId": "csf_371745240090871ed54d33ca",
+            "occurrenceId": "occ_0814e97958b128e4dc2102fb",
+            "severity": "medium"
+          },
+          "ruleId": "ssrf.unvalidated-url",
+          "ruleIndex": 0
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Pi Security",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "SSRF: Unvalidated URL. Categories: SSRF. Weaknesses: CWE-20."
+              },
+              "help": {
+                "markdown": "SSRF: Unvalidated URL. Categories: SSRF. Weaknesses: CWE-20.\n\n## Remediation\n\nFix server fetches user-supplied url.",
+                "text": "SSRF: Unvalidated URL. Categories: SSRF. Weaknesses: CWE-20.\n\nRemediation:\n\nFix server fetches user-supplied url."
+              },
+              "id": "ssrf.unvalidated-url",
+              "name": "SSRF: Unvalidated URL",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-020",
+                  "security",
+                  "ssrf"
+                ]
+              },
+              "shortDescription": {
+                "text": "SSRF: Unvalidated URL"
+              }
+            }
+          ],
+          "version": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

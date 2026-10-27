@@ -1,0 +1,21 @@
+{
+  "description": "Receipt for a freshly sealed scan.",
+  "steps": [
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "ignore"
+    },
+    {
+      "argv": [
+        "validate_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

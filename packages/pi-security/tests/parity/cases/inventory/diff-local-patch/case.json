@@ -1,0 +1,70 @@
+{
+  "description": "Working-tree patch: staged, unstaged, untracked, and deleted changes against HEAD.",
+  "steps": [
+    {
+      "argv": [
+        "generate_in_scope_files",
+        "--repo",
+        "{work}/repo",
+        "--out",
+        "{work}/inventory.txt",
+        "--scope",
+        ".",
+        "--diff-base",
+        "HEAD",
+        "--diff-mode",
+        "local-patch"
+      ],
+      "stdout": "ignore"
+    }
+  ],
+  "git": {
+    "path": "repo",
+    "commits": [
+      {
+        "message": "base",
+        "write": {
+          "src/app.py": "print('app')\n",
+          "src/util/helpers.js": "export const x = 1;\n",
+          "src/vues/électron_日本.py": "x = 1\n",
+          "src/space name.ts": "let a = 1;\n",
+          "docs/guide.md": "# Guide\n",
+          "node_modules/pkg/index.js": "module.exports = 1;\n",
+          "assets/logo.bin": "\u0000\u0001binary\u0000",
+          "CHANGELOG.md": "# Changes\n",
+          ".gitignore": "ignored/\n*.log\n"
+        }
+      },
+      {
+        "message": "change",
+        "write": {
+          "src/app.py": "print('app v2')\n",
+          "src/new_module.go": "package main\n",
+          "src/data.bin.py": "\u0000\u0000\u0000binary-looking\u0000",
+          "dist/bundle.min.js": "var a=1;\n",
+          "src/renamed_helpers.js": "export const x = 1;\n",
+          "README.txt": "not code\n"
+        },
+        "delete": [
+          "src/util/helpers.js",
+          "src/space name.ts"
+        ]
+      }
+    ],
+    "worktree": {
+      "write": {
+        "src/app.py": "print('app v3')\n",
+        "src/untracked.rb": "puts 1\n",
+        "ignored/secret.py": "x\n",
+        "debug.log": "log\n",
+        "src/staged.py": "y = 2\n"
+      },
+      "delete": [
+        "docs/guide.md"
+      ],
+      "stage": [
+        "src/staged.py"
+      ]
+    }
+  }
+}

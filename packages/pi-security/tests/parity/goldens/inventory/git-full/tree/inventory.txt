@@ -1,0 +1,13 @@
+./.gitignore
+./CHANGELOG.md
+./README.txt
+./assets/logo.bin
+./dist/bundle.min.js
+./node_modules/pkg/index.js
+./src/app.py
+./src/data.bin.py
+./src/new_module.go
+./src/renamed_helpers.js
+./src/staged.py
+./src/untracked.rb
+./src/vues/électron_日本.py

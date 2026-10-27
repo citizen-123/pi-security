@@ -1,0 +1,19 @@
+{
+  "description": "Accessible target and mixed runtime checks.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "security_scan",
+        "--cwd",
+        "{work}/target",
+        "--runtime-check",
+        "subagents=true",
+        "--runtime-check",
+        "browser=FALSE"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

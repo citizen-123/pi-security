@@ -1,0 +1,12 @@
+{
+  "description": "Hold for evidence with a bounded evidence plan.",
+  "steps": [
+    {
+      "argv": [
+        "validate_patch_risk_assessment",
+        "{work}/assessment.json"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

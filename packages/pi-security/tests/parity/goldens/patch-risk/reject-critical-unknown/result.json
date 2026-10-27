@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stdout": "",
+      "stderr": "merge cannot retain a decision-critical unknown\n"
+    }
+  ]
+}

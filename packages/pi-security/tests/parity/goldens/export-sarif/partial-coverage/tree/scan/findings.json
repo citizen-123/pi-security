@@ -1,0 +1,49 @@
+{
+  "documentType": "pi-security.findings",
+  "findings": [
+    {
+      "attackPath": null,
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "extensions": {},
+      "findingId": "csf_8fd4bda77ce597b22903088f",
+      "fingerprints": {
+        "algorithm": "pi-security/v1",
+        "primary": "pi-security/v1:sha256:3e9c6acd5c9dd4475b52521fd1f2377fd132cb04c1bf2313bb4a175bc454a348"
+      },
+      "identity": {
+        "anchor": "search-echo"
+      },
+      "locations": [
+        {
+          "endLine": 32,
+          "path": "src/search.py",
+          "role": "sink",
+          "startLine": 30
+        }
+      ],
+      "occurrenceId": "occ_7a434ef45992dc8b1071920f",
+      "provenance": {
+        "source": "local_package"
+      },
+      "remediation": "Fix search term reflected unescaped.",
+      "ruleId": "xss.reflected",
+      "severity": {
+        "level": "medium"
+      },
+      "summary": "Summary for Search term reflected unescaped.",
+      "taxonomy": {
+        "category": "xss",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "title": "Search term reflected unescaped",
+      "validation": null
+    }
+  ],
+  "scanId": "scan_parity_partial",
+  "schemaVersion": "1.0"
+}

@@ -1,0 +1,262 @@
+{
+  "documentType": "pi-security.findings",
+  "schemaVersion": "1.0",
+  "scanId": "scan_parity_001",
+  "findings": [
+    {
+      "ruleId": "injection.case-critical",
+      "identity": {
+        "anchor": "sink-critical"
+      },
+      "title": "Injection reaches sink (critical)",
+      "summary": "Summary for Injection reaches sink (critical).",
+      "severity": {
+        "level": "critical",
+        "score": 9.1,
+        "scoringSystem": "CVSS:3.1"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "injection",
+        "cwe": [
+          "CWE-89"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/module_0.py",
+          "startLine": 5,
+          "endLine": 7,
+          "role": "sink"
+        },
+        {
+          "path": "src/module_0.py",
+          "startLine": 100,
+          "role": "source"
+        }
+      ],
+      "remediation": "Fix injection reaches sink (critical).",
+      "validation": {
+        "status": "validated",
+        "disposition": "reported",
+        "result": "Confirmed with a trace."
+      },
+      "attackPath": {
+        "steps": [
+          "Send a crafted request.",
+          "The handler forwards it to the query."
+        ],
+        "impact": {
+          "level": "critical",
+          "rationale": "Data exposure.",
+          "why": "Unparameterized query."
+        },
+        "likelihood": "Likely for unauthenticated callers.",
+        "reachability": {
+          "source": "HTTP body.",
+          "sink": "SQL execution."
+        },
+        "assumptions": [
+          "The endpoint is public."
+        ]
+      },
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    },
+    {
+      "ruleId": "injection.case-high",
+      "identity": {
+        "anchor": "sink-high"
+      },
+      "title": "Injection reaches sink (high)",
+      "summary": "Summary for Injection reaches sink (high).",
+      "severity": {
+        "level": "high",
+        "score": 7.5,
+        "scoringSystem": "CVSS:3.1"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "injection",
+        "cwe": [
+          "CWE-89",
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/module_1.py",
+          "startLine": 15,
+          "endLine": 17,
+          "role": "sink"
+        },
+        {
+          "path": "src/module_1.py",
+          "startLine": 101,
+          "role": "source"
+        }
+      ],
+      "remediation": "Fix injection reaches sink (high).",
+      "validation": {
+        "status": "validated",
+        "disposition": "reported",
+        "result": "Confirmed with a trace."
+      },
+      "attackPath": {
+        "steps": [
+          "Send a crafted request.",
+          "The handler forwards it to the query."
+        ],
+        "impact": {
+          "level": "high",
+          "rationale": "Data exposure.",
+          "why": "Unparameterized query."
+        },
+        "likelihood": "Likely for unauthenticated callers.",
+        "reachability": {
+          "source": "HTTP body.",
+          "sink": "SQL execution."
+        },
+        "assumptions": [
+          "The endpoint is public."
+        ]
+      },
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    },
+    {
+      "ruleId": "injection.case-medium",
+      "identity": {
+        "anchor": "sink-medium"
+      },
+      "title": "Injection reaches sink (medium)",
+      "summary": "Summary for Injection reaches sink (medium).",
+      "severity": {
+        "level": "medium"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "injection",
+        "cwe": [
+          "CWE-89"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/module_2.py",
+          "startLine": 25,
+          "endLine": 27,
+          "role": "sink"
+        },
+        {
+          "path": "src/module_2.py",
+          "startLine": 102,
+          "role": "source"
+        }
+      ],
+      "remediation": "Fix injection reaches sink (medium).",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    },
+    {
+      "ruleId": "injection.case-low",
+      "identity": {
+        "anchor": "sink-low"
+      },
+      "title": "Injection reaches sink (low)",
+      "summary": "Summary for Injection reaches sink (low).",
+      "severity": {
+        "level": "low"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "injection",
+        "cwe": [
+          "CWE-89",
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/module_3.py",
+          "startLine": 35,
+          "endLine": 37,
+          "role": "sink"
+        },
+        {
+          "path": "src/module_3.py",
+          "startLine": 103,
+          "role": "source"
+        }
+      ],
+      "remediation": "Fix injection reaches sink (low).",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    },
+    {
+      "ruleId": "injection.case-informational",
+      "identity": {
+        "anchor": "sink-informational"
+      },
+      "title": "Injection reaches sink (informational)",
+      "summary": "Summary for Injection reaches sink (informational).",
+      "severity": {
+        "level": "informational"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "injection",
+        "cwe": [
+          "CWE-89"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/module_4.py",
+          "startLine": 45,
+          "endLine": 47,
+          "role": "sink"
+        },
+        {
+          "path": "src/module_4.py",
+          "startLine": 104,
+          "role": "source"
+        }
+      ],
+      "remediation": "Fix injection reaches sink (informational).",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    }
+  ]
+}

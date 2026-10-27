@@ -1,0 +1,47 @@
+{
+  "completeness": "partial",
+  "deferred": [
+    {
+      "id": "candidate-upload",
+      "paths": [
+        "src/upload.py"
+      ],
+      "reason": "Validation was deferred because the scan reached its cost limit."
+    }
+  ],
+  "documentType": "pi-security.coverage",
+  "excludePaths": [],
+  "explicitExclusions": [
+    {
+      "pattern": "vendor/**",
+      "reason": "Third-party code."
+    }
+  ],
+  "includePaths": [
+    "src/"
+  ],
+  "inventoryStrategy": "repository",
+  "mode": "repository",
+  "scanId": "scan_parity_partial",
+  "schemaVersion": "1.0",
+  "surfaces": [
+    {
+      "disposition": "reported",
+      "id": "surface_search",
+      "label": "Search",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "needs_follow_up",
+      "id": "surface_upload",
+      "label": "Uploads",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "not_applicable",
+      "id": "surface_static",
+      "label": "Static assets",
+      "receiptRefs": []
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "{\n  \"documentType\": \"pi-security.findings\",\n  \"findings\": [\n    {\n      \"attackPath\": null,\n      \"confidence\": {\n        \"level\": \"high\",\n        \"rationale\": \"Direct source trace.\"\n      },\n      \"extensions\": {},\n      \"findingId\": \"csf_596a4ed4ec42b7b55ad316c6\",\n      \"fingerprints\": {\n        \"algorithm\": \"pi-security/v1\",\n        \"primary\": \"pi-security/v1:sha256:eabfe846cf4887acfe1ae0e9dc1dae24e6cab67f7cbda8decf49b71b1844a081\"\n      },\n      \"identity\": {\n        \"anchor\": \"archive-entry-write\"\n      },\n      \"locations\": [\n        {\n          \"endLine\": 43,\n          \"path\": \"src/extract.py\",\n          \"role\": \"sink\",\n          \"startLine\": 41\n        }\n      ],\n      \"occurrenceId\": \"occ_5477a43d0e3745750207142e\",\n      \"provenance\": {\n        \"source\": \"local_package\"\n      },\n      \"remediation\": \"Fix unsafe archive extraction.\",\n      \"ruleId\": \"path-traversal.archive-extraction\",\n      \"severity\": {\n        \"level\": \"high\"\n      },\n      \"summary\": \"Summary for Unsafe archive extraction.\",\n      \"taxonomy\": {\n        \"category\": \"path-traversal\",\n        \"cwe\": [\n          \"CWE-20\"\n        ]\n      },\n      \"title\": \"Unsafe archive extraction\",\n      \"validation\": null\n    }\n  ],\n  \"scanId\": \"scan_parity_001\",\n  \"schemaVersion\": \"1.0\"\n}\n",
+      "stderr": ""
+    }
+  ]
+}

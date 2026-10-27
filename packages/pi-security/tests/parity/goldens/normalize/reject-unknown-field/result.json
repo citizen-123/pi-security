@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stderr": "normalize_candidates: <WORK>/a.jsonl row 1: unsupported fields severity\n"
+    }
+  ]
+}

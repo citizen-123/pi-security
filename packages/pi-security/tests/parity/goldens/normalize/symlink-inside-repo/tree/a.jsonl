@@ -1,0 +1,1 @@
+{"cwe_ids": ["CWE-89"], "locations": [{"path": "src/link.py", "start_line": 3, "role": "sink"}], "summary": "Query concatenates request input.", "evidence": "db.py builds SQL with +."}

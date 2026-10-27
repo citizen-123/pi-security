@@ -1,0 +1,84 @@
+{
+  "documentType": "pi-security.findings",
+  "schemaVersion": "1.0",
+  "scanId": "scan_parity_traps",
+  "findings": [
+    {
+      "ruleId": "crypto.static-key",
+      "identity": {
+        "anchor": "hardcoded-key"
+      },
+      "title": "Hardcoded key 🔑 in config",
+      "summary": "Summary for Hardcoded key 🔑 in config.",
+      "severity": {
+        "level": "high",
+        "score": 7.0,
+        "scoringSystem": "CVSS:3.1"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "crypto",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/keys.py",
+          "startLine": 2,
+          "endLine": 4,
+          "role": "sink"
+        }
+      ],
+      "remediation": "Fix hardcoded key 🔑 in config.",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    },
+    {
+      "ruleId": "crypto.static-key",
+      "identity": {
+        "anchor": "hardcoded-key",
+        "instance": "fallback"
+      },
+      "title": "Hardcoded key ～ in fallback",
+      "summary": "Summary for Hardcoded key ～ in fallback.",
+      "severity": {
+        "level": "medium",
+        "score": 5.25,
+        "scoringSystem": "CVSS:3.1"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "crypto",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/keys.py",
+          "startLine": 20,
+          "endLine": 22,
+          "role": "sink"
+        }
+      ],
+      "remediation": "Fix hardcoded key ～ in fallback.",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    }
+  ]
+}

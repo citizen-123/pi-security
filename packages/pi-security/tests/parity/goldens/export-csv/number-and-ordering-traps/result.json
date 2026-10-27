@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "occurrence_id,finding_id,title,summary,severity,confidence,status,close_reason,note,remediation,path,start_line,end_line\r\nocc_80e81d4b53c414be13f7b681,csf_5043c16a6eeadff2e83c5dce,Hardcoded key 🔑 in config,Summary for Hardcoded key 🔑 in config.,high,high,open,,,Fix hardcoded key 🔑 in config.,src/keys.py,2,4\r\nocc_9761ade5895b06af81f7139e,csf_3c71bce15b9fac834873f3ee,Hardcoded key ～ in fallback,Summary for Hardcoded key ～ in fallback.,medium,high,open,,,Fix hardcoded key ～ in fallback.,src/keys.py,20,22\r\n",
+      "stderr": ""
+    }
+  ]
+}

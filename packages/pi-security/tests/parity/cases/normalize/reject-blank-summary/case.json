@@ -1,0 +1,19 @@
+{
+  "description": "Must reject: blank summary.",
+  "steps": [
+    {
+      "argv": [
+        "normalize_candidates",
+        "--input",
+        "{work}/a.jsonl",
+        "--out",
+        "{work}/out.jsonl",
+        "--repo-root",
+        "{work}/repo",
+        "--in-scope-files",
+        "{work}/scope.txt"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

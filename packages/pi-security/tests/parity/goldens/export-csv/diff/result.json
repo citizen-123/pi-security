@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "occurrence_id,finding_id,title,summary,severity,confidence,status,close_reason,note,remediation,path,start_line,end_line\r\nocc_0814e97958b128e4dc2102fb,csf_371745240090871ed54d33ca,Server fetches user-supplied URL,Summary for Server fetches user-supplied URL.,medium,high,open,,,Fix server fetches user-supplied url.,src/fetch.py,22,24\r\n",
+      "stderr": ""
+    }
+  ]
+}

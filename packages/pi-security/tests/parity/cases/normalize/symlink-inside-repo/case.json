@@ -1,0 +1,22 @@
+{
+  "description": "A location through an in-repository symlink is recorded as its target.",
+  "steps": [
+    {
+      "argv": [
+        "normalize_candidates",
+        "--input",
+        "{work}/a.jsonl",
+        "--out",
+        "{work}/out.jsonl",
+        "--repo-root",
+        "{work}/repo",
+        "--in-scope-files",
+        "{work}/scope.txt"
+      ],
+      "stdout": "ignore"
+    }
+  ],
+  "symlinks": {
+    "repo/src/link.py": "db.py"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "description": "Merged texts and identities ordered by code point, including characters above U+FFFF.",
+  "steps": [
+    {
+      "argv": [
+        "normalize_candidates",
+        "--input",
+        "{work}/a.jsonl",
+        "--out",
+        "{work}/out.jsonl",
+        "--repo-root",
+        "{work}/repo",
+        "--in-scope-files",
+        "{work}/scope.txt"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

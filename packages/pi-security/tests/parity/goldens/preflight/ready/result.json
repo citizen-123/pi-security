@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stdout": "{\"profile\":\"security_scan\",\"status\":\"ready\",\"results\":[{\"capability\":\"target_access\",\"reason\":\"Scan working directory is available: <WORK>/target\",\"severity\":\"block\",\"status\":\"pass\"},{\"capability\":\"browser\",\"reason\":\"The active host reports browser is unavailable; use the documented single-agent fallback.\",\"severity\":\"suggest\",\"status\":\"unknown\"},{\"capability\":\"subagents\",\"reason\":\"The active host reports subagents is available.\",\"severity\":\"suggest\",\"status\":\"pass\"}]}\n",
+      "stderr": ""
+    }
+  ]
+}

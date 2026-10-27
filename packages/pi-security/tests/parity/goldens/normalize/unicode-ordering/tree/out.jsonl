@@ -1,0 +1,4 @@
+{"candidate_id":"candidate-53b6da0a5dff6877","cwe_ids":["CWE-79"],"evidence":"y","instance":"～-variant","locations":[{"end_line":1,"path":"src/db.py","role":"sink","start_line":1}],"summary":"instance fullwidth"}
+{"candidate_id":"candidate-b5db62d0fb8af3cd","cwe_ids":["CWE-79"],"evidence":"x","instance":"😀-variant","locations":[{"end_line":1,"path":"src/db.py","role":"sink","start_line":1}],"summary":"instance 😀"}
+{"candidate_id":"candidate-8e5be74a748aaf7a","cwe_ids":["CWE-79"],"evidence":"dans électron","locations":[{"end_line":9,"path":"src/vues/électron_日本.py","role":"sink","start_line":2}],"summary":"Écho non échappé"}
+{"candidate_id":"candidate-6a4fa294088eb43f","cwe_ids":["CWE-89"],"evidence":"e1\ne2\ne3","locations":[{"end_line":4,"path":"src/db.py","role":"sink","start_line":3}],"summary":"plain ascii\n～ fullwidth tilde\n😀 emoji"}

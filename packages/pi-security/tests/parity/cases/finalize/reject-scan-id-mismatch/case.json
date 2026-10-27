@@ -1,0 +1,13 @@
+{
+  "description": "Must reject: findings.scanId differs from the manifest scan id.",
+  "steps": [
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "description": "Must reject: scope outside the repository.",
+  "steps": [
+    {
+      "argv": [
+        "generate_in_scope_files",
+        "--repo",
+        "{work}/repo",
+        "--out",
+        "{work}/inventory.txt",
+        "--scope",
+        "../"
+      ],
+      "stdout": "ignore"
+    }
+  ],
+  "git": {
+    "path": "repo",
+    "commits": [
+      {
+        "message": "base",
+        "write": {
+          "src/app.py": "print('app')\n",
+          "src/util/helpers.js": "export const x = 1;\n",
+          "src/vues/électron_日本.py": "x = 1\n",
+          "src/space name.ts": "let a = 1;\n",
+          "docs/guide.md": "# Guide\n",
+          "node_modules/pkg/index.js": "module.exports = 1;\n",
+          "assets/logo.bin": "\u0000\u0001binary\u0000",
+          "CHANGELOG.md": "# Changes\n",
+          ".gitignore": "ignored/\n*.log\n"
+        }
+      }
+    ]
+  }
+}

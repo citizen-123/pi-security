@@ -1,0 +1,43 @@
+{
+  "documentType": "pi-security.findings",
+  "schemaVersion": "1.0",
+  "scanId": "scan_parity_unicode",
+  "findings": [
+    {
+      "ruleId": "injection.template",
+      "identity": {
+        "anchor": "template-render-unescaped"
+      },
+      "title": "Template | renders <script> & `raw` input [link](x)",
+      "summary": "Line one.\n## Not a heading\n```\nfenced\n```",
+      "severity": {
+        "level": "high"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "injection",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/vues/électron_日本.py",
+          "startLine": 3,
+          "endLine": 5,
+          "role": "sink"
+        }
+      ],
+      "remediation": "Escape output; see <b>docs</b> | table.",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    }
+  ]
+}

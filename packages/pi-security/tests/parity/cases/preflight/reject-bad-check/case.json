@@ -1,0 +1,17 @@
+{
+  "description": "Must reject: malformed runtime check.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "security_diff_scan",
+        "--cwd",
+        "{work}/target",
+        "--runtime-check",
+        "subagents"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "description": "A candidate with one in-scope and one out-of-scope location is kept with both.",
+  "steps": [
+    {
+      "argv": [
+        "normalize_candidates",
+        "--input",
+        "{work}/a.jsonl",
+        "--out",
+        "{work}/out.jsonl",
+        "--repo-root",
+        "{work}/repo",
+        "--in-scope-files",
+        "{work}/scope.txt"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

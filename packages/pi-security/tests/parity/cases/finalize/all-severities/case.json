@@ -1,0 +1,13 @@
+{
+  "description": "Five findings covering every severity, multiple locations, validation and attack paths.",
+  "steps": [
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "documentType": "pi-security.scan-manifest",
+  "schemaVersion": "1.0",
+  "scan": {
+    "id": "scan_parity_unicode",
+    "producer": {
+      "name": "pi-security",
+      "version": "0.1.0"
+    },
+    "status": "completed",
+    "startedAt": "2026-05-31T18:00:00Z",
+    "completedAt": "2026-05-31T18:09:00Z",
+    "target": {
+      "kind": "git_worktree",
+      "targetId": "target_sha256_parity",
+      "displayName": "exemple/dépôt",
+      "remote": "https://github.com/example/parity-repo",
+      "revision": "deadbeef",
+      "snapshotDigest": "pi-security-snapshot/v1:sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "scope": {
+      "includePaths": [
+        "src/"
+      ],
+      "excludePaths": []
+    },
+    "coverageRef": "coverage.json",
+    "findingsRef": "findings.json"
+  }
+}

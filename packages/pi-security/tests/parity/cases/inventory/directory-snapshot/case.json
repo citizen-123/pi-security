@@ -1,0 +1,20 @@
+{
+  "description": "Non-Git directory: every regular file, symlinks skipped.",
+  "steps": [
+    {
+      "argv": [
+        "generate_in_scope_files",
+        "--repo",
+        "{work}/repo",
+        "--out",
+        "{work}/inventory.txt",
+        "--scope",
+        "."
+      ],
+      "stdout": "ignore"
+    }
+  ],
+  "symlinks": {
+    "repo/sub/link.js": "b.js"
+  }
+}

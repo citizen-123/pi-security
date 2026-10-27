@@ -1,0 +1,43 @@
+{
+  "documentType": "pi-security.scan-manifest",
+  "scan": {
+    "artifacts": [
+      {
+        "mediaType": "application/json",
+        "path": "findings.json",
+        "sha256": "4e4aef0de53532cce26058581b1a7bcb181f83e618096ae47f500f1e4b1f9bbe"
+      },
+      {
+        "mediaType": "application/json",
+        "path": "coverage.json",
+        "sha256": "2150df004f60bd60c222cd6905e4ae34e44136c0367e542fe42a9ae179bce36d"
+      }
+    ],
+    "completedAt": "2026-05-31T18:09:00Z",
+    "coverageRef": "coverage.json",
+    "findingsRef": "findings.json",
+    "id": "scan_parity_validate",
+    "producer": {
+      "name": "pi-security",
+      "version": "0.1.0"
+    },
+    "scope": {
+      "excludePaths": [],
+      "includePaths": [
+        "src/"
+      ]
+    },
+    "sealedAt": "2026-05-31T18:09:00Z",
+    "startedAt": "2026-05-31T18:00:00Z",
+    "status": "completed",
+    "target": {
+      "displayName": "example/parity-repo",
+      "kind": "git_worktree",
+      "remote": "https://github.com/example/parity-repo",
+      "revision": "deadbeef",
+      "snapshotDigest": "pi-security-snapshot/v1:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "targetId": "target_sha256_parity"
+    }
+  },
+  "schemaVersion": "1.0"
+}

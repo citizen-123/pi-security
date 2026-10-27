@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stdout": "",
+      "stderr": "hold_for_evidence requires a bounded evidence plan\n"
+    }
+  ]
+}

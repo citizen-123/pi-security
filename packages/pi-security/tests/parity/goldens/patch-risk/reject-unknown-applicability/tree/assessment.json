@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "patch": {
+    "repository": "example/project",
+    "sourceType": "pull_request_diff",
+    "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "changedFiles": [
+      "src/request.ts"
+    ],
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "recommendation": "merge",
+  "workflowLabel": "human_review_required",
+  "impact": {
+    "rating": "moderate",
+    "rationale": "A bounded caller can fail."
+  },
+  "regressionLikelihood": {
+    "rating": "low",
+    "rationale": "The changed path and its caller are covered."
+  },
+  "regressionProtection": {
+    "rating": "strong",
+    "rationale": "Focused and integration checks passed at the exact head.",
+    "exactHeadChecksPassed": true
+  },
+  "recoverability": {
+    "rating": "easy",
+    "rationale": "A revert is isolated."
+  },
+  "confidence": {
+    "rating": "high",
+    "rationale": "Runtime callers are known."
+  },
+  "applicability": {
+    "status": "unknown",
+    "rationale": "Deployment unknown."
+  },
+  "statusQuoRisk": {
+    "rating": "moderate",
+    "rationale": "The defect remains."
+  },
+  "autoMergeExclusions": [],
+  "affectedRuntimeRoots": [
+    "service.request"
+  ],
+  "materialBoundaries": [
+    {
+      "id": "request-contract",
+      "invariant": "Supported requests retain their existing response contract.",
+      "runtimeRoot": "service.request",
+      "counterexample": "A supported request takes the changed branch.",
+      "legitimateControl": "A supported request takes the unchanged branch.",
+      "result": "supported"
+    }
+  ],
+  "validation": [
+    {
+      "name": "focused request tests",
+      "status": "passed",
+      "protects": "Changed behavior through the production caller."
+    }
+  ],
+  "unknowns": [],
+  "evidencePlan": []
+}

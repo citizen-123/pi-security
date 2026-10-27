@@ -9,8 +9,8 @@
 
 ## 1. Parity oracle (before any porting)
 
-- [ ] 1.1 Build synthetic fixture repositories and scan directories covering Standard, Diff, and Deep outputs, including findings with every severity, coverage gaps, merged provenance, and non-ASCII paths.
-- [ ] 1.2 Add a parity harness that runs a Python entry point and its TypeScript port on the same input and compares normalized JSON, SARIF bytes, CSV bytes, and fingerprints.
+- [x] 1.1 Build synthetic fixture repositories and scan directories covering Standard, Diff, and Deep outputs, including findings with every severity, coverage gaps, merged provenance, and non-ASCII paths. Done: 81 curated cases across six scripts (`packages/pi-security/tests/parity/`), including number-formatting, code-point-ordering, and canonical-JSON traps.
+- [x] 1.2 Add a parity harness that runs a Python entry point and its TypeScript port on the same input and compares normalized JSON, SARIF bytes, CSV bytes, and fingerprints. Done: Python goldens (`oracle.py`), recorded function vectors from the pytest suite (`record_vectors.py`), and `tests/parity.test.mjs` for ports, self-tested against the goldens through Python.
 
 ## 2. Domain port (TypeScript, each with parity tests)
 

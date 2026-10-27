@@ -1,0 +1,96 @@
+{
+  "documentType": "pi-security.findings",
+  "findings": [
+    {
+      "attackPath": null,
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "extensions": {},
+      "findingId": "csf_5043c16a6eeadff2e83c5dce",
+      "fingerprints": {
+        "algorithm": "pi-security/v1",
+        "primary": "pi-security/v1:sha256:39802bd45762537e21ccd386a8d6df27cc9adfc86cdd4b986b1d128776ee8c9a"
+      },
+      "identity": {
+        "anchor": "hardcoded-key"
+      },
+      "locations": [
+        {
+          "endLine": 4,
+          "path": "src/keys.py",
+          "role": "sink",
+          "startLine": 2
+        }
+      ],
+      "occurrenceId": "occ_80e81d4b53c414be13f7b681",
+      "provenance": {
+        "source": "local_package"
+      },
+      "remediation": "Fix hardcoded key \ud83d\udd11 in config.",
+      "ruleId": "crypto.static-key",
+      "severity": {
+        "level": "high",
+        "score": 7.0,
+        "scoringSystem": "CVSS:3.1"
+      },
+      "summary": "Summary for Hardcoded key \ud83d\udd11 in config.",
+      "taxonomy": {
+        "category": "crypto",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "title": "Hardcoded key \ud83d\udd11 in config",
+      "validation": null
+    },
+    {
+      "attackPath": null,
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "extensions": {},
+      "findingId": "csf_3c71bce15b9fac834873f3ee",
+      "fingerprints": {
+        "algorithm": "pi-security/v1",
+        "primary": "pi-security/v1:sha256:425ae2ce093b1ee071ceaa896a94c60cd0f22fd6d2b4c0c06edebf900107437d"
+      },
+      "identity": {
+        "anchor": "hardcoded-key",
+        "instance": "fallback"
+      },
+      "locations": [
+        {
+          "endLine": 22,
+          "path": "src/keys.py",
+          "role": "sink",
+          "startLine": 20
+        }
+      ],
+      "occurrenceId": "occ_9761ade5895b06af81f7139e",
+      "provenance": {
+        "source": "local_package"
+      },
+      "remediation": "Fix hardcoded key \uff5e in fallback.",
+      "ruleId": "crypto.static-key",
+      "severity": {
+        "level": "medium",
+        "score": 5.25,
+        "scoringSystem": "CVSS:3.1"
+      },
+      "summary": "Summary for Hardcoded key \uff5e in fallback.",
+      "taxonomy": {
+        "category": "crypto",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "title": "Hardcoded key \uff5e in fallback",
+      "validation": null
+    }
+  ],
+  "scanId": "scan_parity_traps",
+  "schemaVersion": "1.0"
+}

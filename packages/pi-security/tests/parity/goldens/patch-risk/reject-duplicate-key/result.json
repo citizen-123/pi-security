@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stdout": "",
+      "stderr": "duplicate JSON object key: schemaVersion\n"
+    }
+  ]
+}

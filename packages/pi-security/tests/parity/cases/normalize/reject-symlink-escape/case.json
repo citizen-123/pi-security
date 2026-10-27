@@ -1,0 +1,22 @@
+{
+  "description": "Must reject: symlink escape.",
+  "steps": [
+    {
+      "argv": [
+        "normalize_candidates",
+        "--input",
+        "{work}/a.jsonl",
+        "--out",
+        "{work}/out.jsonl",
+        "--repo-root",
+        "{work}/repo",
+        "--in-scope-files",
+        "{work}/scope.txt"
+      ],
+      "stdout": "ignore"
+    }
+  ],
+  "symlinks": {
+    "repo/src/escape.py": "../../outside.py"
+  }
+}

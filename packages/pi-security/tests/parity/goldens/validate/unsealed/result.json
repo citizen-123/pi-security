@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stdout": "",
+      "stderr": "scan contract validation failed: manifest.scan.sealedAt: expected a non-empty string\n"
+    }
+  ]
+}

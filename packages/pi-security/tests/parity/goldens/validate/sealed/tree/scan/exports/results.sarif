@@ -1,0 +1,81 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "scan_parity_validate"
+      },
+      "properties": {
+        "piSecuritySchemaVersion": "1.0",
+        "piSecurityTargetKind": "git_worktree"
+      },
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/db.py"
+                },
+                "region": {
+                  "endLine": 6,
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Query built by concatenation\n\nSummary for Query built by concatenation.\n\nSeverity: high\n\nCategory: Injection\n\nWeaknesses: CWE-20\n\nRemediation:\nFix query built by concatenation."
+          },
+          "partialFingerprints": {
+            "piSecurity/v1": "pi-security/v1:sha256:749277499ce826111d41b03bb2db44c237a9d8f6a1dba0b952508cd0fc06639f"
+          },
+          "properties": {
+            "category": "injection",
+            "confidence": "high",
+            "findingId": "csf_5af1addba123214ec6e6faf0",
+            "occurrenceId": "occ_8d30594b06e31d68745dd421",
+            "severity": "high"
+          },
+          "ruleId": "injection.sql",
+          "ruleIndex": 0
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Pi Security",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Injection: SQL. Categories: Injection. Weaknesses: CWE-20."
+              },
+              "help": {
+                "markdown": "Injection: SQL. Categories: Injection. Weaknesses: CWE-20.\n\n## Remediation\n\nFix query built by concatenation.",
+                "text": "Injection: SQL. Categories: Injection. Weaknesses: CWE-20.\n\nRemediation:\n\nFix query built by concatenation."
+              },
+              "id": "injection.sql",
+              "name": "Injection: SQL",
+              "properties": {
+                "security-severity": "8.0",
+                "tags": [
+                  "external/cwe/cwe-020",
+                  "injection",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Injection: SQL"
+              }
+            }
+          ],
+          "version": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

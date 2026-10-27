@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "occurrence_id,finding_id,title,summary,severity,confidence,status,close_reason,note,remediation,path,start_line,end_line\r\nocc_d7a1e4d8e297494f2e510fe6,csf_0ddfb4f3c53c1b3f6c23aae9,Admin route lacks authorization,Summary for Admin route lacks authorization.,high,high,open,,,Fix admin route lacks authorization.,src/routes.py,12,14\r\nocc_82919598a0647f726fd22ca4,csf_d5d131996b4d040f1b47f80f,Admin route lacks authorization (reset),Summary for Admin route lacks authorization.,high,high,open,,,Fix admin route lacks authorization.,src/routes.py,40,42\r\n",
+      "stderr": ""
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "documentType": "pi-security.coverage",
+  "schemaVersion": "1.0",
+  "scanId": "scan_parity_traps",
+  "mode": "repository",
+  "completeness": "complete",
+  "inventoryStrategy": "repository",
+  "includePaths": [
+    "src/"
+  ],
+  "excludePaths": [],
+  "surfaces": [
+    {
+      "id": "surface_input",
+      "label": "Request input",
+      "disposition": "reported",
+      "receiptRefs": []
+    }
+  ],
+  "explicitExclusions": [],
+  "deferred": []
+}

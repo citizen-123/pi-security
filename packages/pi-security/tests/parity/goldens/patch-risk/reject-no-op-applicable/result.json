@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stdout": "",
+      "stderr": "no_op requires an established non-applicable disposition\n"
+    }
+  ]
+}

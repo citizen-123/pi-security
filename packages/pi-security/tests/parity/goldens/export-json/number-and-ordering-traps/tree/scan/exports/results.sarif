@@ -1,0 +1,115 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "scan_parity_traps"
+      },
+      "properties": {
+        "piSecuritySchemaVersion": "1.0",
+        "piSecurityTargetKind": "git_worktree"
+      },
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/keys.py"
+                },
+                "region": {
+                  "endLine": 4,
+                  "startLine": 2
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Hardcoded key \ud83d\udd11 in config\n\nSummary for Hardcoded key \ud83d\udd11 in config.\n\nSeverity: high\n\nCategory: Crypto\n\nWeaknesses: CWE-20\n\nRemediation:\nFix hardcoded key \ud83d\udd11 in config."
+          },
+          "partialFingerprints": {
+            "piSecurity/v1": "pi-security/v1:sha256:39802bd45762537e21ccd386a8d6df27cc9adfc86cdd4b986b1d128776ee8c9a"
+          },
+          "properties": {
+            "category": "crypto",
+            "confidence": "high",
+            "findingId": "csf_5043c16a6eeadff2e83c5dce",
+            "occurrenceId": "occ_80e81d4b53c414be13f7b681",
+            "severity": "high"
+          },
+          "ruleId": "crypto.static-key",
+          "ruleIndex": 0
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/keys.py"
+                },
+                "region": {
+                  "endLine": 22,
+                  "startLine": 20
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Hardcoded key \uff5e in fallback\n\nSummary for Hardcoded key \uff5e in fallback.\n\nSeverity: medium\n\nCategory: Crypto\n\nWeaknesses: CWE-20\n\nRemediation:\nFix hardcoded key \uff5e in fallback."
+          },
+          "partialFingerprints": {
+            "piSecurity/v1": "pi-security/v1:sha256:425ae2ce093b1ee071ceaa896a94c60cd0f22fd6d2b4c0c06edebf900107437d"
+          },
+          "properties": {
+            "category": "crypto",
+            "confidence": "high",
+            "findingId": "csf_3c71bce15b9fac834873f3ee",
+            "occurrenceId": "occ_9761ade5895b06af81f7139e",
+            "severity": "medium"
+          },
+          "ruleId": "crypto.static-key",
+          "ruleIndex": 0
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Pi Security",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Crypto: Static key. Categories: Crypto. Weaknesses: CWE-20."
+              },
+              "help": {
+                "markdown": "Crypto: Static key. Categories: Crypto. Weaknesses: CWE-20.\n\n## Remediation\n\nFix hardcoded key \uff5e in fallback.\n\nFix hardcoded key \ud83d\udd11 in config.",
+                "text": "Crypto: Static key. Categories: Crypto. Weaknesses: CWE-20.\n\nRemediation:\n\nFix hardcoded key \uff5e in fallback.\n\nFix hardcoded key \ud83d\udd11 in config."
+              },
+              "id": "crypto.static-key",
+              "name": "Crypto: Static key",
+              "properties": {
+                "security-severity": "7.0",
+                "tags": [
+                  "crypto",
+                  "external/cwe/cwe-020",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Crypto: Static key"
+              }
+            }
+          ],
+          "version": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

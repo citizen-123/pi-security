@@ -1,0 +1,1 @@
+{"candidate_id":"candidate-6a4fa294088eb43f","cwe_ids":["CWE-89"],"evidence":"db.py builds SQL with +.","locations":[{"end_line":4,"path":"src/db.py","role":"sink","start_line":3}],"summary":"Query concatenates request input."}

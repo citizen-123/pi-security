@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stderr": "generate_in_scope_files: --scope: path must remain inside --repo: ../\n"
+    }
+  ]
+}

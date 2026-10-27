@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stderr": "usage: finalize_scan_contract.py [-h] --scan-dir SCAN_DIR\n                                 [--schema-dir SCHEMA_DIR]\n                                 [--source-root SOURCE_ROOT] [--sarif-only]\n                                 [--sarif-output SARIF_OUTPUT]\n                                 [--export-format {csv,json,sarif}]\n                                 [--export-output EXPORT_OUTPUT]\nfinalize_scan_contract.py: error: finding.identity.anchor: expected a stable lowercase semantic slug\n"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "documentType": "pi-security.findings",
+  "schemaVersion": "1.0",
+  "scanId": "scan_other",
+  "findings": [
+    {
+      "ruleId": "injection.sql",
+      "identity": {
+        "anchor": "query"
+      },
+      "title": "Query",
+      "summary": "Summary for Query.",
+      "severity": {
+        "level": "high"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "injection",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/app.py",
+          "startLine": 10,
+          "endLine": 12,
+          "role": "sink"
+        }
+      ],
+      "remediation": "Fix query.",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {}
+    }
+  ]
+}

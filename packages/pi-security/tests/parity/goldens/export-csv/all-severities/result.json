@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "occurrence_id,finding_id,title,summary,severity,confidence,status,close_reason,note,remediation,path,start_line,end_line\r\nocc_ad0821e5b73b94a0e17e7845,csf_dc9239cbb79e985ed51d308f,Injection reaches sink (critical),Summary for Injection reaches sink (critical).,critical,high,open,,,Fix injection reaches sink (critical).,src/module_0.py,5,7\r\nocc_df86df77d4257e9b0232d413,csf_e18bab6740b2ab349f69a6a9,Injection reaches sink (high),Summary for Injection reaches sink (high).,high,high,open,,,Fix injection reaches sink (high).,src/module_1.py,15,17\r\nocc_43b7489be1bd984b7a154981,csf_7e8f52c10e5abf00f706d802,Injection reaches sink (medium),Summary for Injection reaches sink (medium).,medium,high,open,,,Fix injection reaches sink (medium).,src/module_2.py,25,27\r\nocc_de22949f3508474b3271280d,csf_98887bd92a81c0c3248ad6cd,Injection reaches sink (low),Summary for Injection reaches sink (low).,low,high,open,,,Fix injection reaches sink (low).,src/module_3.py,35,37\r\nocc_69e97a6f4d7978d1a7d62b36,csf_6126ed3862a618f2d136ee61,Injection reaches sink (informational),Summary for Injection reaches sink (informational).,informational,high,open,,,Fix injection reaches sink (informational).,src/module_4.py,45,47\r\n",
+      "stderr": ""
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "documentType": "pi-security.findings",
+  "findings": [
+    {
+      "attackPath": null,
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "extensions": {},
+      "findingId": "csf_596a4ed4ec42b7b55ad316c6",
+      "fingerprints": {
+        "algorithm": "pi-security/v1",
+        "primary": "pi-security/v1:sha256:eabfe846cf4887acfe1ae0e9dc1dae24e6cab67f7cbda8decf49b71b1844a081"
+      },
+      "identity": {
+        "anchor": "archive-entry-write"
+      },
+      "locations": [
+        {
+          "endLine": 43,
+          "path": "src/extract.py",
+          "role": "sink",
+          "startLine": 41
+        }
+      ],
+      "occurrenceId": "occ_5477a43d0e3745750207142e",
+      "provenance": {
+        "source": "local_package"
+      },
+      "remediation": "Fix unsafe archive extraction.",
+      "ruleId": "path-traversal.archive-extraction",
+      "severity": {
+        "level": "high"
+      },
+      "summary": "Summary for Unsafe archive extraction.",
+      "taxonomy": {
+        "category": "path-traversal",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "title": "Unsafe archive extraction",
+      "validation": null
+    }
+  ],
+  "scanId": "scan_parity_001",
+  "schemaVersion": "1.0"
+}

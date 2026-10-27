@@ -1,0 +1,23 @@
+{
+  "description": "CSV export after finalizing: Two findings sharing rule and anchor, distinguished by identity.instance.",
+  "steps": [
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan"
+      ],
+      "stdout": "ignore"
+    },
+    {
+      "argv": [
+        "finalize_scan_contract",
+        "--scan-dir",
+        "{work}/scan",
+        "--export-format",
+        "csv"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

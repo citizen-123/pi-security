@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stderr": "usage: finalize_scan_contract.py [-h] --scan-dir SCAN_DIR\n                                 [--schema-dir SCHEMA_DIR]\n                                 [--source-root SOURCE_ROOT] [--sarif-only]\n                                 [--sarif-output SARIF_OUTPUT]\n                                 [--export-format {csv,json,sarif}]\n                                 [--export-output EXPORT_OUTPUT]\nfinalize_scan_contract.py: error: findings.findings[0].locations[0].path: expected a safe repository-relative POSIX path\n"
+    }
+  ]
+}

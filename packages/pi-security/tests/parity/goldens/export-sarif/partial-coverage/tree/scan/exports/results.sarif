@@ -1,0 +1,95 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "scan_parity_partial"
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "warning",
+              "message": {
+                "text": "Validation was deferred because the scan reached its cost limit."
+              }
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "piSecurityCoverageCompleteness": "partial",
+        "piSecuritySchemaVersion": "1.0",
+        "piSecurityTargetKind": "git_worktree"
+      },
+      "results": [
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "message": {
+                "text": "sink"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/search.py"
+                },
+                "region": {
+                  "endLine": 32,
+                  "startLine": 30
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Search term reflected unescaped\n\nSummary for Search term reflected unescaped.\n\nSeverity: medium\n\nCategory: XSS\n\nWeaknesses: CWE-20\n\nRemediation:\nFix search term reflected unescaped."
+          },
+          "partialFingerprints": {
+            "piSecurity/v1": "pi-security/v1:sha256:3e9c6acd5c9dd4475b52521fd1f2377fd132cb04c1bf2313bb4a175bc454a348"
+          },
+          "properties": {
+            "category": "xss",
+            "confidence": "high",
+            "findingId": "csf_8fd4bda77ce597b22903088f",
+            "occurrenceId": "occ_7a434ef45992dc8b1071920f",
+            "severity": "medium"
+          },
+          "ruleId": "xss.reflected",
+          "ruleIndex": 0
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Pi Security",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "XSS: Reflected. Categories: XSS. Weaknesses: CWE-20."
+              },
+              "help": {
+                "markdown": "XSS: Reflected. Categories: XSS. Weaknesses: CWE-20.\n\n## Remediation\n\nFix search term reflected unescaped.",
+                "text": "XSS: Reflected. Categories: XSS. Weaknesses: CWE-20.\n\nRemediation:\n\nFix search term reflected unescaped."
+              },
+              "id": "xss.reflected",
+              "name": "XSS: Reflected",
+              "properties": {
+                "security-severity": "5.0",
+                "tags": [
+                  "external/cwe/cwe-020",
+                  "security",
+                  "xss"
+                ]
+              },
+              "shortDescription": {
+                "text": "XSS: Reflected"
+              }
+            }
+          ],
+          "version": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

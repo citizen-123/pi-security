@@ -1,0 +1,13 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stderr": ""
+    },
+    {
+      "status": "ok",
+      "stdout": "occurrence_id,finding_id,title,summary,severity,confidence,status,close_reason,note,remediation,path,start_line,end_line\r\nocc_5477a43d0e3745750207142e,csf_596a4ed4ec42b7b55ad316c6,Unsafe archive extraction,Summary for Unsafe archive extraction.,high,high,open,,,Fix unsafe archive extraction.,src/extract.py,41,43\r\n",
+      "stderr": ""
+    }
+  ]
+}

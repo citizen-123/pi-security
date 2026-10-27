@@ -1,0 +1,49 @@
+{
+  "documentType": "pi-security.findings",
+  "findings": [
+    {
+      "attackPath": null,
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "extensions": {},
+      "findingId": "csf_5af1addba123214ec6e6faf0",
+      "fingerprints": {
+        "algorithm": "pi-security/v1",
+        "primary": "pi-security/v1:sha256:749277499ce826111d41b03bb2db44c237a9d8f6a1dba0b952508cd0fc06639f"
+      },
+      "identity": {
+        "anchor": "query-concat"
+      },
+      "locations": [
+        {
+          "endLine": 6,
+          "path": "src/db.py",
+          "role": "sink",
+          "startLine": 4
+        }
+      ],
+      "occurrenceId": "occ_8d30594b06e31d68745dd421",
+      "provenance": {
+        "source": "local_package"
+      },
+      "remediation": "Fix query built by concatenation.",
+      "ruleId": "injection.sql",
+      "severity": {
+        "level": "high"
+      },
+      "summary": "Summary for Query built by concatenation.",
+      "taxonomy": {
+        "category": "injection",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "title": "Query built by concatenation",
+      "validation": null
+    }
+  ],
+  "scanId": "scan_parity_validate",
+  "schemaVersion": "1.0"
+}

@@ -1,0 +1,49 @@
+{
+  "documentType": "pi-security.findings",
+  "findings": [
+    {
+      "attackPath": null,
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "extensions": {},
+      "findingId": "csf_371745240090871ed54d33ca",
+      "fingerprints": {
+        "algorithm": "pi-security/v1",
+        "primary": "pi-security/v1:sha256:af16fc630cad033879d80ffcf0263dd8b7402d718bb45e0b6433cd2a1f882559"
+      },
+      "identity": {
+        "anchor": "fetch-user-url"
+      },
+      "locations": [
+        {
+          "endLine": 24,
+          "path": "src/fetch.py",
+          "role": "sink",
+          "startLine": 22
+        }
+      ],
+      "occurrenceId": "occ_0814e97958b128e4dc2102fb",
+      "provenance": {
+        "source": "local_package"
+      },
+      "remediation": "Fix server fetches user-supplied url.",
+      "ruleId": "ssrf.unvalidated-url",
+      "severity": {
+        "level": "medium"
+      },
+      "summary": "Summary for Server fetches user-supplied URL.",
+      "taxonomy": {
+        "category": "ssrf",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "title": "Server fetches user-supplied URL",
+      "validation": null
+    }
+  ],
+  "scanId": "scan_parity_diff",
+  "schemaVersion": "1.0"
+}

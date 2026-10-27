@@ -1,0 +1,135 @@
+{
+  "documentType": "pi-security.findings",
+  "schemaVersion": "1.0",
+  "scanId": "scan_parity_deep",
+  "findings": [
+    {
+      "ruleId": "memory.unchecked-length",
+      "identity": {
+        "anchor": "copy-without-bounds",
+        "instance": "variant-a"
+      },
+      "title": "Copy without bounds check [DSS-001-COPY-a]",
+      "summary": "Summary for Copy without bounds check [DSS-001-COPY-a].",
+      "severity": {
+        "level": "high"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "memory",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/buffer.c",
+          "startLine": 77,
+          "endLine": 79,
+          "role": "sink"
+        }
+      ],
+      "remediation": "Fix copy without bounds check [dss-001-copy-a].",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package",
+        "sourceFindingIds": [
+          "W01-F3",
+          "W04-F1"
+        ]
+      },
+      "extensions": {
+        "candidateId": "DSS-001",
+        "ledgerRowId": "R01W01-COPY",
+        "reportId": "DSS-001-COPY-a"
+      }
+    },
+    {
+      "ruleId": "memory.unchecked-length",
+      "identity": {
+        "anchor": "copy-without-bounds",
+        "instance": "variant-b"
+      },
+      "title": "Copy without bounds check [DSS-001-COPY-b]",
+      "summary": "Summary for Copy without bounds check [DSS-001-COPY-a].",
+      "severity": {
+        "level": "medium"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "memory",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/buffer.c",
+          "startLine": 77,
+          "endLine": 79,
+          "role": "sink"
+        }
+      ],
+      "remediation": "Fix copy without bounds check [dss-001-copy-a].",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package",
+        "sourceFindingIds": [
+          "W02-F7"
+        ]
+      },
+      "extensions": {
+        "candidateId": "DSS-001",
+        "ledgerRowId": "R01W01-COPY",
+        "reportId": "DSS-001-COPY-b"
+      }
+    },
+    {
+      "ruleId": "crypto.weak-random",
+      "identity": {
+        "anchor": "token-from-math-random"
+      },
+      "title": "Session token from weak randomness",
+      "summary": "Summary for Session token from weak randomness.",
+      "severity": {
+        "level": "low"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace."
+      },
+      "taxonomy": {
+        "category": "crypto",
+        "cwe": [
+          "CWE-20"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/session.js",
+          "startLine": 8,
+          "endLine": 10,
+          "role": "sink"
+        }
+      ],
+      "remediation": "Fix session token from weak randomness.",
+      "validation": null,
+      "attackPath": null,
+      "provenance": {
+        "source": "local_package"
+      },
+      "extensions": {
+        "candidateId": "DSS-002",
+        "reportId": "DSS-002"
+      }
+    }
+  ]
+}

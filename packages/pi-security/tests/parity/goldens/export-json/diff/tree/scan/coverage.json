@@ -1,0 +1,22 @@
+{
+  "completeness": "complete",
+  "deferred": [],
+  "documentType": "pi-security.coverage",
+  "excludePaths": [],
+  "explicitExclusions": [],
+  "includePaths": [
+    "src/"
+  ],
+  "inventoryStrategy": "diff",
+  "mode": "diff",
+  "scanId": "scan_parity_diff",
+  "schemaVersion": "1.0",
+  "surfaces": [
+    {
+      "disposition": "reported",
+      "id": "surface_input",
+      "label": "Request input",
+      "receiptRefs": []
+    }
+  ]
+}

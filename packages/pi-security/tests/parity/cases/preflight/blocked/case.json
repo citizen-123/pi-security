@@ -1,0 +1,15 @@
+{
+  "description": "Missing target directory blocks the scan.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "deep_security_scan",
+        "--cwd",
+        "{work}/missing"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}
