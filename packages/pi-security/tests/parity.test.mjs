@@ -9,7 +9,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, re
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { test } from "node:test";
-import { functions, tools } from "./parity/ports.mjs";
+import { functions, parseVectorLine, tools } from "./parity/ports.mjs";
 
 const parityDir = resolve(import.meta.dirname, "parity");
 const packageRoot = resolve(import.meta.dirname, "..");
@@ -222,9 +222,12 @@ for (const name of caseNames) {
 
 // ─── Recorded vectors ────────────────────────────────────────────────────────
 
+// Plain JSON objects only: PyFloat values from parseVectorLine pass through untouched.
+const isPlainObject = (value) => value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
+
 const decode = (value) => {
   if (Array.isArray(value)) return value.map(decode);
-  if (value !== null && typeof value === "object") {
+  if (isPlainObject(value)) {
     if (Object.keys(value).length === 1 && typeof value.$bytes === "string") return Buffer.from(value.$bytes, "base64");
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)]));
   }
@@ -234,7 +237,7 @@ const decode = (value) => {
 const encode = (value) => {
   if (value instanceof Uint8Array) return { $bytes: Buffer.from(value).toString("base64") };
   if (Array.isArray(value)) return value.map(encode);
-  if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, encode(item)]));
+  if (isPlainObject(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, encode(item)]));
   return value;
 };
 
@@ -243,7 +246,7 @@ for (const file of vectorFiles) {
   const name = file.slice(0, -".jsonl".length);
   const port = functions[name];
   test(`parity vectors ${name}`, { skip: port === undefined ? "no TypeScript port" : false }, () => {
-    const vectors = readFileSync(join(vectorsDir, file), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    const vectors = readFileSync(join(vectorsDir, file), "utf8").split("\n").filter(Boolean).map(parseVectorLine);
     for (const [index, vector] of vectors.entries()) {
       const args = decode(vector.args);
       if (vector.error !== undefined) {

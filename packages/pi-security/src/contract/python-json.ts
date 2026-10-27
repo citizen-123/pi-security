@@ -20,7 +20,9 @@ export function parsePythonJson(text: string): unknown {
     const source = context?.source;
     if (source === undefined) throw new Error("JSON.parse source access is required");
     if (!INTEGER_SOURCE.test(source)) return new PyFloat(value);
-    return Number.isSafeInteger(value) ? value : BigInt(source);
+    // Python ints have no negative zero: int("-0") is 0.
+    if (Number.isSafeInteger(value)) return value === 0 ? 0 : value;
+    return BigInt(source);
   } as (key: string, value: unknown) => unknown);
 }
 
@@ -92,6 +94,8 @@ function encodeString(value: string, ensureAscii: boolean): string {
   return `${out}"`;
 }
 
+const nonFiniteRepr = (value: number) => (Number.isNaN(value) ? "nan" : value > 0 ? "inf" : "-inf");
+
 export type DumpsOptions = {
   sortKeys?: boolean;
   /** Python's default is true. */
@@ -115,9 +119,12 @@ export function dumpsPython(value: unknown, options: DumpsOptions = {}): string 
     if (item === true) return "true";
     if (item === false) return "false";
     if (typeof item === "bigint") return item.toString();
-    if (item instanceof PyFloat) return pythonFloatRepr(item.value);
+    if (item instanceof PyFloat) {
+      if (!Number.isFinite(item.value)) throw new Error(`Out of range float values are not JSON compliant: ${nonFiniteRepr(item.value)}`);
+      return pythonFloatRepr(item.value);
+    }
     if (typeof item === "number") {
-      if (!Number.isFinite(item)) throw new Error("Out of range float values are not JSON compliant");
+      if (!Number.isFinite(item)) throw new Error(`Out of range float values are not JSON compliant: ${nonFiniteRepr(item)}`);
       return Number.isInteger(item) ? String(item) : pythonFloatRepr(item);
     }
     if (typeof item === "string") {

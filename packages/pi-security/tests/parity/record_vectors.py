@@ -45,6 +45,8 @@ TARGETS: set[tuple[str, str]] = {
     ("finalize_scan_contract.py", "_stable_id"),
     ("finalize_scan_contract.py", "_derived_finding_identity_rows"),
     ("finalize_scan_contract.py", "_json_bytes"),
+    ("finalize_scan_contract.py", "_loads_json"),
+    ("finalize_scan_contract.py", "_require_safe_json_value"),
 }
 # CSV export and candidate merging are reached only through subprocesses in the suite; the curated cases cover them.
 TARGET_FILES = {str(SCRIPTS / file) for file, _ in TARGETS}
@@ -54,6 +56,7 @@ TARGET_FILES = {str(SCRIPTS / file) for file, _ in TARGETS}
 SOURCE_TESTS = {
     "test_finalize_scan_contract.py",
     "test_finding_identity_edges.py",
+    "test_canonical_json_edges.py",
     "test_report_projection.py",
     "test_sarif_projection.py",
     "test_scan_contract_examples.py",
@@ -81,9 +84,10 @@ def encode(value: Any) -> Any:
         return value
     if isinstance(value, bytes):
         return {"$bytes": base64.b64encode(value).decode("ascii")}
-    if isinstance(value, (list, tuple)):
+    # Exact types only: iterating a test's instrumented subclass would change what the test observes.
+    if type(value) in (list, tuple):
         return [encode(item) for item in value]
-    if isinstance(value, dict):
+    if type(value) is dict:
         if not all(isinstance(key, str) for key in value):
             raise Unrepresentable("non-string key")
         if "$bytes" in value:

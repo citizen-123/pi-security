@@ -15,20 +15,30 @@ import { build } from "esbuild";
 import { existsSync, lstatSync, mkdirSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-async function load(entry) {
-  const bundled = await build({
-    bundle: true,
-    stdin: { contents: `export * from "./${entry}";`, resolveDir: new URL("../..", import.meta.url).pathname },
-    format: "esm",
-    platform: "node",
-    write: false,
-  });
-  return import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString("base64")}`);
-}
+// One bundle for every port, so shared classes such as PyFloat have a single identity.
+const ENTRIES = {
+  identity: "src/contract/finding-identity.ts",
+  candidates: "src/contract/candidates.ts",
+  inventory: "src/target/inventory.ts",
+  canonical: "src/contract/canonical-json.ts",
+  pythonJson: "src/contract/python-json.ts",
+};
+const bundled = await build({
+  bundle: true,
+  stdin: {
+    contents: Object.entries(ENTRIES).map(([name, entry]) => `export * as ${name} from "./${entry}";`).join("\n"),
+    resolveDir: new URL("../..", import.meta.url).pathname,
+  },
+  format: "esm",
+  platform: "node",
+  write: false,
+});
+const { identity, candidates, inventory, canonical, pythonJson } = await import(
+  `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString("base64")}`
+);
 
-const identity = await load("src/contract/finding-identity.ts");
-const candidates = await load("src/contract/candidates.ts");
-const inventory = await load("src/target/inventory.ts");
+/** Vector files are Python json.dumps output: parse them keeping int versus float. */
+export const parseVectorLine = (line) => pythonJson.parsePythonJson(line);
 
 /** Minimal argparse: options with one value, or every value up to the next option for multi-value options. */
 function parseOptions(args, multi = new Set(), flags = new Set()) {
@@ -97,6 +107,10 @@ export const tools = {
 };
 
 export const functions = {
+  "finalize_scan_contract._json_bytes": ({ payload }) => canonical.jsonBytes(payload),
+  "finalize_scan_contract._loads_json": ({ value }) => canonical.loadsJson(Buffer.isBuffer(value) ? value.toString("utf8") : value),
+  "finalize_scan_contract._require_safe_json_value": ({ value, context, validate_strings }) =>
+    canonical.requireSafeJsonValue(value, context, validate_strings) ?? null,
   "finalize_scan_contract._fingerprint": ({ target_id, finding }) => identity.fingerprint(target_id, finding),
   "finalize_scan_contract._stable_id": ({ prefix, parts }) => identity.stableId(prefix, ...parts),
   "finalize_scan_contract._derived_finding_identity_rows": ({ manifest, findings }) =>
