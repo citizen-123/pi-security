@@ -41,6 +41,7 @@ const ENTRIES = {
   sarif: "src/contract/sarif.ts",
   paths: "src/contract/contract-paths.ts",
   exportsModule: "src/contract/exports.ts",
+  validation: "src/contract/validation.ts",
 };
 const bundled = await build({
   bundle: true,
@@ -52,7 +53,7 @@ const bundled = await build({
   platform: "node",
   write: false,
 });
-const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths, exportsModule } = await import(
+const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths, exportsModule, validation } = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString("base64")}`
 );
 
@@ -152,6 +153,24 @@ export const functions = {
   "finalize_scan_contract.csv_cell": ({ value }) => exportsModule.csvCell(value),
   "finalize_scan_contract.finding_candidate_id": ({ finding }) => exportsModule.findingCandidateId(finding),
   "finalize_scan_contract.build_csv_projection": ({ findings, coverage }) => exportsModule.buildCsvProjection(findings, coverage),
+  "finalize_scan_contract._validate_remote": ({ remote, context }) => validation.validateRemote(remote, context) ?? null,
+  "finalize_scan_contract._validate_target": ({ target }) => validation.validateTarget(target) ?? null,
+  "finalize_scan_contract._validate_location": ({ location, context }) => validation.validateLocation(location, context) ?? null,
+  "finalize_scan_contract._validate_finding": ({ finding, context }) => validation.validateFinding(finding, context) ?? null,
+  "finalize_scan_contract._validate_manifest": ({ manifest }) => validation.validateManifest(manifest) ?? null,
+  "finalize_scan_contract._validate_findings": ({ manifest, findings }) => validation.validateFindings(manifest, findings) ?? null,
+  "finalize_scan_contract._validate_completion_binding": ({ manifest, findings, coverage, completion_binding }) =>
+    validation.validateCompletionBinding(manifest, findings, coverage, completion_binding) ?? null,
+  "finalize_scan_contract._validate_contract_refs": ({ scan }) => validation.validateContractRefs(scan) ?? null,
+  "finalize_scan_contract._legacy_sealed_findings_for_validation": ({ findings }) =>
+    validation.legacySealedFindingsForValidation(findings),
+  "finalize_scan_contract._validate_canonical_schemas_before_projection": ({ manifest, findings, coverage, schema_dir }) =>
+    validation.validateCanonicalSchemasBeforeProjection(manifest, findings, coverage, schema_dir) ?? null,
+  "test_contract_validation_edges.validate_coverage_with_files": ({ manifest, coverage, files }) =>
+    withFiles(files, (root) => {
+      validation.validateCoverage(manifest, coverage, root);
+      return coverage;
+    }),
   "finalize_scan_contract._fingerprint": ({ target_id, finding }) => identity.fingerprint(target_id, finding),
   "finalize_scan_contract._stable_id": ({ prefix, parts }) => identity.stableId(prefix, ...parts),
   "finalize_scan_contract._derived_finding_identity_rows": ({ manifest, findings }) =>

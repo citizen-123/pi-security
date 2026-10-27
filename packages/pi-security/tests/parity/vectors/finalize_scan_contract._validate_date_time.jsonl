@@ -1,38 +1,38 @@
-{"args": {"context": "PI_SECURITY_STARTED_AT", "value": "not-a-timestamp"}, "error": {"message": "PI_SECURITY_STARTED_AT: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:00:00Z\n"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "scan-manifest.schema.scan.completedAt", "value": "2026-05-31T18:09:00Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc.at", "value": "2024-02-29T00:00:00Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc.at", "value": "2026-05-31T23:59:60Z"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:60:00Z"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "scan-manifest.schema.scan.startedAt", "value": "not-a-time"}, "error": {"message": "scan-manifest.schema.scan.startedAt: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "0001-01-01T00:00:00Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "scan-manifest.schema.scan.sealedAt", "value": "2026-05-31T18:10:00Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:00:00+05:99"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc.at", "value": "2000-02-29T00:00:00Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc.at", "value": "2026-13-01T00:00:00Z"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:00:00.Z"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "9999-12-31T23:59:59+23:59"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:00:00-24:00"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:00:00"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "2026-05-31t18:00:00z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc", "value": "2026-02-29T00:00:00Z"}, "error": {"message": "doc: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "scan-manifest.schema.scan.startedAt", "value": "2026-05-31T18:00:00Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:00:00+05:60"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "scan-manifest.schema.scan.completedAt", "value": "2026-05-31T18:10:00Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc.at", "value": "0000-01-01T00:00:00Z"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:00:00Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:00:00+23:60"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "\u0662\u0660\u0662\u0666-05-31T18:00:00Z"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc", "value": "2026-05-31T18:00:00Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "PI_SECURITY_STARTED_AT", "value": "2026-07-22T06:20:33Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "scan-manifest.schema.scan.sealedAt", "value": "2026-05-31T18:09:00Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "scan-manifest.schema.scan.startedAt", "value": "2026-W22-7T18:09:00+00:00"}, "error": {"message": "scan-manifest.schema.scan.startedAt: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "2026-05-31T24:00:00Z"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "2026-04-31T00:00:00Z"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:00:00+24:00"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "scan-manifest.schema.scan.startedAt", "value": "2026-05-31T18:09:00+0000"}, "error": {"message": "scan-manifest.schema.scan.startedAt: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "2026-02-29T00:00:00Z"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:00:00-00:00"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc.at", "value": "2026-05-31T18:00:00.123456789123Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
-{"args": {"context": "doc.at", "value": "1900-02-29T00:00:00Z"}, "error": {"message": "doc.at: expected an RFC 3339 timestamp", "type": "ContractError"}, "function": "finalize_scan_contract._validate_date_time"}
-{"args": {"context": "scan-manifest.schema.scan.startedAt", "value": "2026-07-22T06:20:33Z"}, "function": "finalize_scan_contract._validate_date_time", "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "not-a-timestamp", "context": "PI_SECURITY_STARTED_AT"}, "error": {"type": "ContractError", "message": "PI_SECURITY_STARTED_AT: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00Z\n", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:09:00Z", "context": "scan-manifest.schema.scan.completedAt"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2024-02-29T00:00:00Z", "context": "doc.at"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T23:59:60Z", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:60:00Z", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "not-a-time", "context": "scan-manifest.schema.scan.startedAt"}, "error": {"type": "ContractError", "message": "scan-manifest.schema.scan.startedAt: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "0001-01-01T00:00:00Z", "context": "doc.at"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:10:00Z", "context": "scan-manifest.schema.scan.sealedAt"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00+05:99", "context": "doc.at"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2000-02-29T00:00:00Z", "context": "doc.at"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-13-01T00:00:00Z", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00.Z", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "9999-12-31T23:59:59+23:59", "context": "doc.at"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00-24:00", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31t18:00:00z", "context": "doc.at"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-02-29T00:00:00Z", "context": "doc"}, "error": {"type": "ContractError", "message": "doc: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00Z", "context": "scan-manifest.schema.scan.startedAt"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00+05:60", "context": "doc.at"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:10:00Z", "context": "scan-manifest.schema.scan.completedAt"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "0000-01-01T00:00:00Z", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00Z", "context": "doc.at"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00+23:60", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "\u0662\u0660\u0662\u0666-05-31T18:00:00Z", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00Z", "context": "doc"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-07-22T06:20:33Z", "context": "PI_SECURITY_STARTED_AT"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:09:00Z", "context": "scan-manifest.schema.scan.sealedAt"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-W22-7T18:09:00+00:00", "context": "scan-manifest.schema.scan.startedAt"}, "error": {"type": "ContractError", "message": "scan-manifest.schema.scan.startedAt: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T24:00:00Z", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-04-31T00:00:00Z", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00+24:00", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:09:00+0000", "context": "scan-manifest.schema.scan.startedAt"}, "error": {"type": "ContractError", "message": "scan-manifest.schema.scan.startedAt: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-02-29T00:00:00Z", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00-00:00", "context": "doc.at"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-05-31T18:00:00.123456789123Z", "context": "doc.at"}, "result": null}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "1900-02-29T00:00:00Z", "context": "doc.at"}, "error": {"type": "ContractError", "message": "doc.at: expected an RFC 3339 timestamp"}}
+{"function": "finalize_scan_contract._validate_date_time", "args": {"value": "2026-07-22T06:20:33Z", "context": "scan-manifest.schema.scan.startedAt"}, "result": null}

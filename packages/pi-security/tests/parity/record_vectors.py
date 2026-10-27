@@ -56,7 +56,18 @@ TARGETS: set[tuple[str, str]] = {
     ("finalize_scan_contract.py", "build_csv_projection"),
     ("finalize_scan_contract.py", "_require_safe_relative_path"),
     ("finalize_scan_contract.py", "_require_portable_relative_path"),
+    ("finalize_scan_contract.py", "_validate_remote"),
+    ("finalize_scan_contract.py", "_validate_target"),
+    ("finalize_scan_contract.py", "_validate_location"),
+    ("finalize_scan_contract.py", "_validate_finding"),
+    ("finalize_scan_contract.py", "_validate_manifest"),
+    ("finalize_scan_contract.py", "_validate_findings"),
+    ("finalize_scan_contract.py", "_validate_completion_binding"),
+    ("finalize_scan_contract.py", "_validate_contract_refs"),
+    ("finalize_scan_contract.py", "_legacy_sealed_findings_for_validation"),
+    ("finalize_scan_contract.py", "_validate_canonical_schemas_before_projection"),
     # Test-module wrappers that take file contents instead of temporary paths.
+    ("test_contract_validation_edges.py", "validate_coverage_with_files"),
     ("test_sarif_edges.py", "github_line_hashes_of"),
     ("test_sarif_edges.py", "sarif_with_source"),
 }
@@ -79,6 +90,7 @@ SOURCE_TESTS = {
     "test_schema_validator_edges.py",
     "test_sarif_edges.py",
     "test_csv_export_edges.py",
+    "test_contract_validation_edges.py",
     "test_report_projection.py",
     "test_sarif_projection.py",
     "test_scan_contract_examples.py",
@@ -256,7 +268,8 @@ def record(pytest_args: list[str]) -> tuple[dict[str, list[dict[str, Any]]], dic
 def write(grouped: dict[str, list[dict[str, Any]]], directory: Path) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     for function, vectors in sorted(grouped.items()):
-        text = "".join(json.dumps(v, sort_keys=True) + "\n" for v in vectors)
+        # Insertion order is kept: it decides which error a validator reports first and how repr() prints.
+        text = "".join(json.dumps(v) + "\n" for v in vectors)
         (directory / f"{function}.jsonl").write_text(text, encoding="utf-8")
 
 

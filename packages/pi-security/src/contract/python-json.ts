@@ -185,3 +185,44 @@ export function pythonRepr(value: unknown): string {
   const entries = Object.entries(value as Record<string, unknown>);
   return `{${entries.map(([key, item]) => `${stringRepr(key)}: ${pythonRepr(item)}`).join(", ")}}`;
 }
+
+/** A JSON value as a Python number (bool counts as 0 or 1), or undefined for non-numbers. */
+function pythonNumeric(value: unknown): number | bigint | undefined {
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (typeof value === "number" || typeof value === "bigint") return value;
+  if (value instanceof PyFloat) return value.value;
+  return undefined;
+}
+
+/** Python `==` on JSON values: dicts ignore key order, ints equal floats, and True == 1. */
+export function pythonEquals(left: unknown, right: unknown): boolean {
+  const a = pythonNumeric(left);
+  const b = pythonNumeric(right);
+  if (a !== undefined || b !== undefined) {
+    // Loose equality compares a bigint and a number exactly.
+    // eslint-disable-next-line eqeqeq
+    return a !== undefined && b !== undefined && a == b;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((item, index) => pythonEquals(item, right[index]));
+  }
+  if (left !== null && right !== null && typeof left === "object" && typeof right === "object") {
+    const leftKeys = Object.keys(left);
+    const rightRecord = right as Record<string, unknown>;
+    return (
+      leftKeys.length === Object.keys(right).length &&
+      leftKeys.every((key) => Object.hasOwn(rightRecord, key) && pythonEquals((left as Record<string, unknown>)[key], rightRecord[key]))
+    );
+  }
+  return left === right;
+}
+
+/** copy.deepcopy of a parsed JSON value, keeping PyFloat values (structuredClone would not). */
+export function deepCopyJson<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(deepCopyJson) as T;
+  if (value instanceof PyFloat) return new PyFloat(value.value) as T;
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, deepCopyJson(item)])) as T;
+  }
+  return value;
+}

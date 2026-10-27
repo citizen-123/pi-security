@@ -1,0 +1,29 @@
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://ex\uff20mple.com/r", "context": "scan.target.remote"}, "error": {"type": "ValueError", "message": "netloc 'ex\uff20mple.com' contains invalid characters under NFKC normalization"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://host/r?", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "HTTPS://Host/r", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://host/r#", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https:", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: expected a sanitized canonical absolute URL"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://host/r#frag", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: remote URL must not contain credentials, query, or fragment"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "/local/path", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: expected a sanitized canonical absolute URL"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://user:pw@host/r", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: remote URL must not contain credentials, query, or fragment"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://[v1.fe]/r", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://[::1/r", "context": "scan.target.remote"}, "error": {"type": "ValueError", "message": "Invalid IPv6 URL"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://host/r?q=1", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: remote URL must not contain credentials, query, or fragment"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "1http://host/r", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: expected a sanitized canonical absolute URL"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://:@host/r", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://[::1]x/r", "context": "scan.target.remote"}, "error": {"type": "ValueError", "message": "Invalid IPv6 URL"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://ho\nst/r", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://x[::1]/r", "context": "scan.target.remote"}, "error": {"type": "ValueError", "message": "Invalid IPv6 URL"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://token@example.com/repo", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: remote URL must not contain credentials, query, or fragment"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://[::1]/r", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://u:p@h/r", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: remote URL must not contain credentials, query, or fragment"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "  https://host/r", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "git@github.com:example/repo.git", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: expected a sanitized canonical absolute URL"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://[1.2.3.4]/r", "context": "scan.target.remote"}, "error": {"type": "ValueError", "message": "An IPv4 address cannot be in brackets"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https:///path", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: expected a sanitized canonical absolute URL"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://@host/r", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "ssh://git@host/repo", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: remote URL must not contain credentials, query, or fragment"}}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://github.com/example/repo", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "ht\ttps://host/r", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://ex\u00e4mple.com/r", "context": "scan.target.remote"}, "result": null}
+{"function": "finalize_scan_contract._validate_remote", "args": {"remote": "https://example.com/repo?token=secret", "context": "scan.target.remote"}, "error": {"type": "ContractError", "message": "scan.target.remote: remote URL must not contain credentials, query, or fragment"}}
