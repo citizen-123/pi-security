@@ -44,7 +44,7 @@ pi-durable 1.4.0 facts this design depends on (verified against source):
 
 ### D1. Standalone runtime; the Pi extension is a client
 
-The CLI process hosts the Harness. The Pi extension starts the CLI as a detached child for a run and observes it by opening the run storage with `readOnly: true`. Hosting a Harness inside the Pi process would make runs invisible to Pi's UI anyway, would tie scan lifetime to the Pi session, and would put two agent runtimes in one process.
+The CLI process hosts the Harness. The Pi extension starts the CLI as a detached child for a run and observes it without opening its storage for writing (mechanism: Open Question 2). Hosting a Harness inside the Pi process would make runs invisible to Pi's UI anyway, would tie scan lifetime to the Pi session, and would put two agent runtimes in one process.
 
 Alternative: host the Harness inside the extension. Rejected: there's no shared UI, lifetime coupling, and lock contention with a CLI started on the same run.
 
@@ -54,14 +54,15 @@ Layout under `$PI_SECURITY_STATE_DIR` (default `$PI_HOME/security`):
 
 ```text
 runs/<run-id>/
-  run.lock           exclusive writer lock (pid, host, started-at)
+  run.lock           exclusive writer lock: a SQLite file held in an EXCLUSIVE transaction
+  run.owner          who holds the lock (pid, host, started-at), for messages only
   run.sqlite         pi-durable storage (WAL)
   scan/              scan-directory output contract (manifest, findings, coverage, report, exports)
   worktree/          fix runs only
 ledger.sqlite        findings ledger (D8)
 ```
 
-Concurrent scans never contend for a writer. Resume is "acquire lock, `Harness.open`, `resume()`". Deleting a run is deleting its directory. A run's lock is taken before `Harness.open` and released after `harness.close`. A stale lock (dead pid on the same host) can be broken; a lock from another host is never broken automatically.
+Concurrent scans never contend for a writer. Resume is "acquire lock, `Harness.open`, `resume()`". Deleting a run is deleting its directory. A run's lock is taken before `Harness.open` and released after `harness.close`. The lock is SQLite's operating-system file lock, which the kernel releases when the holder exits however it exits, so there is no stale lock to detect or break and no PID-reuse ambiguity. (A pid/host lock file was tried first: breaking a stale one by moving it aside leaves a moment with no lock file, in which a third process can take the lock while the second restores the one it moved.)
 
 Alternative: one global durable database. Rejected because it serializes every pi-security process on one lock.
 
@@ -158,7 +159,7 @@ Executing repository code is a new trust step. It is opt-in per check and docume
 
 ### D11. Observation and the Pi extension
 
-- `pi-security run watch <id>` opens the run read-only and renders `watchTaskGraph()` plus the orchestrator's progress document.
+- `pi-security run watch <id>` renders the task graph and the orchestrator's progress document without opening the storage for writing (Open Question 2).
 - The extension starts runs by spawning the CLI detached (`pi-security scan ... --detach --json`) and observes the same way. Tools: `security_scan`, `security_run`, `security_cancel`, `security_findings`, `security_triage`, `security_fix`.
 - Slash commands (`/security-scan`, `/security-diff-scan`, `/deep-security-scan`, `/security-fix`, `/security-runs`) call the same code as the tools directly, with no model round trip. Today's pattern of sending a message for a skill to interpret is removed.
 - The methodology skills are deleted; their content becomes worker instructions (task 4.7). One interactive skill ships, `triage-finding`: it walks the user through a finding's evidence and options and ends in `security_triage` or `security_fix`. `vulnerability-writeup` may follow as a second skill.
@@ -199,3 +200,4 @@ No wall-clock deadline by default: runs fail far more often by hanging than by r
 ## Open Questions
 
 1. OAuth credentials through `ModelRuntime` (spike 0.2 covered API keys only).
+2. How viewers observe a run. pi-durable 1.4.0 has no read-only storage open, and `Harness.open` runs a recovery commit, so a viewer must never open the Harness. Candidates: the owning process publishes a progress snapshot file in the run directory (atomic replace) on task-graph and progress changes; the owner serves a local socket; or viewers read the SQLite file directly with `node:sqlite` in read-only mode, which ties them to pi-durable's private schema against D12.

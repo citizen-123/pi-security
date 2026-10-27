@@ -23,7 +23,7 @@
 
 ## 3. Runtime foundation
 
-- [ ] 3.1 `src/durable/`: the adapter module, exact version pin, Harness open/close, run lock, and `0700`/`0600` run directories.
+- [x] 3.1 `src/durable/`: the adapter module, exact version pin, Harness open/close, run lock, and `0700`/`0600` run directories. Done: `pi-durable`, `chord`, and `pi-ai` are pinned at `1.4.0`, and the `pi-coding-agent` dev dependency moved from `^0.81.0` to exactly `1.4.0` (same package; `ModelRuntime` needs the 1.4.0 line; no existing test changed outcome). `src/durable/run-directory.ts` resolves the state directory and creates `0700` directories and a `0600` `run.sqlite` (its WAL files inherit the mode); `src/durable/run-lock.ts` is an operating-system lock through SQLite (see D2); `src/durable/harness.ts` opens lock, storage, and Harness in order and closes in reverse. `tests/durable-run.test.mjs` covers permissions, reopen, refused symlinks, locks held by live and killed processes, and eight processes racing for one lock.
 - [ ] 3.2 Confined environment: port `execution-boundary.ts` rules into an `ExecutionEnv`; run durable's `registerEnvConformance` plus escape tests (symlink, `..`, absolute, fd swap).
 - [ ] 3.3 Package tools (`list_files`, `read_source`, `search_source`, `git_metadata`, `get_context`) and per-role `report_*` tools writing session-scoped result documents.
 - [ ] 3.4 `security.worker` task and role configuration, including the resolved-agent check (D7).

@@ -11,9 +11,9 @@ Each run SHALL have its own directory containing an exclusive writer lock and on
 - **WHEN** a process tries to resume a run whose lock is held by a live process
 - **THEN** it exits with a usage error naming the holder and does not open the storage for writing
 
-#### Scenario: Stale lock on the same host
-- **WHEN** the lock names a process ID on the same host that no longer exists
-- **THEN** the lock is replaced and the run resumes
+#### Scenario: Holder died
+- **WHEN** the process holding a run's lock was killed
+- **THEN** the lock is free, with no stale state to break, and the run resumes
 
 ### Requirement: Orchestrator task owns progression
 Run progression SHALL be decided only by the run's orchestrator task (`security.scan`, `security.fix`, or `security.verify`). Model output SHALL reach run state only through a role's report tool, and the orchestrator SHALL validate every admitted result against its schema.
@@ -70,7 +70,7 @@ Runs SHALL have no wall-clock limit by default. When `max_duration` or `max_cost
 - **THEN** the orchestrator is aborted and the run ends `interrupted` with reason `cost_limit`
 
 ### Requirement: Read-only observation
-Viewers SHALL observe a run by opening its storage read-only and SHALL NOT be able to write to it.
+Viewers SHALL observe a run without opening its storage for writing and without acquiring the writer lock. (The mechanism is an open question in design D11: pi-durable 1.4.0 has no read-only open.)
 
 #### Scenario: Watch a running scan
 - **WHEN** `pi-security run watch` attaches to a running scan
