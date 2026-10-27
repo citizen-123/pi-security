@@ -412,7 +412,9 @@ def normalize_case(name: str, description: str, inputs: dict[str, list[Any]], sc
         ],
         "files": files,
     }
-    case.update(extra or {})
+    extra = dict(extra or {})
+    case["files"].update(extra.pop("extra_files", {}))
+    case.update(extra)
     return case
 
 
@@ -488,6 +490,29 @@ def normalize_cases() -> list[dict[str, Any]]:
             flags=["--allow-missing-in-scope"],
         ),
     ]
+    # Traps a port must reproduce: Python ints vs floats, universal newlines in JSONL, Unicode digits in CWE ids,
+    # null end_line, names that start with "..", and line counts with bare carriage returns.
+    cr = chr(13)
+    cases += [
+        normalize_case(
+            "python-semantics",
+            "Unicode-digit CWE ids, file named ..notes.py, CR-only line endings counted as lines, explicit null context.",
+            {"a.jsonl": [
+                candidate(cwe_ids=["CWE-" + chr(0x0668) + chr(0x0669), "cwe-" + chr(0xFF17) + chr(0xFF19)], context=None, locations=[
+                    {"path": "src/..notes.py", "start_line": 1, "role": "evidence"},
+                    {"path": "src/cr_only.py", "start_line": 3, "end_line": 3, "role": "sink"},
+                ]),
+            ]},
+            scope + "src/..notes.py\nsrc/cr_only.py\n",
+            {"extra_files": {"repo/src/..notes.py": lines(2), "repo/src/cr_only.py": "a" + cr + "b" + cr + "c"}},
+        ),
+        normalize_case(
+            "blank-lines-and-whitespace",
+            "Blank and whitespace-only JSONL lines are skipped; text fields are stripped of Python whitespace.",
+            {"a.jsonl": "\n   \n" + json.dumps(candidate(summary=chr(0x3000) + "Padded summary" + chr(0x1C))) + "\n\n"},
+            scope,
+        ),
+    ]
     rejects = {
         "reject-line-out-of-range": [candidate(locations=[{"path": "src/db.py", "start_line": 19, "end_line": 21, "role": "sink"}])],
         "reject-unknown-field": [candidate(severity="high")],
@@ -499,10 +524,26 @@ def normalize_cases() -> list[dict[str, Any]]:
         "reject-bool-line": [candidate(locations=[{"path": "src/db.py", "start_line": True, "role": "sink"}])],
         "reject-symlink-escape": [candidate(locations=[{"path": "src/escape.py", "start_line": 1, "role": "sink"}])],
         "reject-missing-scope-path": None,
+        "reject-float-line": '{"cwe_ids": ["CWE-89"], "locations": [{"path": "src/db.py", "start_line": 3.0, "role": "sink"}], "summary": "s", "evidence": "e"}\n',
+        "reject-null-end-line": [candidate(locations=[{"path": "src/db.py", "start_line": 3, "end_line": None, "role": "sink"}])],
+        "reject-bare-cr-splits-row": '{"cwe_ids": ["CWE-89"],' + cr + '"locations": [{"path": "src/db.py", "start_line": 3, "role": "sink"}], "summary": "s", "evidence": "e"}\n',
+        "reject-lone-surrogate-summary": '{"cwe_ids": ["CWE-89"], "locations": [{"path": "src/db.py", "start_line": 3, "role": "sink"}], "summary": "bad \\udcff", "evidence": "e"}\n',
+        "reject-null-candidate-id": [candidate(candidate_id=None)],
+        "reject-dangling-deleted-scope-escape": None,
     }
     for name, rows in rejects.items():
         if name == "reject-missing-scope-path":
             cases.append(normalize_case(name, "Must reject: in-scope list names a missing file without --allow-missing-in-scope.", {"a.jsonl": [candidate()]}, scope + "src/deleted.py\n"))
+            continue
+        if name == "reject-dangling-deleted-scope-escape":
+            cases.append(normalize_case(
+                name,
+                "Must reject: a deleted in-scope path that is a dangling symlink pointing outside the repository.",
+                {"a.jsonl": [candidate()]},
+                scope + "src/gone.py\n",
+                {"symlinks": {"repo/src/gone.py": "../../elsewhere/gone.py"}},
+                flags=["--allow-missing-in-scope"],
+            ))
             continue
         extra = {"symlinks": {"repo/src/escape.py": "../../outside.py"}} if name == "reject-symlink-escape" else None
         case = normalize_case(name, f"Must reject: {name.removeprefix('reject-').replace('-', ' ')}.", {"a.jsonl": rows}, scope, extra)

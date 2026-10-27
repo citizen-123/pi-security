@@ -1,0 +1,4 @@
+
+   
+{"cwe_ids": ["CWE-89"], "locations": [{"path": "src/db.py", "start_line": 3, "end_line": 4, "role": "sink"}], "summary": "\u3000Padded summary\u001c", "evidence": "db.py builds SQL with +."}
+

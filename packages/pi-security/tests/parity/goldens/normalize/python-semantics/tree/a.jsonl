@@ -1,0 +1,1 @@
+{"cwe_ids": ["CWE-٨٩", "cwe-７９"], "locations": [{"path": "src/..notes.py", "start_line": 1, "role": "evidence"}, {"path": "src/cr_only.py", "start_line": 3, "end_line": 3, "role": "sink"}], "summary": "Query concatenates request input.", "evidence": "db.py builds SQL with +.", "context": null}

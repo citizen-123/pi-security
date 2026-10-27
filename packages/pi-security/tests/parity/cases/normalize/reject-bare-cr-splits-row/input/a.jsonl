@@ -1,0 +1,1 @@
+{"cwe_ids": ["CWE-89"],"locations": [{"path": "src/db.py", "start_line": 3, "role": "sink"}], "summary": "s", "evidence": "e"}

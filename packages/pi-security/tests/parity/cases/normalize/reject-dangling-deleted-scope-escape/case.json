@@ -1,0 +1,23 @@
+{
+  "description": "Must reject: a deleted in-scope path that is a dangling symlink pointing outside the repository.",
+  "steps": [
+    {
+      "argv": [
+        "normalize_candidates",
+        "--input",
+        "{work}/a.jsonl",
+        "--out",
+        "{work}/out.jsonl",
+        "--repo-root",
+        "{work}/repo",
+        "--in-scope-files",
+        "{work}/scope.txt",
+        "--allow-missing-in-scope"
+      ],
+      "stdout": "ignore"
+    }
+  ],
+  "symlinks": {
+    "repo/src/gone.py": "../../elsewhere/gone.py"
+  }
+}

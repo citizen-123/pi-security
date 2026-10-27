@@ -17,6 +17,14 @@ export function isBlank(value: string): boolean {
   return PYTHON_WHITESPACE.test(value);
 }
 
+const WHITESPACE_CLASS = PYTHON_WHITESPACE.source.slice(1, -2);
+const SURROUNDING_WHITESPACE = new RegExp(`^${WHITESPACE_CLASS}+|${WHITESPACE_CLASS}+$`, "g");
+
+/** Python `value.strip()`. */
+export function pythonStrip(value: string): string {
+  return value.replace(SURROUNDING_WHITESPACE, "");
+}
+
 export function requireObject(payload: JsonObject, key: string, context: string): JsonObject {
   const value = payload[key];
   if (!isJsonObject(value)) throw new ContractError(`${context}.${key}: expected an object`);

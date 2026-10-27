@@ -1,0 +1,5 @@
+src/db.py
+src/auth.py
+src/vues/électron_日本.py
+src/..notes.py
+src/cr_only.py

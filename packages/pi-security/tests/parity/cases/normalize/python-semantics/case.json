@@ -1,0 +1,19 @@
+{
+  "description": "Unicode-digit CWE ids, file named ..notes.py, CR-only line endings counted as lines, explicit null context.",
+  "steps": [
+    {
+      "argv": [
+        "normalize_candidates",
+        "--input",
+        "{work}/a.jsonl",
+        "--out",
+        "{work}/out.jsonl",
+        "--repo-root",
+        "{work}/repo",
+        "--in-scope-files",
+        "{work}/scope.txt"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

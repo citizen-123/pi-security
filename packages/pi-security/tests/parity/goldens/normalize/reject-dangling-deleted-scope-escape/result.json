@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stderr": "normalize_candidates: in-scope file row 4: path escapes repository\n"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stderr": "normalize_candidates: 'utf-8' codec can't encode character '\\udcff' in position 173: surrogates not allowed\n"
+    }
+  ]
+}
