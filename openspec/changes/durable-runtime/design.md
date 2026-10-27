@@ -69,33 +69,45 @@ Alternative: one global durable database. Rejected because it serializes every p
 
 ```mermaid
 flowchart TD
-  R[root conversation: run log] --> S[security.scan orchestrator]
-  S -->|phase: threatModel| W0[security.worker role=threat_modeler]
-  S -->|phase: discover round n| W1[security.worker role=discoverer x packets]
-  S -->|phase: reduce| W2[security.worker role=reducer]
-  S -->|phase: validate| W3[security.worker role=validator x candidates]
-  S -->|phase: attackPath| W4[security.worker role=attack_path_analyst x findings]
-  S -->|phase: publish| P[deterministic finalize + ledger publish]
-  S -.-> D[security.watchdog]
+  R[root conversation] --> S[security.scan orchestrator]
+  S -->|threatModel, reduce| W0[security.worker, single]
+  S -->|discover, validate, attackPath| Q[(security.queue)]
+  S -->|creates max_parallel| L[security.lane]
+  L -->|claims packet| Q
+  L -->|one at a time| W1[security.worker]
+  W0 --> C0[(owned conversation)]
   W1 --> C1[(owned conversation)]
+  S -->|publish| P[finalize + ledger publish]
+  S -.->|only with max_duration| D[security.deadline]
+  M[host stall monitor, in memory] -.->|abortTask| W1
 ```
 
 - `security.scan` (orchestrator task, owned by the root conversation). Phases: `preflight → inventory → threatModel → plan → discover → reduce → validate → attackPath → report → publish`. Deterministic phases (`preflight`, `inventory`, `plan`, `publish`) are plain TypeScript and must be idempotent, because a phase reruns after a crash. Model phases create `security.worker` child tasks in one commit and return `{ status: "waiting", on, policy: "allSettled" }`.
 - `security.worker` (child task). Phase `open` creates an owned conversation configured for its role (model, thinking, extensions, tools, instructions, cwd) and commits its ID in the checkpoint. Phase `run` submits the packet with `requestId: "worker:<taskId>"`, waits, reads the role's result document, and commits a terminal outcome. A crash during `run` reruns it, and `requestId` returns the same submission. Workers retry their own model failures through generation `settings.retry`. A worker that ends without a valid result fails, and the orchestrator decides what to do with failed workers per phase (D6).
-- `security.watchdog` (background child of the orchestrator). Every `stall_check_interval` it wakes with `sleepUntil`, reads each live worker's last progress time (its conversation's newest entry, or the newest streamed or tool-output update in its `pi.live` document), and aborts any worker with no progress for `stall_timeout` (default 15 minutes). Spike task 0.5 confirms that these timestamps are observable without reading whole transcripts. The orchestrator re-creates a stalled worker once; a second stall is a worker failure under D6. The watchdog also enforces the optional run limits from D13.
+- **Stall monitor (host, in memory, not a task).** pi-durable stores no timestamps on entries or `pi.live` (spike 0.4), so the process that owns the run watches the task graph for `security.worker` nodes, watches each worker conversation, stamps every change with its own clock, and calls `harness.abortTask()` on a worker with no change for `stall_timeout` (default 15 minutes). Streamed partials commit about every 100 ms, so an active response never looks stalled. It needs no durability: after a restart every worker legitimately starts with a fresh stamp. The lane that owns a stalled worker re-creates it once; a second stall is a worker failure under D6. The same monitor enforces `max_cost` (D13).
+- `security.deadline` (background child of the orchestrator, created only when `max_duration` is set). It sleeps with `sleepUntil(start + max_duration)`, then aborts the orchestrator with reason `duration_limit`. It is durable, so the deadline survives restarts.
+- **Run creation is idempotent.** The command that starts a run creates the orchestrator and stores its ID in the `security.run` session document in one commit, and every open reads that document first (spike 0.1: a crash before this commit otherwise leaves a run directory with no orchestrator).
 - Results never live in task-scoped documents, which retire with their task. Each role writes to a session-scoped document family keyed by worker task ID (`security.result/<taskId>`), committed by its report tool together with the tool result.
 
 Alternative: direct model calls in tasks without a tool loop. Rejected: discovery and validation need to explore the repository.
 
-### D4. Bounded fan-out in waves
+### D4. Bounded fan-out with lanes
 
-pi-durable starts every runnable task at once and has no "any settled" join. The orchestrator therefore creates at most `max_parallel` workers per commit, waits `allSettled`, and creates the next wave in the next phase step. Checkpoint: `{ phase, round, pending: PacketId[], wave: TaskId[] }`.
+pi-durable starts every runnable task at once and offers only `failFast` and `allSettled` joins. Waves (create `max_parallel` workers, wait for all, repeat) were measured at 2.3–2.4× the wall time of an ideal sliding window with long-tailed worker latency (spike 0.3), and are rejected.
 
-The cost is that stragglers idle the slots in their wave. The stall watchdog (D3) bounds that tail: a hung worker can delay its wave by at most `stall_timeout`. An `anySettled` join is requested upstream; the orchestrator switches to a sliding window if it lands. Worker-side slot gating through a polled session document is rejected as plumbing this rewrite exists to delete.
+Lanes give a sliding window from the existing primitives, without polling:
+
+- A fan-out phase writes its packets to a `security.queue` session document and creates `min(max_parallel, packets)` `security.lane` child tasks in one commit, then waits `allSettled` on the lanes.
+- A lane's `claim` phase takes the next packet from the queue in the same commit that creates its worker, then waits `allSettled` on that one worker. Its `collect` phase records the outcome in the queue (re-creating the worker once after a stall or a replaceable failure) and returns to `claim`. A lane ends when the queue is empty.
+- Lanes matched the simulated ideal within 0.5% and passed the crash-at-every-commit test (spike 0.1, 0.3).
+
+An upstream `anySettled` join would remove the lane tasks but isn't needed.
 
 ### D5. Models and credentials
 
-`ModelRuntime.create({ authPath: <pi agent dir>/auth.json, modelsPath, refreshOnCreate: false })` is passed as `HarnessOptions.models`. TOML `[roles.<id>]` selects provider, model, and thinking. The inline `credential = { value = ... }` form is removed. A role may name an environment variable through `credential = { env = "NAME" }`, applied as a `ModelRuntime` runtime API key for that provider. Credentials never enter durable storage: model choices are stored per conversation in `pi.agent` as names only, and keys are resolved per request.
+`ModelRuntime.create({ authPath: <pi agent dir>/auth.json, modelsPath, refreshOnCreate: false })` is passed as `HarnessOptions.models`. TOML `[roles.<id>]` selects provider, model, and thinking. The inline `credential = { value = ... }` form is removed. A role may name an environment variable through `credential = { env = "NAME" }`, applied as a `ModelRuntime` runtime API key for that provider. Credentials never enter durable storage through requests: model choices are stored per conversation in `pi.agent` as names only, and keys are resolved per request (spike 0.2: an `auth.json` key reached the provider and appeared in no SQLite file).
+
+Provider error bodies are stored verbatim, though: a 401 that echoed the key put it into `run.sqlite` as the submission's detail (spike 0.2). `HarnessOptions.models` is therefore a decorator over `ModelRuntime` that removes every known credential value (from `auth.json`, role `credential.env` variables, and the provider environment variables `ModelRuntime` would read) from `error`/`done` events and from `completeSimple`/`fetchDeferred` results. The spike's version fixed the leak without affecting normal answers. OAuth credentials and refresh were not testable in the spike and need a manual check.
 
 ### D6. Phase failure policy
 
@@ -154,11 +166,11 @@ Executing repository code is a new trust step. It is opt-in per check and docume
 
 ### D12. Durable API isolation
 
-All imports from `@earendil-works/pi-durable` and `@earendil-works/chord` live under `src/durable/`. The dependency is pinned exactly. Upgrades are explicit changes that run the full suite plus a crash-injection suite: kill the process at every commit boundary of a faux-provider scan, then resume, and assert the same outputs.
+All imports from `@earendil-works/pi-durable` and `@earendil-works/chord` live under `src/durable/`. The dependency is pinned exactly, and code is written against the published `.d.ts` files: the published 1.4.0 already differs from upstream `main` (no `observeTaskGraph`/`observeConversation`; different watch listener signature). Upgrades are explicit changes that run the full suite plus a crash-injection suite: kill the process at every commit boundary of a faux-provider scan, then resume, and assert the same outputs.
 
 ### D13. Run limits
 
-No wall-clock deadline by default: runs fail far more often by hanging than by running long, and the stall watchdog (D3) handles hanging. Standard and Diff scans end on their own; Deep scans end on saturation or `max_discovery_rounds` (default 8). Two optional limits exist, both enforced by the watchdog, and both end the run `interrupted` with admitted evidence kept and coverage marked incomplete:
+No wall-clock deadline by default: runs fail far more often by hanging than by running long, and the host stall monitor (D3) handles hanging. Standard and Diff scans end on their own; Deep scans end on saturation or `max_discovery_rounds` (default 8). Two optional limits exist (`max_duration` enforced by the durable `security.deadline` task, `max_cost` by the stall monitor), and both end the run `interrupted` with admitted evidence kept and coverage marked incomplete:
 
 - `[execution] max_duration` (a duration string such as `"6h"`)
 - `[execution] max_cost` (USD, read from the run's summed `pi.usage`)
@@ -172,18 +184,18 @@ No wall-clock deadline by default: runs fail far more often by hanging than by r
 - **API churn.** pi-durable shipped 8 releases in its first 3 weeks, several with breaking changes. Mitigated by D12. Accepted.
 - **Port regressions.** Silent fingerprint drift would re-key findings. Mitigated by D9; with no migration, drift would mostly cost duplicate findings in new ledgers.
 - **Transcript persistence.** Every tool output is stored in `run.sqlite`, including repository content a tool returned. Run directories are created `0700` and files `0600`. Package tools return no environment contents, and the credential-redaction pass from `execution-config.ts` is applied in an `afterTool` hook as defense in depth (not as the primary control).
-- **Wave inefficiency.** See D4.
+- **Lane tasks.** One extra task per slot, and the queue document grows with packet count. Packets are small; acceptable.
 - **Executing target code in fix runs.** Opt-in and allowlisted; the environment is scrubbed, but this is not a sandbox. Documented.
 - **Synchronous SQLite.** `node:sqlite` blocks the event loop per statement; acceptable for a CLI.
 
 ## Resolved Questions
 
-1. Deadline: none by default; a stall watchdog plus optional `max_duration` and `max_cost` (D3, D13).
-2. Fan-out: waves bounded by the stall watchdog; `anySettled` requested upstream (D4).
+1. Deadline: none by default; a host stall monitor plus optional `max_duration` and `max_cost` (D3, D13).
+2. Fan-out: lanes, a sliding window built from `allSettled` joins (D4; waves rejected by spike 0.3).
 3. Diff scope: working-tree scans stay, implemented as snapshot commits (D14).
 4. Verification: part of every fix run unless `--no-verify` (D10a). Users can run fixes however they like.
 5. Skills: slash commands call tools directly; one interactive `triage-finding` skill (D11).
 
 ## Open Questions
 
-None yet. The spike (tasks section 0) is expected to raise some.
+1. OAuth credentials through `ModelRuntime` (spike 0.2 covered API keys only).

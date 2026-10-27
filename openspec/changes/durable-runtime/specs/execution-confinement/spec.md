@@ -21,6 +21,10 @@ Each role SHALL have a fixed tool list set when its conversation is created. Sca
 ### Requirement: Credential isolation
 Credential values SHALL NOT be written to run storage, the ledger, scan outputs, logs, process arguments, or child process environments. Executed commands SHALL start from an empty environment plus an explicit minimal set.
 
+#### Scenario: Provider echoes the key in an error
+- **WHEN** a provider rejects a request with an error body containing the API key
+- **THEN** the stored error contains `[REDACTED]` in place of the key and no run storage file contains the key
+
 #### Scenario: Provider key in the parent environment
 - **WHEN** `OPENAI_API_KEY` is set in the CLI's environment and a fix run executes an allowlisted check
 - **THEN** the check's environment does not contain `OPENAI_API_KEY`

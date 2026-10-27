@@ -1,10 +1,11 @@
 ## 0. Spike (throwaway, before committing to the design)
 
-- [ ] 0.1 Build a faux-provider prototype: one `security.scan` orchestrator with three `security.worker` children that own conversations and report through a schema tool. Kill the process at each commit boundary and resume; confirm no duplicate workers or results.
-- [ ] 0.2 Confirm `ModelRuntime.create()` from `pi-coding-agent` works as `HarnessOptions.models` with a real `auth.json` (API key and OAuth), and that the resulting provider requests carry no credential into stored entries.
-- [ ] 0.3 Measure wave fan-out (D4) on 64 faux workers with random latency; record slot idle time to decide whether an `anySettled` join is worth asking upstream for.
-- [ ] 0.5 Confirm the stall watchdog can read each worker's last progress time (newest entry, `pi.live` updates) from a background task without loading whole transcripts.
-- [ ] 0.6 Review the spike results with the maintainer and amend `design.md` before continuing.
+- [x] 0.1 Build a faux-provider prototype: one `security.scan` orchestrator with three `security.worker` children that own conversations and report through a schema tool. Kill the process at each commit boundary and resume; confirm no duplicate workers or results. Done: 279 crash points, 0 failures (`spikes/durable-runtime/RESULTS.md`).
+- [x] 0.2 Confirm `ModelRuntime.create()` from `pi-coding-agent` works as `HarnessOptions.models` with a real `auth.json` (API key and OAuth), and that the resulting provider requests carry no credential into stored entries. Done for API keys; found and fixed error-body leakage with a redacting `Models` decorator. OAuth untested.
+- [x] 0.3 Measure wave fan-out (D4) on 64 faux workers with random latency; record slot idle time to decide whether an `anySettled` join is worth asking upstream for. Done: waves 2.3–2.4× slower; lanes match the ideal, so no upstream join is needed.
+- [x] 0.4 Confirm the stall watchdog can read each worker's last progress time (newest entry, `pi.live` updates) from a background task without loading whole transcripts. Done: no stored timestamps exist; a host-side in-memory monitor over watches works.
+- [ ] 0.5 Review the spike results with the maintainer (`design.md` amended: D2/D3 idempotent creation and host stall monitor, D4 lanes, D5 redacting `Models`, D12 published-API note).
+- [ ] 0.6 Manually verify OAuth credentials through `ModelRuntime` with a real `auth.json`.
 
 ## 1. Parity oracle (before any porting)
 
@@ -26,15 +27,15 @@
 - [ ] 3.2 Confined environment: port `execution-boundary.ts` rules into an `ExecutionEnv`; run durable's `registerEnvConformance` plus escape tests (symlink, `..`, absolute, fd swap).
 - [ ] 3.3 Package tools (`list_files`, `read_source`, `search_source`, `git_metadata`, `get_context`) and per-role `report_*` tools writing session-scoped result documents.
 - [ ] 3.4 `security.worker` task and role configuration, including the resolved-agent check (D7).
-- [ ] 3.5 Configuration: TOML resolution and roles; `ModelRuntime` wiring; reject inline credentials.
+- [ ] 3.5 Configuration: TOML resolution and roles; `ModelRuntime` wiring behind the redacting `Models` decorator; reject inline credentials.
 
 ## 4. Scan orchestration
 
 - [ ] 4.1 `security.scan` Standard path, end to end on the faux provider.
-- [ ] 4.2 Waves, phase failure policy (D6), and honest coverage.
+- [ ] 4.2 Lanes and the queue document, phase failure policy (D6), and honest coverage.
 - [ ] 4.3 Diff scope.
 - [ ] 4.4 Deep rounds, reducer provenance accounting, and saturation.
-- [ ] 4.5 Stall watchdog with one replacement per worker, optional `max_duration`/`max_cost`, cancel requests from viewers, and parked-task retry. File the upstream `anySettled` join request.
+- [ ] 4.5 Host stall monitor with one replacement per worker, `max_cost`, the `security.deadline` task for `max_duration`, cancel requests from viewers, and parked-task retry.
 - [ ] 4.6 Crash-injection suite: kill at every commit boundary of 4.1, 4.3, and 4.4, then resume and compare outputs.
 - [ ] 4.7 Port worker prompts from `references/`, `templates/deep-scan/`, and the skill method into role instructions and prompt sections.
 

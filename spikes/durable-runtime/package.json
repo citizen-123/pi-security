@@ -1,0 +1,12 @@
+{
+  "name": "pi-security-durable-spike",
+  "private": true,
+  "type": "module",
+  "scripts": {},
+  "dependencies": {
+    "@earendil-works/pi-durable": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0"
+  }
+}

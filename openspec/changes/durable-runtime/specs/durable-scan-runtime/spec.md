@@ -38,7 +38,11 @@ The orchestrator SHALL NOT have more than `max_parallel` worker tasks live at on
 
 #### Scenario: Large packet set
 - **WHEN** discovery has more packets than `max_parallel`
-- **THEN** workers are created in successive waves of at most `max_parallel`
+- **THEN** a new worker starts as soon as any running worker settles, and at most `max_parallel` workers are live at any time
+
+#### Scenario: Idempotent run creation
+- **WHEN** the process dies before or after the commit that creates the orchestrator, and the run is started or resumed again
+- **THEN** exactly one orchestrator exists for the run
 
 ### Requirement: Cancellation
 Cancelling a run SHALL abort the orchestrator, aborting its workers bottom-up, and SHALL end the run `canceled` without claiming complete coverage.
