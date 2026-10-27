@@ -14,7 +14,7 @@
 
 ## 2. Domain port (TypeScript, each with parity tests)
 
-- [ ] 2.1 Finding identity, fingerprints, and dedupe (`workbench_findings.py`, `workbench_finding_index.py`).
+- [x] 2.1 Finding identity, fingerprints, and dedupe (`workbench_findings.py`, `workbench_finding_index.py`). Done for identity: `src/contract/finding-identity.ts` ports the `pi-security/v1` fingerprint, `csf_`/`occ_` stable IDs, and identity derivation and validation from `finalize_scan_contract.py`, held to 223 recorded vectors (30 error cases, messages included) and the finalize goldens. Workbench "dedupe" is embedding similarity search plus stored reviewed groups with no TypeScript caller; it moves to the ledger decision in 5.1 rather than being ported here.
 - [ ] 2.2 Candidate normalization (`normalize_candidates.py`).
 - [ ] 2.3 Git-aware inventory and diff file lists (`generate_in_scope_files.py`, `workbench_target.py` fixed-argument git), plus the working-tree snapshot commit (D14) with tests that the user's index, branch, and stash are untouched.
 - [ ] 2.4 Finalizer, manifest sealing, schema validation, SARIF, and exports (`finalize_scan_contract.py`, `validate_scan_contract.py`).

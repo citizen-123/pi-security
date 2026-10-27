@@ -43,6 +43,7 @@ TARGETS: set[tuple[str, str]] = {
     ("finalize_scan_contract.py", "build_sarif"),
     ("finalize_scan_contract.py", "_fingerprint"),
     ("finalize_scan_contract.py", "_stable_id"),
+    ("finalize_scan_contract.py", "_derived_finding_identity_rows"),
     ("finalize_scan_contract.py", "_json_bytes"),
 }
 # CSV export and candidate merging are reached only through subprocesses in the suite; the curated cases cover them.
@@ -52,6 +53,7 @@ TARGET_FILES = {str(SCRIPTS / file) for file, _ in TARGETS}
 # same functions with wall-clock timestamps and random UUIDs, which would make vectors unreproducible.
 SOURCE_TESTS = {
     "test_finalize_scan_contract.py",
+    "test_finding_identity_edges.py",
     "test_report_projection.py",
     "test_sarif_projection.py",
     "test_scan_contract_examples.py",

@@ -226,7 +226,11 @@ for (const file of vectorFiles) {
     for (const [index, vector] of vectors.entries()) {
       const args = decode(vector.args);
       if (vector.error !== undefined) {
-        assert.throws(() => port(args), undefined, `vector ${index} must throw (${vector.error.type}: ${vector.error.message})`);
+        assert.throws(
+          () => port(args),
+          (error) => vector.error.type !== "ContractError" || error.message === vector.error.message,
+          `vector ${index} must throw ${vector.error.type}: ${vector.error.message}`,
+        );
       } else {
         assert.deepEqual(encode(port(args)), vector.result, `vector ${index}`);
       }
