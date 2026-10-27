@@ -14,6 +14,8 @@ This change supersedes `openspec/changes/canonical-cli-runtime`.
 - **BREAKING**: No migration of `~/.pi/security/workbench.sqlite3`. Old scan directories remain readable files.
 - Resolve model credentials through `pi-coding-agent`'s exported `ModelRuntime` (Pi `auth.json`, OAuth refresh, `models.json`, provider environment variables), with TOML role overrides for provider, model, and thinking.
 - Deep Scan changes strategy: the threat model partitions the target into focus areas, and discovery runs (area × lens) packets in repeated rounds until a configured number of rounds admits no new candidates.
+- Diff scans of uncommitted work scan an immutable snapshot commit of the working tree.
+- Every fix run verifies its own fix (Diff scan plus re-validation) unless `--no-verify` is given.
 - Fix runs work in an isolated `git worktree` on a new branch under the run directory, may write only inside it, and may execute only operator-allowlisted test commands with a scrubbed environment.
 - Keep the scan-directory output contract: `scan-manifest.json` (sealed), `findings.json`, `coverage.json`, `report.md`, `exports/results.sarif`, `exports/findings.{json,csv}`.
 - Pin `@earendil-works/pi-durable` to an exact version and confine its API to one internal adapter module.
@@ -22,7 +24,7 @@ This change supersedes `openspec/changes/canonical-cli-runtime`.
 
 ### New Capabilities
 
-- `durable-scan-runtime`: Per-run Harness, run identity, orchestrator and worker task model, resume, cancellation, crash-loop parking, bounded fan-out, deadlines, and progress observation.
+- `durable-scan-runtime`: Per-run Harness, run identity, orchestrator and worker task model, resume, cancellation, crash-loop parking, bounded fan-out, stall detection, optional run limits, and progress observation.
 - `scan-modes`: Standard, Diff, and Deep semantics as parameters of one orchestrator, including Deep saturation rules.
 - `execution-confinement`: Confined execution environment, tool surfaces per role, credential isolation, transcript redaction, and storage permissions.
 - `findings-ledger`: Cross-run finding identity, occurrences, triage, and remediation linkage; publication from runs into the ledger; exports.

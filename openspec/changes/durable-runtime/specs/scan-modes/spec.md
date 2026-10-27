@@ -18,8 +18,19 @@ A Diff scan SHALL bind its scope to a base and head revision resolved to commit 
 - **WHEN** the base branch advances while a Diff scan is running
 - **THEN** the scan keeps the commit IDs resolved at preflight
 
+### Requirement: Working-tree Diff snapshot
+A Diff scan given a base without a head SHALL snapshot the working tree (tracked changes plus untracked, non-ignored files) into a commit object at preflight, using a temporary index, and SHALL scan that commit. The user's index, branch, stash, and files SHALL NOT change.
+
+#### Scenario: Edits during a working-tree scan
+- **WHEN** the user edits files while a working-tree Diff scan runs
+- **THEN** the scan's scope remains the snapshot taken at preflight
+
+#### Scenario: User state untouched
+- **WHEN** a working-tree Diff scan starts
+- **THEN** `git status`, the index, and `git stash list` are identical before and after preflight
+
 ### Requirement: Deep saturation
-A Deep scan SHALL repeat `plan` and `discover` rounds over (focus area × lens) packets. The reducer SHALL merge each round into the candidate set. The scan SHALL stop discovering when `stop_after_no_new` consecutive rounds admit no new candidate, when `max_discovery_rounds` is reached, or at the deadline. The stop reason SHALL be recorded in coverage.
+A Deep scan SHALL repeat `plan` and `discover` rounds over (focus area × lens) packets. The reducer SHALL merge each round into the candidate set. The scan SHALL stop discovering when `stop_after_no_new` consecutive rounds admit no new candidate, when `max_discovery_rounds` (default 8) is reached, or when a run limit ends the run. The stop reason SHALL be recorded in coverage.
 
 #### Scenario: Saturation
 - **WHEN** two consecutive rounds admit no new candidates and `stop_after_no_new = 2`

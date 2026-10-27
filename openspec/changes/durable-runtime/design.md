@@ -76,13 +76,13 @@ flowchart TD
   S -->|phase: validate| W3[security.worker role=validator x candidates]
   S -->|phase: attackPath| W4[security.worker role=attack_path_analyst x findings]
   S -->|phase: publish| P[deterministic finalize + ledger publish]
-  S -.-> D[security.deadline watchdog]
+  S -.-> D[security.watchdog]
   W1 --> C1[(owned conversation)]
 ```
 
 - `security.scan` (orchestrator task, owned by the root conversation). Phases: `preflight → inventory → threatModel → plan → discover → reduce → validate → attackPath → report → publish`. Deterministic phases (`preflight`, `inventory`, `plan`, `publish`) are plain TypeScript and must be idempotent, because a phase reruns after a crash. Model phases create `security.worker` child tasks in one commit and return `{ status: "waiting", on, policy: "allSettled" }`.
 - `security.worker` (child task). Phase `open` creates an owned conversation configured for its role (model, thinking, extensions, tools, instructions, cwd) and commits its ID in the checkpoint. Phase `run` submits the packet with `requestId: "worker:<taskId>"`, waits, reads the role's result document, and commits a terminal outcome. A crash during `run` reruns it, and `requestId` returns the same submission. Workers retry their own model failures through generation `settings.retry`. A worker that ends without a valid result fails, and the orchestrator decides what to do with failed workers per phase (D6).
-- `security.deadline` (background child of the orchestrator). Sleeps with `sleepUntil(deadline)`, then aborts the orchestrator with reason `deadline`. This is the run's wall-clock limit.
+- `security.watchdog` (background child of the orchestrator). Every `stall_check_interval` it wakes with `sleepUntil`, reads each live worker's last progress time (its conversation's newest entry, or the newest streamed or tool-output update in its `pi.live` document), and aborts any worker with no progress for `stall_timeout` (default 15 minutes). Spike task 0.5 confirms that these timestamps are observable without reading whole transcripts. The orchestrator re-creates a stalled worker once; a second stall is a worker failure under D6. The watchdog also enforces the optional run limits from D13.
 - Results never live in task-scoped documents, which retire with their task. Each role writes to a session-scoped document family keyed by worker task ID (`security.result/<taskId>`), committed by its report tool together with the tool result.
 
 Alternative: direct model calls in tasks without a tool loop. Rejected: discovery and validation need to explore the repository.
@@ -91,7 +91,7 @@ Alternative: direct model calls in tasks without a tool loop. Rejected: discover
 
 pi-durable starts every runnable task at once and has no "any settled" join. The orchestrator therefore creates at most `max_parallel` workers per commit, waits `allSettled`, and creates the next wave in the next phase step. Checkpoint: `{ phase, round, pending: PacketId[], wave: TaskId[] }`.
 
-The cost is that stragglers idle the slots in their wave. Two follow-ups, recorded as open questions: an upstream `anySettled` join, or worker-side slot gating through a session document. Waves ship first because they are simple and obviously correct.
+The cost is that stragglers idle the slots in their wave. The stall watchdog (D3) bounds that tail: a hung worker can delay its wave by at most `stall_timeout`. An `anySettled` join is requested upstream; the orchestrator switches to a sliding window if it lands. Worker-side slot gating through a polled session document is rejected as plumbing this rewrite exists to delete.
 
 ### D5. Models and credentials
 
@@ -129,23 +129,43 @@ The port order follows the dependency order of the output contract: finding iden
 
 ### D10. Remediation runs
 
-`security.fix` (orchestrator) phases: `prepare` (create `git worktree add -b pi-security/fix/<finding-id>-<run-short> runs/<id>/worktree <base>`; idempotent by checking for the branch first) → `fix` (one worker with role `fixer`) → `test` (run allowlisted commands) → `finalize` (commit in the worktree, write `fix.patch`, record in the ledger).
+`security.fix` (orchestrator) phases: `prepare` (create `git worktree add -b pi-security/fix/<finding-id>-<run-short> runs/<id>/worktree <base>`; idempotent by checking for the branch first) → `fix` (one worker with role `fixer`) → `test` (run allowlisted commands) → `commit` (commit in the worktree, write `fix.patch`) → `verify` (D10a) → `finalize` (record the fix and its verdict in the ledger).
+
+Users can run fixes however they like, one at a time or many in parallel. Each fix run is independent: its own storage, worktree, and branch. The branch name carries the run's short ID, so concurrent fixes of the same finding never collide. The ledger handles concurrent publishers (D8).
 
 - The `fixer` role gets `read_source`, `search_source`, `edit_file`, `write_file` (confined to the worktree), and `run_check`.
 - `run_check` takes a check name, not a command. Commands come from `[remediation.checks]` in TOML (for example `test = ["npm", "test"]`) and run with argv (no shell), `cwd` set to the worktree, `inheritEnv: false`, and a minimal environment (`PATH`, `HOME` set to a run-private directory, `LANG`). It is declared `replay: "safe"`.
 - The user's checkout is never written. Applying the branch is the user's action.
-- `security.verify` is a Diff-mode scan of the fix branch against its base, plus a targeted re-validation of the original finding. Its result updates the ledger's remediation status.
+### D10a. Verification is part of the fix run
+
+A fix run cannot finish as fixed without a verdict. Its `verify` phases run the Diff-scan pipeline (`inventory → plan → discover → reduce → validate`) over the fix commit against its base, plus a validator worker that re-checks the original finding against the fixed code. Verdicts: `verified`, `not_fixed`, or `regressed` (the Diff scan admitted a new finding, which is linked to the fix run). `--no-verify` skips verification and records the fix as `unverified`.
+
+One run means one ID, one resume, and one cancel for the whole fix. `pi-security verify <fix-run-id>` remains for re-checking later; it starts a separate `security.verify` run with the same phases.
 
 Executing repository code is a new trust step. It is opt-in per check and documented as running the target's code as the current user.
 
 ### D11. Observation and the Pi extension
 
 - `pi-security run watch <id>` opens the run read-only and renders `watchTaskGraph()` plus the orchestrator's progress document.
-- The extension starts runs by spawning the CLI detached (`pi-security scan ... --detach --json`) and observes the same way. Tools: `security_scan`, `security_run`, `security_cancel`, `security_findings`, `security_triage`, `security_fix`. Cancellation from a viewer is a request written to the run directory (`cancel.request`) that the owning process watches and turns into `abortTask(orchestrator)`, because a read-only viewer cannot write to the run storage.
+- The extension starts runs by spawning the CLI detached (`pi-security scan ... --detach --json`) and observes the same way. Tools: `security_scan`, `security_run`, `security_cancel`, `security_findings`, `security_triage`, `security_fix`.
+- Slash commands (`/security-scan`, `/security-diff-scan`, `/deep-security-scan`, `/security-fix`, `/security-runs`) call the same code as the tools directly, with no model round trip. Today's pattern of sending a message for a skill to interpret is removed.
+- The methodology skills are deleted; their content becomes worker instructions (task 4.7). One interactive skill ships, `triage-finding`: it walks the user through a finding's evidence and options and ends in `security_triage` or `security_fix`. `vulnerability-writeup` may follow as a second skill.
+- Cancellation from a viewer is a request written to the run directory (`cancel.request`) that the owning process watches and turns into `abortTask(orchestrator)`, because a read-only viewer cannot write to the run storage.
 
 ### D12. Durable API isolation
 
 All imports from `@earendil-works/pi-durable` and `@earendil-works/chord` live under `src/durable/`. The dependency is pinned exactly. Upgrades are explicit changes that run the full suite plus a crash-injection suite: kill the process at every commit boundary of a faux-provider scan, then resume, and assert the same outputs.
+
+### D13. Run limits
+
+No wall-clock deadline by default: runs fail far more often by hanging than by running long, and the stall watchdog (D3) handles hanging. Standard and Diff scans end on their own; Deep scans end on saturation or `max_discovery_rounds` (default 8). Two optional limits exist, both enforced by the watchdog, and both end the run `interrupted` with admitted evidence kept and coverage marked incomplete:
+
+- `[execution] max_duration` (a duration string such as `"6h"`)
+- `[execution] max_cost` (USD, read from the run's summed `pi.usage`)
+
+### D14. Working-tree Diff scans are snapshot commits
+
+`--base REV` without `--head` scans the working tree. At preflight, the working tree (tracked changes plus untracked, non-ignored files) is written to a commit object through a temporary index (`GIT_INDEX_FILE`, `add -A`, `write-tree`, `commit-tree` with the current `HEAD` as parent) without touching the user's index, branch, or stash. The scan then targets that commit ID exactly like a revision diff. Edits made during the scan cannot change its scope, resume needs no special case, and there is one code path. The snapshot is kept reachable from `refs/pi-security/snapshots/<run-id>` until the run directory is deleted.
 
 ## Risks / Trade-offs
 
@@ -156,10 +176,14 @@ All imports from `@earendil-works/pi-durable` and `@earendil-works/chord` live u
 - **Executing target code in fix runs.** Opt-in and allowlisted; the environment is scrubbed, but this is not a sandbox. Documented.
 - **Synchronous SQLite.** `node:sqlite` blocks the event loop per statement; acceptable for a CLI.
 
+## Resolved Questions
+
+1. Deadline: none by default; a stall watchdog plus optional `max_duration` and `max_cost` (D3, D13).
+2. Fan-out: waves bounded by the stall watchdog; `anySettled` requested upstream (D4).
+3. Diff scope: working-tree scans stay, implemented as snapshot commits (D14).
+4. Verification: part of every fix run unless `--no-verify` (D10a). Users can run fixes however they like.
+5. Skills: slash commands call tools directly; one interactive `triage-finding` skill (D11).
+
 ## Open Questions
 
-1. Should the run's wall-clock deadline default to unlimited (today's Deep default is 96 h)?
-2. Waves versus sliding window (D4): ask upstream for `anySettled`?
-3. Should Diff mode accept only revisions, or keep the working-tree digest target?
-4. Should `security.verify` start automatically after a successful fix run?
-5. Do skills ship at all in v0.2, or does the extension expose only slash commands that call the tools?
+None yet. The spike (tasks section 0) is expected to raise some.

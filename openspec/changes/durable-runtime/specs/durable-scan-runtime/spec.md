@@ -1,6 +1,6 @@
 ## Purpose
 
-Defines how every Pi Security run executes on pi-durable: run identity, ownership, the orchestrator and worker task model, resume, cancellation, deadlines, crash-loop handling, and progress observation.
+Defines how every Pi Security run executes on pi-durable: run identity, ownership, the orchestrator and worker task model, resume, cancellation, stall detection, run limits, crash-loop handling, and progress observation.
 
 ## ADDED Requirements
 
@@ -16,7 +16,7 @@ Each run SHALL have its own directory containing an exclusive writer lock and on
 - **THEN** the lock is replaced and the run resumes
 
 ### Requirement: Orchestrator task owns progression
-Run progression SHALL be decided only by the `security.scan`, `security.fix`, or `security.verify` orchestrator task. Model output SHALL reach run state only through a role's report tool, and the orchestrator SHALL validate every admitted result against its schema.
+Run progression SHALL be decided only by the run's orchestrator task (`security.scan`, `security.fix`, or `security.verify`). Model output SHALL reach run state only through a role's report tool, and the orchestrator SHALL validate every admitted result against its schema.
 
 #### Scenario: Invalid worker result
 - **WHEN** a worker's conversation ends without a schema-valid result document
@@ -40,12 +40,30 @@ The orchestrator SHALL NOT have more than `max_parallel` worker tasks live at on
 - **WHEN** discovery has more packets than `max_parallel`
 - **THEN** workers are created in successive waves of at most `max_parallel`
 
-### Requirement: Cancellation and deadline
-Cancelling a run SHALL abort the orchestrator, aborting its workers bottom-up, and SHALL end the run `canceled`. A configured deadline SHALL end the run `interrupted` with reason `deadline`. Neither outcome SHALL claim complete coverage.
+### Requirement: Cancellation
+Cancelling a run SHALL abort the orchestrator, aborting its workers bottom-up, and SHALL end the run `canceled` without claiming complete coverage.
 
 #### Scenario: Cancel from a viewer
 - **WHEN** a read-only viewer requests cancellation of a run owned by another process
 - **THEN** the owning process aborts the orchestrator and the run ends `canceled` with admitted findings preserved as incomplete coverage
+
+### Requirement: Stall detection
+A worker with no progress for `stall_timeout` SHALL be aborted and re-created once. A second stall SHALL be a worker failure under that phase's failure policy. Streaming model output and tool output SHALL count as progress.
+
+#### Scenario: Hung provider stream
+- **WHEN** a worker's model request produces nothing for longer than `stall_timeout`
+- **THEN** the worker is aborted and a replacement worker starts with the same packet
+
+#### Scenario: Long but active worker
+- **WHEN** a worker keeps streaming output for longer than `stall_timeout`
+- **THEN** it is not aborted
+
+### Requirement: Optional run limits
+Runs SHALL have no wall-clock limit by default. When `max_duration` or `max_cost` is configured and exceeded, the run SHALL end `interrupted` with reason `duration_limit` or `cost_limit`, keep admitted evidence, and mark coverage incomplete.
+
+#### Scenario: Cost limit
+- **WHEN** a run's summed usage cost exceeds `max_cost`
+- **THEN** the orchestrator is aborted and the run ends `interrupted` with reason `cost_limit`
 
 ### Requirement: Read-only observation
 Viewers SHALL observe a run by opening its storage read-only and SHALL NOT be able to write to it.
