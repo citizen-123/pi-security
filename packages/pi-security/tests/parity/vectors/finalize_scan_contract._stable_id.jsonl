@@ -1,0 +1,5 @@
+{"args": {"parts": ["pi-security/v1:sha256:5e0173413d4762449ad09dc2c52607d999c5abbc3a7f21020ed193b64a1b1694"], "prefix": "csf"}, "function": "finalize_scan_contract._stable_id", "result": "csf_600fddb97006cf975d7c6a41"}
+{"args": {"parts": ["scan_example_001", "pi-security/v1:sha256:9b291ca5d6d34ba25a31f7ba09b1ef0832cb466c9c7f073d0147d13d1d7a0311"], "prefix": "occ"}, "function": "finalize_scan_contract._stable_id", "result": "occ_b67c32280faa666caff5658a"}
+{"args": {"parts": ["scan_example_001", "pi-security/v1:sha256:5e0173413d4762449ad09dc2c52607d999c5abbc3a7f21020ed193b64a1b1694"], "prefix": "occ"}, "function": "finalize_scan_contract._stable_id", "result": "occ_83d2796295f37670ccae9fe6"}
+{"args": {"parts": ["pi-security/v1:sha256:9b291ca5d6d34ba25a31f7ba09b1ef0832cb466c9c7f073d0147d13d1d7a0311"], "prefix": "csf"}, "function": "finalize_scan_contract._stable_id", "result": "csf_63e47f0d1bc734a6d3f22eee"}
+{"args": {"parts": ["scan_001", "pi-security/v1:sha256:9b291ca5d6d34ba25a31f7ba09b1ef0832cb466c9c7f073d0147d13d1d7a0311"], "prefix": "occ"}, "function": "finalize_scan_contract._stable_id", "result": "occ_2fe4c1222b7616c93112a40b"}

@@ -15,7 +15,7 @@ Contract for porting the Python scripts to TypeScript (`openspec/changes/durable
 | `preflight` | `config_preflight.py` | Ready, blocked, malformed checks |
 | `patch-risk` | `skills/assess-patch-risk/scripts/validate_patch_risk_assessment.py` | Every workflow gate; malformed JSON |
 
-**Recorded vectors** (`vectors/`). Input/output pairs of pure functions (report rendering, SARIF, CSV, fingerprints, stable IDs, canonical JSON, candidate merging), captured from every call the existing pytest suite makes. This reaches many more edge cases than the curated tier.
+**Recorded vectors** (`vectors/`). Input/output pairs of pure functions (report rendering, SARIF, fingerprints, stable IDs, canonical JSON), captured from every call made by the fixed-fixture test modules of the existing pytest suite (`SOURCE_TESTS` in `record_vectors.py`). This reaches many more edge cases than the curated tier, including hostile strings with lone surrogates. Calls from workbench-flow tests are excluded because they carry wall-clock timestamps and random UUIDs, as are vectors over 256 KB (size-limit tests). CSV export and candidate merging only run through subprocesses in the suite, so the curated cases cover them.
 
 Ports must reproduce statuses, compared stdout, files, and vector results. Python's error text is kept in goldens for reference only.
 
@@ -36,13 +36,13 @@ python3 tests/parity/build_cases.py            # regenerate cases/ from the buil
 python3 tests/parity/build_cases.py --check    # fail if cases/ is stale
 python3 tests/parity/oracle.py --write         # regenerate goldens/ from Python
 python3 tests/parity/oracle.py                 # fail if Python output differs from goldens/
-python3 tests/parity/record_vectors.py         # rerun the pytest suite and regenerate vectors/ (Python 3.12+)
-python3 tests/parity/record_vectors.py --check
+python3 tests/parity/record_vectors.py         # rerun the source test modules and regenerate vectors/ (Python 3.12+, pytest)
+python3 tests/parity/record_vectors.py --check # fail if vectors/ differs from a fresh recording
 node --test tests/parity.test.mjs              # check registered TypeScript ports
 PI_SECURITY_PARITY_SELF_TEST=python node --test tests/parity.test.mjs   # check this harness via Python
 ```
 
-`tests/test_parity_oracle.py` runs the two cheap checks with the Python suite. Recording vectors reruns the whole suite, so it isn't part of `npm test`; rerun it when a recorded function or its tests change.
+`tests/test_parity_oracle.py` runs all three checks with the Python suite (`npm run test:python`); the vector check is skipped below Python 3.12. Run the recorder with `PYTHONPATH=tests`, as the suite does.
 
 ## Adding a port
 

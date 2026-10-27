@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Record input/output vectors of pure Python functions while the existing pytest suite runs.
 
-The suite already exercises far more edge cases of report rendering, SARIF, CSV, fingerprints, canonical JSON, and
-candidate merging than the curated cases do. This script runs it in-process with a sys.monitoring tool attached to
+The suite already exercises far more edge cases of report rendering, SARIF, fingerprints, stable IDs, and canonical
+JSON than the curated cases do. This script runs it in-process with a sys.monitoring tool attached to
 the functions in TARGETS, captures each call's arguments (at entry, before any mutation) and its return value or
 raised error, and writes deduplicated vectors to tests/parity/vectors/<module>.<function>.jsonl. TypeScript ports of
 these functions must reproduce every vector.
@@ -14,7 +14,7 @@ are skipped because they would not be reproducible.
 Requires Python 3.12+ and the packages in requirements-test.txt.
 
 Usage: record_vectors.py [--check] [PYTEST_ARGS...]
-  Vectors are only written from a full, passing run; pass PYTEST_ARGS to debug a subset (combine with --check).
+  By default the test modules in SOURCE_TESTS run; vectors are only written from a passing run.
 """
 
 from __future__ import annotations
@@ -23,10 +23,12 @@ import argparse
 import base64
 import hashlib
 import json
+import re
 import shutil
 import sys
 import tempfile
 import threading
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -39,15 +41,27 @@ SCRIPTS = PACKAGE_ROOT / "scripts"
 TARGETS: set[tuple[str, str]] = {
     ("report_projection.py", "build_report_markdown"),
     ("finalize_scan_contract.py", "build_sarif"),
-    ("finalize_scan_contract.py", "build_csv_projection"),
     ("finalize_scan_contract.py", "_fingerprint"),
     ("finalize_scan_contract.py", "_stable_id"),
     ("finalize_scan_contract.py", "_json_bytes"),
-    ("normalize_candidates.py", "combine"),
-    ("normalize_candidates.py", "identity"),
-    ("normalize_candidates.py", "cwe_ids"),
 }
+# CSV export and candidate merging are reached only through subprocesses in the suite; the curated cases cover them.
 TARGET_FILES = {str(SCRIPTS / file) for file, _ in TARGETS}
+
+# Only calls made from these test modules are recorded: they use fixed fixtures. Workbench-flow tests reach the
+# same functions with wall-clock timestamps and random UUIDs, which would make vectors unreproducible.
+SOURCE_TESTS = {
+    "test_finalize_scan_contract.py",
+    "test_report_projection.py",
+    "test_sarif_projection.py",
+    "test_scan_contract_examples.py",
+    "test_validate_scan_contract.py",
+    "test_portable_artifact_paths.py",
+}
+TESTS_DIR = PACKAGE_ROOT / "tests"
+# Size-limit tests build multi-megabyte documents; they check limits, not rendering, and would bloat the repository.
+MAX_VECTOR_BYTES = 256 * 1024
+UUID4 = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 TOOL_ID = 4
 
 
@@ -83,6 +97,7 @@ class Recorder:
         self.skipped: dict[str, int] = {}
         self.temp_markers = [tempfile.gettempdir(), "/private/var/folders", "pytest-of-"]
         self.failures: list[str] = []
+        self.today = date.today().isoformat()
 
     def target(self, code: Any) -> tuple[str, ...] | None:
         """Parameter names of a target function's code object, or None for any other code."""
@@ -110,10 +125,19 @@ class Recorder:
         if params is None:
             return sys.monitoring.DISABLE
         try:
+            caller = frame.f_back
+            while caller is not None and Path(caller.f_code.co_filename).parent != TESTS_DIR:
+                caller = caller.f_back
+            if caller is None or Path(caller.f_code.co_filename).name not in SOURCE_TESTS:
+                raise Unrepresentable("not called from a fixed-fixture test module")
             args = {name: encode(frame.f_locals[name]) for name in params}
-            text = json.dumps(args, sort_keys=True, ensure_ascii=False)
+            text = json.dumps(args, sort_keys=True)
+            if len(text) > MAX_VECTOR_BYTES:
+                raise Unrepresentable("larger than MAX_VECTOR_BYTES")
             if any(marker in text for marker in self.temp_markers):
                 raise Unrepresentable("temporary path")
+            if self.today in text or UUID4.search(text):
+                raise Unrepresentable("run date or random UUID")
             entry: Any = (code, args)
         except Unrepresentable as reason:
             entry = (code, None)
@@ -147,6 +171,8 @@ class Recorder:
             return sys.monitoring.DISABLE
         try:
             outcome = {"result": encode(value)}
+            if len(json.dumps(outcome["result"])) > MAX_VECTOR_BYTES:
+                raise Unrepresentable("result larger than MAX_VECTOR_BYTES")
         except Unrepresentable:
             stack = self.stack()
             if stack and stack[-1][0] is code:
@@ -204,7 +230,7 @@ def main() -> int:
     if sys.version_info < (3, 12):
         print("record_vectors.py needs Python 3.12+ (sys.monitoring)", file=sys.stderr)
         return 2
-    grouped, skipped, status = record(args.pytest_args or [str(PACKAGE_ROOT / "tests")])
+    grouped, skipped, status = record(args.pytest_args or [str(TESTS_DIR / name) for name in sorted(SOURCE_TESTS)])
     if status != 0:
         print(f"pytest exited with status {status}; vectors not written", file=sys.stderr)
         return 1
