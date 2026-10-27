@@ -12,7 +12,7 @@
 // Register a port here as part of the change that adds it. Until then its cases and vectors are skipped.
 import { build } from "esbuild";
 
-import { mkdirSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 async function load(entry) {
@@ -28,6 +28,7 @@ async function load(entry) {
 
 const identity = await load("src/contract/finding-identity.ts");
 const candidates = await load("src/contract/candidates.ts");
+const inventory = await load("src/target/inventory.ts");
 
 /** Minimal argparse: options with one value, or every value up to the next option for multi-value options. */
 function parseOptions(args, multi = new Set(), flags = new Set()) {
@@ -51,6 +52,26 @@ function atomicWrite(path, bytes) {
 }
 
 export const tools = {
+  // CLI shim over generateInventory, mirroring generate_in_scope_files.py main().
+  generate_in_scope_files: async (args) => {
+    try {
+      const options = parseOptions(args);
+      const repository = inventory.resolveRepository(options.repo);
+      const scope = inventory.resolveScope(repository, options.scope);
+      if (!options.out || options.out.includes("\0")) return { status: "rejected" };
+      if (existsSync(options.out) && lstatSync(options.out).isSymbolicLink()) return { status: "rejected" };
+      const output = resolve(options.out);
+      if (existsSync(output) && !statSync(output).isFile()) return { status: "rejected" };
+      const diff =
+        options["diff-base"] === undefined
+          ? undefined
+          : { base: options["diff-base"], head: options["diff-head"] ?? "HEAD", mode: options["diff-mode"] ?? "revisions" };
+      atomicWrite(output, inventory.generateInventory({ repository, scope, diff }).bytes);
+      return { status: "ok" };
+    } catch {
+      return { status: "rejected" };
+    }
+  },
   // CLI shim over normalizeCandidateFiles, mirroring normalize_candidates.py main().
   normalize_candidates: async (args) => {
     try {

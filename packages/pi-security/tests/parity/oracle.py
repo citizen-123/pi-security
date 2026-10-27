@@ -19,6 +19,7 @@ Usage: oracle.py [--write] [--case PREFIX]
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import shutil
@@ -69,6 +70,15 @@ def apply_files(repo: Path, change: dict[str, Any]) -> None:
         path = repo / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
+    for encoded, text in change.get("write_raw", {}).items():
+        path = os.fsencode(repo) + b"/" + base64.b64decode(encoded)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as handle:
+            handle.write(text.encode("utf-8"))
+    for relative, encoded in change.get("write_bytes", {}).items():
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(base64.b64decode(encoded))
     for relative in change.get("delete", []):
         (repo / relative).unlink()
 
@@ -142,21 +152,31 @@ def run_case(case_dir: Path, work: Path) -> dict[str, Any]:
     return {"steps": steps}
 
 
+def golden_name(relative: bytes) -> str:
+    """A path for the golden tree: names that are not valid UTF-8 are percent-escaped and marked .rawpath."""
+    try:
+        return relative.decode("utf-8")
+    except UnicodeDecodeError:
+        escaped = "".join(chr(byte) if byte < 0x80 and byte != 0x25 else f"%{byte:02X}" for byte in relative)
+        return escaped + ".rawpath"
+
+
 def capture_tree(work: Path, destination: Path) -> None:
-    for path in sorted(work.rglob("*")):
-        relative = path.relative_to(work)
-        if ".git" in relative.parts:
-            continue
-        if path.is_symlink():
-            target = destination / relative
+    root = os.fsencode(work)
+    for directory, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(name for name in dirnames if name != b".git" and not os.path.islink(os.path.join(directory, name)))
+        entries = sorted(filenames) + sorted(
+            name for name in os.listdir(directory) if os.path.islink(os.path.join(directory, name)) and os.path.isdir(os.path.join(directory, name))
+        )
+        for name in entries:
+            full = os.path.join(directory, name)
+            relative = os.path.relpath(full, root)
+            target = destination / golden_name(relative)
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.with_name(target.name + ".symlink").write_text(os.readlink(path), encoding="utf-8")
-            continue
-        if not path.is_file():
-            continue
-        target = destination / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(normalize_text(path.read_bytes(), work))
+            if os.path.islink(full):
+                target.with_name(target.name + ".symlink").write_bytes(os.readlink(full))
+            elif os.path.isfile(full):
+                target.write_bytes(normalize_text(Path(os.fsdecode(full)).read_bytes(), work))
 
 
 def golden_files(directory: Path) -> dict[str, bytes]:

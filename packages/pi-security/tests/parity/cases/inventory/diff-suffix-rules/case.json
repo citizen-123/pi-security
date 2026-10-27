@@ -1,0 +1,48 @@
+{
+  "description": "Leading-dot names have no suffix, suffixes are case-insensitive, minified and map files are excluded.",
+  "steps": [
+    {
+      "argv": [
+        "generate_in_scope_files",
+        "--repo",
+        "{work}/repo",
+        "--out",
+        "{work}/inventory.txt",
+        "--scope",
+        ".",
+        "--diff-base",
+        "HEAD~1",
+        "--diff-head",
+        "HEAD"
+      ],
+      "stdout": "ignore"
+    }
+  ],
+  "git": {
+    "path": "repo",
+    "commits": [
+      {
+        "message": "trap base",
+        "write": {
+          "src/keep.py": "x = 1\n",
+          "sub/b.js": "b\n",
+          "sub/c.py": "c\n",
+          "src/target.py": "t\n",
+          "src/～.py": "w\n",
+          "src/😀.py": "e\n"
+        }
+      },
+      {
+        "message": "trap change",
+        "write": {
+          ".py": "hidden\n",
+          "src/UPPER.PY": "u = 1\n",
+          "src/lib.min.js": "var a;\n",
+          "src/app.js.map": "{}\n",
+          "src/trailing.": "dot\n"
+        },
+        "write_raw": {}
+      }
+    ]
+  }
+}

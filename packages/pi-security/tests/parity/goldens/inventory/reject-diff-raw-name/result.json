@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stderr": "generate_in_scope_files: 'utf-8' codec can't encode character '\\udce9' in position 7: surrogates not allowed\n"
+    }
+  ]
+}

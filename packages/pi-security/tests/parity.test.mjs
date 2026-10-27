@@ -65,6 +65,15 @@ function applyFiles(repo, change) {
     mkdirSync(dirname(join(repo, path)), { recursive: true });
     writeFileSync(join(repo, path), text, "utf8");
   }
+  for (const [encoded, text] of Object.entries(change.write_raw ?? {})) {
+    const path = Buffer.concat([Buffer.from(repo), Buffer.from("/"), Buffer.from(encoded, "base64")]);
+    mkdirSync(dirname(path.toString("latin1")) === "." ? repo : Buffer.from(dirname(path.toString("latin1")), "latin1"), { recursive: true });
+    writeFileSync(path, text, "utf8");
+  }
+  for (const [path, encoded] of Object.entries(change.write_bytes ?? {})) {
+    mkdirSync(dirname(join(repo, path)), { recursive: true });
+    writeFileSync(join(repo, path), Buffer.from(encoded, "base64"));
+  }
   for (const path of change.delete ?? []) unlinkSync(join(repo, path));
 }
 
@@ -85,21 +94,33 @@ function buildGit(work, spec) {
 
 const normalize = (data, work) => Buffer.from(Buffer.from(data).toString("latin1").split(work).join("<WORK>"), "latin1");
 
+// Must match golden_name in tests/parity/oracle.py.
+function goldenName(relativeBytes) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(relativeBytes);
+  } catch {
+    let escaped = "";
+    for (const byte of relativeBytes) escaped += byte < 0x80 && byte !== 0x25 ? String.fromCharCode(byte) : `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+    return `${escaped}.rawpath`;
+  }
+}
+
 function captureTree(work) {
   const files = new Map();
-  const walk = (directory) => {
-    for (const name of readdirSync(directory).sort()) {
-      const path = join(directory, name);
-      const rel = relative(work, path).split(sep).join("/");
-      if (rel.split("/").includes(".git")) continue;
+  const walk = (directory, prefix) => {
+    const entries = readdirSync(directory, { encoding: "buffer" }).sort(Buffer.compare);
+    for (const name of entries) {
+      if (name.equals(Buffer.from(".git"))) continue;
+      const path = Buffer.concat([directory, Buffer.from(sep), name]);
+      const rel = prefix.length === 0 ? name : Buffer.concat([prefix, Buffer.from("/"), name]);
       const stat = lstatSync(path);
-      if (stat.isSymbolicLink()) files.set(`tree/${rel}.symlink`, Buffer.from(readlinkSync(path), "utf8"));
-      else if (stat.isDirectory()) walk(path);
-      else if (stat.isFile()) files.set(`tree/${rel}`, normalize(readFileSync(path), work));
+      if (stat.isSymbolicLink()) files.set(`tree/${goldenName(rel)}.symlink`, readlinkSync(path, { encoding: "buffer" }));
+      else if (stat.isDirectory()) walk(path, rel);
+      else if (stat.isFile()) files.set(`tree/${goldenName(rel)}`, normalize(readFileSync(path), work));
     }
   };
-  walk(work);
-  return files;
+  walk(Buffer.from(work), Buffer.alloc(0));
+  return new Map([...files].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 
 function readGolden(directory) {
@@ -189,7 +210,7 @@ for (const name of caseNames) {
       assert.deepEqual(steps, expected.steps.map(({ stderr, ...rest }) => rest), "step results");
       const actualTree = captureTree(work);
       const expectedTree = new Map([...golden].filter(([key]) => key.startsWith("tree/")));
-      assert.deepEqual([...actualTree.keys()], [...expectedTree.keys()], "files left in the work directory");
+      assert.deepEqual([...actualTree.keys()].sort(), [...expectedTree.keys()].sort(), "files left in the work directory");
       for (const [key, bytes] of expectedTree) {
         assert.ok(actualTree.get(key).equals(bytes), `${key} differs from the golden`);
       }

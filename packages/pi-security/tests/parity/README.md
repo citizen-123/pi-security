@@ -4,7 +4,7 @@ Contract for porting the Python scripts to TypeScript (`openspec/changes/durable
 
 ## Two tiers
 
-**Curated cases** (`cases/`, `goldens/`). End-to-end runs of each script. Each case is an `input/` tree plus `case.json`: optional Git repository spec (`git`), symlinks (`symlinks`), and `steps` run in order in one work directory. A golden records each step's status (`ok` or `rejected`), stdout where the step's output is the product (`"stdout": "compare"`), and every file left in the work directory. Absolute work paths are recorded as `<WORK>`.
+**Curated cases** (`cases/`, `goldens/`). End-to-end runs of each script. Each case is an `input/` tree plus `case.json`: optional Git repository spec (`git`, where commits and the worktree may also use `write_raw` for file names that are not valid UTF-8, keyed by base64 bytes, and `write_bytes` for binary contents in base64), symlinks (`symlinks`), and `steps` run in order in one work directory. A golden records each step's status (`ok` or `rejected`), stdout where the step's output is the product (`"stdout": "compare"`), and every file left in the work directory. Absolute work paths are recorded as `<WORK>`.
 
 | Suite | Script | Covers |
 |---|---|---|

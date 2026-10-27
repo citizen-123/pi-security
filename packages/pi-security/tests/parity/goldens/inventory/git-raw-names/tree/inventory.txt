@@ -1,0 +1,12 @@
+./.py
+./src/UPPER.PY
+./src/app.js.map
+./src/caf�_latin1.py
+./src/keep.py
+./src/lib.min.js
+./src/target.py
+./src/trailing.
+./src/～.py
+./src/😀.py
+./sub/b.js
+./sub/c.py

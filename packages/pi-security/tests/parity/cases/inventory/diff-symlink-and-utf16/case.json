@@ -1,0 +1,47 @@
+{
+  "description": "Working-tree patch: a new symlink is skipped; UTF-16 text with a BOM is kept, UTF-16 with a NUL unit is binary.",
+  "steps": [
+    {
+      "argv": [
+        "generate_in_scope_files",
+        "--repo",
+        "{work}/repo",
+        "--out",
+        "{work}/inventory.txt",
+        "--scope",
+        ".",
+        "--diff-base",
+        "HEAD",
+        "--diff-mode",
+        "local-patch"
+      ],
+      "stdout": "ignore"
+    }
+  ],
+  "git": {
+    "path": "repo",
+    "commits": [
+      {
+        "message": "trap base",
+        "write": {
+          "src/keep.py": "x = 1\n",
+          "sub/b.js": "b\n",
+          "sub/c.py": "c\n",
+          "src/target.py": "t\n",
+          "src/～.py": "w\n",
+          "src/😀.py": "e\n"
+        }
+      }
+    ],
+    "worktree": {
+      "write_bytes": {
+        "src/utf16_text.py": "//5wAGwAYQBpAG4AIAB0AGUAeAB0AAoA",
+        "src/utf16_binary.py": "//5uAHUAbAAAAGgAZQByAGUACgA=",
+        "src/utf8_binary.py": "aGVhZAAAAHRhaWwK"
+      }
+    }
+  },
+  "symlinks": {
+    "repo/src/link_to_target.py": "target.py"
+  }
+}

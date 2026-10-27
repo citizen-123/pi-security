@@ -1,0 +1,17 @@
+{
+  "description": "Directory inventory keeps the caller's spelling of a scope like ./sub/../sub in every row.",
+  "steps": [
+    {
+      "argv": [
+        "generate_in_scope_files",
+        "--repo",
+        "{work}/repo",
+        "--out",
+        "{work}/inventory.txt",
+        "--scope",
+        "./sub/../sub"
+      ],
+      "stdout": "ignore"
+    }
+  ]
+}

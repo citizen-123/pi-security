@@ -12,6 +12,7 @@ Usage: build_cases.py [--check]
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
 import filecmp
 import json
@@ -602,6 +603,26 @@ def inventory_cases() -> list[dict[str, Any]]:
         "stage": ["src/staged.py"],
     }
     two_commits = {"commits": [base_commit, change_commit]}
+    # Traps: non-UTF-8 names, UTF-16 binary detection, symlink changes, suffix rules, unnormalized scopes.
+    raw_name = base64.b64encode(b"src/caf\xe9_latin1.py").decode("ascii")
+    trap_base = {
+        "message": "trap base",
+        # UTF-8 byte order and UTF-16 order disagree for these two names.
+        "write": {"src/keep.py": "x = 1\n", "sub/b.js": "b\n", "sub/c.py": "c\n", "src/target.py": "t\n",
+                  "src/" + chr(0xFF5E) + ".py": "w\n", "src/" + chr(0x1F600) + ".py": "e\n"},
+    }
+    trap_change = {
+        "message": "trap change",
+        "write": {
+            ".py": "hidden\n",
+            "src/UPPER.PY": "u = 1\n",
+            "src/lib.min.js": "var a;\n",
+            "src/app.js.map": "{}\n",
+            "src/trailing.": "dot\n",
+        },
+        "write_raw": {raw_name: "latin1 = 1\n"},
+    }
+    trap_commits = {"commits": [trap_base, trap_change]}
     return [
         inventory_case("git-full", "Tracked plus non-ignored untracked files, sorted bytewise, symlinks skipped.", {**two_commits, "worktree": worktree}, ["--scope", "."], extra={"symlinks": {"repo/src/link.py": "app.py"}}),
         inventory_case("git-scoped-dir", "Inventory restricted to one directory.", {"commits": [base_commit]}, ["--scope", "src"]),
@@ -615,6 +636,33 @@ def inventory_cases() -> list[dict[str, Any]]:
             ["--scope", "."],
             files={"repo/a.py": "a\n", "repo/sub/b.js": "b\n", "repo/sub/ünï.txt": "c\n"},
             extra={"symlinks": {"repo/sub/link.js": "b.js"}},
+        ),
+        inventory_case("git-raw-names", "Git inventory keeps file names that are not valid UTF-8 as raw bytes.", trap_commits, ["--scope", "."]),
+        inventory_case("reject-diff-raw-name", "Must reject: a diff inventory row whose name is not valid UTF-8.", trap_commits, ["--scope", ".", "--diff-base", "HEAD~1", "--diff-head", "HEAD"]),
+        inventory_case(
+            "diff-suffix-rules",
+            "Leading-dot names have no suffix, suffixes are case-insensitive, minified and map files are excluded.",
+            {"commits": [trap_base, {**trap_change, "write_raw": {}}]},
+            ["--scope", ".", "--diff-base", "HEAD~1", "--diff-head", "HEAD"],
+        ),
+        inventory_case(
+            "diff-symlink-and-utf16",
+            "Working-tree patch: a new symlink is skipped; UTF-16 text with a BOM is kept, UTF-16 with a NUL unit is binary.",
+            {"commits": [trap_base], "worktree": {"write_bytes": {
+                "src/utf16_text.py": base64.b64encode(b"\xff\xfe" + "plain text\n".encode("utf-16-le")).decode("ascii"),
+                "src/utf16_binary.py": base64.b64encode(b"\xff\xfe" + "nul\x00here\n".encode("utf-16-le")).decode("ascii"),
+                "src/utf8_binary.py": base64.b64encode(b"head" + b"\x00" * 3 + b"tail\n").decode("ascii"),
+            }}},
+            ["--scope", ".", "--diff-base", "HEAD", "--diff-mode", "local-patch"],
+            extra={"symlinks": {"repo/src/link_to_target.py": "target.py"}},
+        ),
+        inventory_case("git-unnormalized-scope", "Git inventory with a scope spelled ./sub/../sub.", trap_commits, ["--scope", "./sub/../sub"]),
+        inventory_case(
+            "directory-unnormalized-scope",
+            "Directory inventory keeps the caller's spelling of a scope like ./sub/../sub in every row.",
+            None,
+            ["--scope", "./sub/../sub"],
+            files={"repo/sub/b.js": "b\n", "repo/sub/deeper/c.py": "c\n"},
         ),
         inventory_case("reject-diff-with-scope", "Must reject: diff inventory with a non-root scope.", {"commits": [base_commit]}, ["--scope", "src", "--diff-base", "HEAD"]),
         inventory_case("reject-scope-escape", "Must reject: scope outside the repository.", {"commits": [base_commit]}, ["--scope", "../"]),
