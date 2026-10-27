@@ -17,12 +17,19 @@ const GIT_REPOSITORY_ENVIRONMENT = [
 export type GitResult = { status: number; stdout: Buffer; stderr: Buffer };
 
 /**
- * Run git in `target`. Repository-local config is untrusted, so fsmonitor (which can name an executable) is disabled.
+ * Run git in `target`. Repository-local config is untrusted, so fsmonitor (which can name an executable) is disabled;
+ * callers avoid commands that run filter drivers.
  * A missing git executable reports status 127, like any failed probe.
  */
-export function gitCommand(target: string, args: (string | Buffer)[], options: { input?: Buffer } = {}): GitResult {
+export function gitCommand(
+  target: string,
+  args: (string | Buffer)[],
+  options: { input?: Buffer; env?: Record<string, string> } = {}
+): GitResult {
   const environment: NodeJS.ProcessEnv = { ...process.env, GIT_LITERAL_PATHSPECS: "1" };
   for (const name of GIT_REPOSITORY_ENVIRONMENT) delete environment[name];
+  // Callers may set variables explicitly after the repository variables are cleared, for example GIT_INDEX_FILE.
+  Object.assign(environment, options.env);
   const command = ["-c", "core.fsmonitor=false", "-c", "i18n.logOutputEncoding=UTF-8", "-C", target];
   const result = spawnSync("git", [...command, ...args] as string[], {
     env: environment,

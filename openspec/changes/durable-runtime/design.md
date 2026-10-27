@@ -177,7 +177,7 @@ No wall-clock deadline by default: runs fail far more often by hanging than by r
 
 ### D14. Working-tree Diff scans are snapshot commits
 
-`--base REV` without `--head` scans the working tree. At preflight, the working tree (tracked changes plus untracked, non-ignored files) is written to a commit object through a temporary index (`GIT_INDEX_FILE`, `add -A`, `write-tree`, `commit-tree` with the current `HEAD` as parent) without touching the user's index, branch, or stash. The scan then targets that commit ID exactly like a revision diff. Edits made during the scan cannot change its scope, resume needs no special case, and there is one code path. The snapshot is kept reachable from `refs/pi-security/snapshots/<run-id>` until the run directory is deleted.
+`--base REV` without `--head` scans the working tree. At preflight, the working tree (tracked changes plus untracked, non-ignored files) is written to a commit object through a temporary index without touching the user's index, branch, stash, or files (`src/target/snapshot.ts`). Repository-local config is untrusted, and `git add` would run clean filter drivers it names, so contents are hashed with `hash-object --no-filters`, entered with `update-index --index-info`, and committed with `commit-tree --no-gpg-sign` under a fixed identity and date, so the same `HEAD` and contents always give the same commit. File names containing a newline are rejected. The scan then targets that commit ID exactly like a revision diff. Edits made during the scan cannot change its scope, resume needs no special case, and there is one code path. The snapshot is kept reachable from `refs/pi-security/snapshots/<run-id>` until the run directory is deleted.
 
 ## Risks / Trade-offs
 
