@@ -37,6 +37,8 @@ PARITY_DIR = Path(__file__).resolve().parent
 PACKAGE_ROOT = PARITY_DIR.parent.parent
 VECTORS_DIR = PARITY_DIR / "vectors"
 SCRIPTS = PACKAGE_ROOT / "scripts"
+# Target scripts that live outside scripts/.
+SCRIPT_DIRECTORIES = {"validate_patch_risk_assessment.py": PACKAGE_ROOT / "skills" / "assess-patch-risk" / "scripts"}
 
 # (script file, qualified name). Arguments are recorded under the function's own parameter names.
 TARGETS: set[tuple[str, str]] = {
@@ -84,6 +86,8 @@ TARGETS: set[tuple[str, str]] = {
     ("test_contract_validation_edges.py", "validate_coverage_with_files"),
     ("test_sarif_edges.py", "github_line_hashes_of"),
     ("test_sarif_edges.py", "sarif_with_source"),
+    ("test_patch_risk_edges.py", "read_assessment_text"),
+    ("validate_patch_risk_assessment.py", "validate"),
 }
 # Calls to record, by a predicate on the call's arguments. The validator recurses with root_schema set; only the
 # outermost calls are vectors.
@@ -108,7 +112,8 @@ ENV_INPUTS: dict[tuple[str, str], tuple[str, ...]] = {
 }
 # CSV export and candidate merging are reached only through subprocesses in the suite; the curated cases cover them.
 TARGET_FILES = {
-    str((PACKAGE_ROOT / "tests" if file.startswith("test_") else SCRIPTS) / file) for file, _ in TARGETS
+    str((PACKAGE_ROOT / "tests" if file.startswith("test_") else SCRIPT_DIRECTORIES.get(file, SCRIPTS)) / file)
+    for file, _ in TARGETS
 }
 
 # Only calls made from these test modules are recorded: they use fixed fixtures. Workbench-flow tests reach the
@@ -123,6 +128,7 @@ SOURCE_TESTS = {
     "test_contract_validation_edges.py",
     "test_recovery_edges.py",
     "test_report_projection_edges.py",
+    "test_patch_risk_edges.py",
     "test_report_projection.py",
     "test_sarif_projection.py",
     "test_scan_contract_examples.py",

@@ -1,0 +1,25 @@
+{
+  "description": "A repeated check keeps its last value; checks sort by code point; non-ASCII names are escaped.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "security_scan",
+        "--cwd",
+        "{work}/target",
+        "--runtime-check",
+        "zeta=true",
+        "--runtime-check",
+        "zeta=false",
+        "--runtime-check",
+        "école=TrUe",
+        "--runtime-check",
+        "Alpha=false",
+        "--runtime-check",
+        "eq=true"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

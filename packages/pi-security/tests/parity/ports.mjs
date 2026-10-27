@@ -45,6 +45,8 @@ const ENTRIES = {
   recovery: "src/contract/recovery.ts",
   report: "src/contract/report-projection.ts",
   finalize: "src/contract/finalize.ts",
+  patchRisk: "src/contract/patch-risk.ts",
+  preflight: "src/config/preflight.ts",
 };
 const bundled = await build({
   bundle: true,
@@ -56,7 +58,7 @@ const bundled = await build({
   platform: "node",
   write: false,
 });
-const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths, exportsModule, validation, recovery, report, finalize } = await import(
+const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths, exportsModule, validation, recovery, report, finalize, patchRisk, preflight } = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString("base64")}`
 );
 
@@ -164,6 +166,32 @@ tools.finalize_scan_contract = (args) =>
     }
   });
 
+// CLI shim over patch-risk.ts, mirroring validate_patch_risk_assessment.py main().
+tools.validate_patch_risk_assessment = (args) =>
+  cli(() => {
+    if (args.length !== 1) throw new Error("expected one assessment path");
+    const errors = patchRisk.validatePatchRiskAssessment(patchRisk.readPatchRiskAssessment(args[0]), join(SCHEMA_DIR, "patch-risk-assessment.schema.json"));
+    if (errors.length > 0) throw new Error(errors.join("\n"));
+  });
+
+// CLI shim over preflight.ts, mirroring config_preflight.py main() (argparse: repeated --runtime-check appends).
+tools.config_preflight = (args) =>
+  cli(() => {
+    let profile;
+    let cwd = ".";
+    const checks = [];
+    for (let index = 0; index < args.length; index++) {
+      const value = args[++index];
+      if (value === undefined) throw new Error(`${args[index - 1]}: expected one argument`);
+      if (args[index - 1] === "--profile") profile = value;
+      else if (args[index - 1] === "--cwd") cwd = value;
+      else if (args[index - 1] === "--runtime-check") checks.push(value);
+      else throw new Error(`unrecognized arguments: ${args[index - 1]}`);
+    }
+    if (!preflight.PREFLIGHT_PROFILES.includes(profile)) throw new Error("--profile: invalid choice");
+    return preflight.formatPreflightReport(preflight.evaluatePreflight(profile, cwd, checks));
+  });
+
 // CLI shim over validateContract, mirroring validate_scan_contract.py main().
 tools.validate_scan_contract = (args) =>
   cli(() => {
@@ -215,6 +243,16 @@ export const functions = {
   "report_projection.build_report_markdown": ({ manifest, findings_document, coverage }) =>
     report.buildReportMarkdown(manifest, findings_document, coverage),
   "report_projection.merged_root_cause": ({ value }) => report.mergedRootCause(value),
+  "validate_patch_risk_assessment.validate": ({ value }) =>
+    patchRisk.validatePatchRiskAssessment(value, join(SCHEMA_DIR, "patch-risk-assessment.schema.json")),
+  "test_patch_risk_edges.read_assessment_text": ({ text, tmp_path }) => {
+    writeFileSync(join(tmp_path, "assessment.json"), text);
+    try {
+      return patchRisk.readPatchRiskAssessment(join(tmp_path, "assessment.json"));
+    } catch (error) {
+      return { error: error.message };
+    }
+  },
   "finalize_scan_contract._finding_evidence_strength": ({ finding }) => recovery.findingEvidenceStrength(finding),
   "finalize_scan_contract._finding_strength": ({ finding }) => recovery.findingStrength(finding),
   "finalize_scan_contract._recover_unsealed_findings": ({ manifest, findings, schema_dir, scan_dir, warnings }) =>

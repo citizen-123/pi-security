@@ -1,0 +1,19 @@
+{
+  "description": "A symlink loop is reported without resolving.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "security_scan",
+        "--cwd",
+        "{work}/loop-a"
+      ],
+      "stdout": "compare"
+    }
+  ],
+  "symlinks": {
+    "loop-a": "loop-b",
+    "loop-b": "loop-a"
+  }
+}

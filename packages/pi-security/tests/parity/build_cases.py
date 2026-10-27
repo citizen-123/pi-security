@@ -674,18 +674,40 @@ def inventory_cases() -> list[dict[str, Any]]:
 
 
 def preflight_cases() -> list[dict[str, Any]]:
-    def case(name: str, description: str, args: list[str]) -> dict[str, Any]:
+    def case(name: str, description: str, args: list[str], **extra: Any) -> dict[str, Any]:
         return {
             "name": f"preflight/{name}",
             "description": description,
             "steps": [{"argv": ["config_preflight", *args], "stdout": "compare"}],
-            "files": {"target/.keep": ""},
+            "files": {"target/.keep": "", "file.txt": "not a directory\n"},
+            **extra,
         }
 
     return [
         case("ready", "Accessible target and mixed runtime checks.", ["--profile", "security_scan", "--cwd", "{work}/target", "--runtime-check", "subagents=true", "--runtime-check", "browser=FALSE"]),
         case("blocked", "Missing target directory blocks the scan.", ["--profile", "deep_security_scan", "--cwd", "{work}/missing"]),
         case("reject-bad-check", "Must reject: malformed runtime check.", ["--profile", "security_diff_scan", "--cwd", "{work}/target", "--runtime-check", "subagents"]),
+        case("symlinked-cwd", "A symlinked working directory is reported by its resolved path.", ["--profile", "security_scan", "--cwd", "{work}/link"], symlinks={"link": "target"}),
+        case(
+            "missing-then-parent",
+            "A missing component followed by .. still resolves the symlink after it.",
+            ["--profile", "security_scan", "--cwd", "{work}/missing/../link/./"],
+            symlinks={"link": "target"},
+        ),
+        case("dangling-symlink", "A dangling symlink is reported by the path it names.", ["--profile", "security_scan", "--cwd", "{work}/dangling"], symlinks={"dangling": "gone/deeper"}),
+        case("symlink-loop", "A symlink loop is reported without resolving.", ["--profile", "security_scan", "--cwd", "{work}/loop-a"], symlinks={"loop-a": "loop-b", "loop-b": "loop-a"}),
+        case("file-cwd", "A file is not an accessible working directory.", ["--profile", "security_scan", "--cwd", "{work}/file.txt"]),
+        case("symlink-twice", "A symlink traversed twice reuses its resolved target.", ["--profile", "security_scan", "--cwd", "{work}/link/../link"], symlinks={"link": "target"}),
+        case("absolute-symlink", "An absolute symlink target restarts resolution at the root.", ["--profile", "security_scan", "--cwd", "{work}/root"], symlinks={"root": "/"}),
+        case(
+            "repeated-and-unicode-checks",
+            "A repeated check keeps its last value; checks sort by code point; non-ASCII names are escaped.",
+            ["--profile", "security_scan", "--cwd", "{work}/target", "--runtime-check", "zeta=true", "--runtime-check", "zeta=false",
+             "--runtime-check", "\u00e9cole=TrUe", "--runtime-check", "Alpha=false", "--runtime-check", "eq=true"],
+        ),
+        case("reject-empty-name", "Must reject: a runtime check without a name.", ["--profile", "security_scan", "--cwd", "{work}/target", "--runtime-check", "=true"]),
+        case("reject-extra-equals", "Must reject: a value that is not exactly true or false.", ["--profile", "security_scan", "--cwd", "{work}/target", "--runtime-check", "a=b=true"]),
+        case("reject-unknown-profile", "Must reject: an unknown profile.", ["--profile", "fast_scan", "--cwd", "{work}/target"]),
     ]
 
 

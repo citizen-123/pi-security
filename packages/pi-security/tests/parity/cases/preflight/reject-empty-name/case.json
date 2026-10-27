@@ -1,0 +1,17 @@
+{
+  "description": "Must reject: a runtime check without a name.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "security_scan",
+        "--cwd",
+        "{work}/target",
+        "--runtime-check",
+        "=true"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

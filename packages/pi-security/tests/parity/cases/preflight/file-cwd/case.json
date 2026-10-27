@@ -1,0 +1,15 @@
+{
+  "description": "A file is not an accessible working directory.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "security_scan",
+        "--cwd",
+        "{work}/file.txt"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

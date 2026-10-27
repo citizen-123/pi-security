@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stdout": "",
+      "stderr": "usage: config_preflight.py [-h]\n                           --profile {deep_security_scan,security_diff_scan,security_scan}\n                           [--cwd CWD] [--runtime-check NAME=BOOL]\nconfig_preflight.py: error: argument --profile: invalid choice: 'fast_scan' (choose from 'deep_security_scan', 'security_diff_scan', 'security_scan')\n"
+    }
+  ]
+}

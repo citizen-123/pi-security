@@ -1,0 +1,18 @@
+{
+  "description": "An absolute symlink target restarts resolution at the root.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "security_scan",
+        "--cwd",
+        "{work}/root"
+      ],
+      "stdout": "compare"
+    }
+  ],
+  "symlinks": {
+    "root": "/"
+  }
+}

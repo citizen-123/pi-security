@@ -1,0 +1,15 @@
+{
+  "description": "Must reject: an unknown profile.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "fast_scan",
+        "--cwd",
+        "{work}/target"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

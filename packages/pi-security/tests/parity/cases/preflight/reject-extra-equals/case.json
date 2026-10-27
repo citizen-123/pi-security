@@ -1,0 +1,17 @@
+{
+  "description": "Must reject: a value that is not exactly true or false.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "security_scan",
+        "--cwd",
+        "{work}/target",
+        "--runtime-check",
+        "a=b=true"
+      ],
+      "stdout": "compare"
+    }
+  ]
+}

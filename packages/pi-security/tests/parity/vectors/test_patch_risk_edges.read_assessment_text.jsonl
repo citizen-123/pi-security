@@ -1,0 +1,12 @@
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "{\"a\": 1.0, \"b\": 10000000000000000000000}", "tmp_path": {"$dir": {}}}, "result": {"a": 1.0, "b": 10000000000000000000000}}
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "\ufeff{}", "tmp_path": {"$dir": {}}}, "result": {"error": "cannot read assessment: Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)"}}
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "{\"a\": 1, \"a\": 2}", "tmp_path": {"$dir": {}}}, "result": {"error": "duplicate JSON object key: a"}}
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "{\"a\": \"\\ud800\"}", "tmp_path": {"$dir": {}}}, "result": {"a": "\ud800"}}
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "[]", "tmp_path": {"$dir": {}}}, "result": {"error": "assessment must be a JSON object"}}
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "{\r  \"a\": tru\r}", "tmp_path": {"$dir": {}}}, "result": {"error": "cannot read assessment: Expecting value: line 2 column 8 (char 9)"}}
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "{\"a\": 1}", "tmp_path": {"$dir": {}}}, "result": {"a": 1}}
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "\"text\"", "tmp_path": {"$dir": {}}}, "result": {"error": "assessment must be a JSON object"}}
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "{\"x\": [}, \"a\": 1, \"a\": 2", "tmp_path": {"$dir": {}}}, "result": {"error": "cannot read assessment: Expecting value: line 1 column 8 (char 7)"}}
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "{\r\n  \"a\": 1,\r\n  \"b\": ]\r\n}", "tmp_path": {"$dir": {}}}, "result": {"error": "cannot read assessment: Expecting value: line 3 column 8 (char 19)"}}
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "", "tmp_path": {"$dir": {}}}, "result": {"error": "cannot read assessment: Expecting value: line 1 column 1 (char 0)"}}
+{"function": "test_patch_risk_edges.read_assessment_text", "args": {"text": "{\"outer\": {\"k\": 1, \"k\": 2}, \"x\": [}", "tmp_path": {"$dir": {}}}, "result": {"error": "duplicate JSON object key: k"}}

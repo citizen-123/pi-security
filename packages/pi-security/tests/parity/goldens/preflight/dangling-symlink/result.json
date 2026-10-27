@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stdout": "{\"profile\":\"security_scan\",\"status\":\"blocked\",\"results\":[{\"capability\":\"target_access\",\"reason\":\"Scan working directory is not an accessible directory: <WORK>/gone/deeper\",\"severity\":\"block\",\"status\":\"fail\"}]}\n",
+      "stderr": ""
+    }
+  ]
+}

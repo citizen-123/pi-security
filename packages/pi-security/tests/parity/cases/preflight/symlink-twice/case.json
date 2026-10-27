@@ -1,0 +1,18 @@
+{
+  "description": "A symlink traversed twice reuses its resolved target.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "security_scan",
+        "--cwd",
+        "{work}/link/../link"
+      ],
+      "stdout": "compare"
+    }
+  ],
+  "symlinks": {
+    "link": "target"
+  }
+}

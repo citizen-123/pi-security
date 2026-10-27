@@ -1,0 +1,18 @@
+{
+  "description": "A dangling symlink is reported by the path it names.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "security_scan",
+        "--cwd",
+        "{work}/dangling"
+      ],
+      "stdout": "compare"
+    }
+  ],
+  "symlinks": {
+    "dangling": "gone/deeper"
+  }
+}

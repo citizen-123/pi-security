@@ -1,0 +1,18 @@
+{
+  "description": "A missing component followed by .. still resolves the symlink after it.",
+  "steps": [
+    {
+      "argv": [
+        "config_preflight",
+        "--profile",
+        "security_scan",
+        "--cwd",
+        "{work}/missing/../link/./"
+      ],
+      "stdout": "compare"
+    }
+  ],
+  "symlinks": {
+    "link": "target"
+  }
+}

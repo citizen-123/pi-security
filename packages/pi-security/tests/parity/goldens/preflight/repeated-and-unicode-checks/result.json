@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "ok",
+      "stdout": "{\"profile\":\"security_scan\",\"status\":\"ready\",\"results\":[{\"capability\":\"target_access\",\"reason\":\"Scan working directory is available: <WORK>/target\",\"severity\":\"block\",\"status\":\"pass\"},{\"capability\":\"Alpha\",\"reason\":\"The active host reports Alpha is unavailable; use the documented single-agent fallback.\",\"severity\":\"suggest\",\"status\":\"unknown\"},{\"capability\":\"eq\",\"reason\":\"The active host reports eq is available.\",\"severity\":\"suggest\",\"status\":\"pass\"},{\"capability\":\"zeta\",\"reason\":\"The active host reports zeta is unavailable; use the documented single-agent fallback.\",\"severity\":\"suggest\",\"status\":\"unknown\"},{\"capability\":\"\\u00e9cole\",\"reason\":\"The active host reports \\u00e9cole is available.\",\"severity\":\"suggest\",\"status\":\"pass\"}]}\n",
+      "stderr": ""
+    }
+  ]
+}

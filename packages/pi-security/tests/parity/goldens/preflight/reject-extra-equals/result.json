@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": "rejected",
+      "stdout": "",
+      "stderr": "Invalid --runtime-check 'a=b=true'; expected NAME=true or NAME=false.\n"
+    }
+  ]
+}
