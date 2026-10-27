@@ -12,8 +12,23 @@
 // Register a port here as part of the change that adds it. Until then its cases and vectors are skipped.
 import { build } from "esbuild";
 
-import { existsSync, lstatSync, mkdirSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+
+/** Mirrors the test-module wrappers in tests/test_*_edges.py that turn file contents into a temporary directory. */
+function withFiles(files, use) {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "pi-security-parity-files-")));
+  try {
+    for (const [relative, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, relative)), { recursive: true });
+      writeFileSync(join(root, relative), content);
+    }
+    return use(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
 
 // One bundle for every port, so shared classes such as PyFloat have a single identity.
 const ENTRIES = {
@@ -23,6 +38,8 @@ const ENTRIES = {
   canonical: "src/contract/canonical-json.ts",
   pythonJson: "src/contract/python-json.ts",
   schema: "src/contract/schema.ts",
+  sarif: "src/contract/sarif.ts",
+  paths: "src/contract/contract-paths.ts",
 };
 const bundled = await build({
   bundle: true,
@@ -34,7 +51,7 @@ const bundled = await build({
   platform: "node",
   write: false,
 });
-const { identity, candidates, inventory, canonical, pythonJson, schema } = await import(
+const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths } = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString("base64")}`
 );
 
@@ -117,6 +134,20 @@ export const functions = {
   "finalize_scan_contract.validate_against_schema": ({ payload, schema_path }) =>
     schema.validateAgainstSchema(payload, schema_path) ?? null,
   "finalize_scan_contract._validate_date_time": ({ value, context }) => schema.validateDateTime(value, context) ?? null,
+  "finalize_scan_contract.build_sarif": ({ manifest, findings, source_root }) =>
+    sarif.buildSarif(manifest, findings, source_root ?? undefined),
+  "finalize_scan_contract._sarif_label": ({ value }) => sarif.sarifLabel(value),
+  "finalize_scan_contract._require_safe_relative_path": ({ value, context, allow_dot }) =>
+    paths.requireSafeRelativePath(value, context, allow_dot),
+  "finalize_scan_contract._require_portable_relative_path": ({ value, context, allow_dot }) =>
+    paths.requirePortableRelativePath(value, context, allow_dot),
+  "test_sarif_edges.github_line_hashes_of": ({ content, lines }) =>
+    withFiles({ "source.txt": content }, (root) => {
+      const hashes = sarif.githubLineHashesForSource(root, "source.txt", new Set(lines));
+      return hashes === undefined ? [] : [...hashes].sort(([a], [b]) => a - b);
+    }),
+  "test_sarif_edges.sarif_with_source": ({ manifest, findings, files }) =>
+    withFiles(files, (root) => sarif.buildSarif(manifest, findings, root)),
   "finalize_scan_contract._fingerprint": ({ target_id, finding }) => identity.fingerprint(target_id, finding),
   "finalize_scan_contract._stable_id": ({ prefix, parts }) => identity.stableId(prefix, ...parts),
   "finalize_scan_contract._derived_finding_identity_rows": ({ manifest, findings }) =>

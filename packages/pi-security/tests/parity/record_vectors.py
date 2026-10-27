@@ -50,6 +50,12 @@ TARGETS: set[tuple[str, str]] = {
     ("finalize_scan_contract.py", "validate_against_schema"),
     ("finalize_scan_contract.py", "_validate_schema_node"),
     ("finalize_scan_contract.py", "_validate_date_time"),
+    ("finalize_scan_contract.py", "_sarif_label"),
+    ("finalize_scan_contract.py", "_require_safe_relative_path"),
+    ("finalize_scan_contract.py", "_require_portable_relative_path"),
+    # Test-module wrappers that take file contents instead of temporary paths.
+    ("test_sarif_edges.py", "github_line_hashes_of"),
+    ("test_sarif_edges.py", "sarif_with_source"),
 }
 # Calls to record, by a predicate on the call's arguments. The validator recurses with root_schema set; only the
 # outermost calls are vectors.
@@ -57,7 +63,9 @@ TARGET_FILTERS = {
     ("finalize_scan_contract.py", "_validate_schema_node"): lambda arguments: arguments.get("root_schema") is None,
 }
 # CSV export and candidate merging are reached only through subprocesses in the suite; the curated cases cover them.
-TARGET_FILES = {str(SCRIPTS / file) for file, _ in TARGETS}
+TARGET_FILES = {
+    str((PACKAGE_ROOT / "tests" if file.startswith("test_") else SCRIPTS) / file) for file, _ in TARGETS
+}
 
 # Only calls made from these test modules are recorded: they use fixed fixtures. Workbench-flow tests reach the
 # same functions with wall-clock timestamps and random UUIDs, which would make vectors unreproducible.
@@ -66,6 +74,7 @@ SOURCE_TESTS = {
     "test_finding_identity_edges.py",
     "test_canonical_json_edges.py",
     "test_schema_validator_edges.py",
+    "test_sarif_edges.py",
     "test_report_projection.py",
     "test_sarif_projection.py",
     "test_scan_contract_examples.py",

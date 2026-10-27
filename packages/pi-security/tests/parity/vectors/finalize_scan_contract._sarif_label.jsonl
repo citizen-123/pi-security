@@ -1,0 +1,22 @@
+{"args": {"value": "locations"}, "function": "finalize_scan_contract._sarif_label", "result": "Locations"}
+{"args": {"value": "evidence"}, "function": "finalize_scan_contract._sarif_label", "result": "Evidence"}
+{"args": {"value": "sql-injection"}, "function": "finalize_scan_contract._sarif_label", "result": "SQL injection"}
+{"args": {"value": "two"}, "function": "finalize_scan_contract._sarif_label", "result": "Two"}
+{"args": {"value": "three"}, "function": "finalize_scan_contract._sarif_label", "result": "Three"}
+{"args": {"value": "zeta_cat.one"}, "function": "finalize_scan_contract._sarif_label", "result": "Zeta cat one"}
+{"args": {"value": ""}, "function": "finalize_scan_contract._sarif_label", "result": ""}
+{"args": {"value": "tags"}, "function": "finalize_scan_contract._sarif_label", "result": "Tags"}
+{"args": {"value": "r"}, "function": "finalize_scan_contract._sarif_label", "result": "R"}
+{"args": {"value": "html.HTTP"}, "function": "finalize_scan_contract._sarif_label", "result": "HTML HTTP"}
+{"args": {"value": "x\u001cy"}, "function": "finalize_scan_contract._sarif_label", "result": "X y"}
+{"args": {"value": "path-traversal"}, "function": "finalize_scan_contract._sarif_label", "result": "Path traversal"}
+{"args": {"value": "four"}, "function": "finalize_scan_contract._sarif_label", "result": "Four"}
+{"args": {"value": "api"}, "function": "finalize_scan_contract._sarif_label", "result": "API"}
+{"args": {"value": "one"}, "function": "finalize_scan_contract._sarif_label", "result": "One"}
+{"args": {"value": "sql-injection_url/xss"}, "function": "finalize_scan_contract._sarif_label", "result": "SQL injection URL XSS"}
+{"args": {"value": "api_url.xss/csrf"}, "function": "finalize_scan_contract._sarif_label", "result": "API URL XSS CSRF"}
+{"args": {"value": "ID"}, "function": "finalize_scan_contract._sarif_label", "result": "ID"}
+{"args": {"value": "archive-extraction"}, "function": "finalize_scan_contract._sarif_label", "result": "Archive extraction"}
+{"args": {"value": "\u00e9lan vital"}, "function": "finalize_scan_contract._sarif_label", "result": "\u00c9lan vital"}
+{"args": {"value": "  spaced  out  "}, "function": "finalize_scan_contract._sarif_label", "result": "Spaced out"}
+{"args": {"value": "cwe"}, "function": "finalize_scan_contract._sarif_label", "result": "Cwe"}
