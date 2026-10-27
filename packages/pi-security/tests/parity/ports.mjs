@@ -44,6 +44,7 @@ const ENTRIES = {
   validation: "src/contract/validation.ts",
   recovery: "src/contract/recovery.ts",
   report: "src/contract/report-projection.ts",
+  finalize: "src/contract/finalize.ts",
 };
 const bundled = await build({
   bundle: true,
@@ -55,7 +56,7 @@ const bundled = await build({
   platform: "node",
   write: false,
 });
-const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths, exportsModule, validation, recovery, report } = await import(
+const { identity, candidates, inventory, canonical, pythonJson, schema, sarif, paths, exportsModule, validation, recovery, report, finalize } = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString("base64")}`
 );
 
@@ -127,6 +128,49 @@ export const tools = {
     }
   },
 };
+
+const SCHEMA_DIR = join(new URL("../..", import.meta.url).pathname, "schemas");
+
+/** Run a CLI body: "rejected" for any error, as a nonzero Python exit would be. */
+async function cli(body) {
+  try {
+    return { status: "ok", stdout: (await body()) ?? "" };
+  } catch {
+    return { status: "rejected" };
+  }
+}
+
+// CLI shim over finalize.ts, mirroring finalize_scan_contract.py main().
+tools.finalize_scan_contract = (args) =>
+  cli(() => {
+    const options = parseOptions(args, new Set(), new Set(["sarif-only"]));
+    const schemaDir = options["schema-dir"] ?? SCHEMA_DIR;
+    const sourceRoot = options["source-root"];
+    const format = options["export-format"];
+    if (format !== undefined && !Object.hasOwn(finalize.EXPORT_PATHS, format)) throw new Error("invalid choice");
+    if (options["sarif-only"] && format !== undefined) throw new Error("--sarif-only cannot be combined with --export-format");
+    if (options["export-output"] !== undefined && format === undefined) throw new Error("--export-output requires --export-format");
+    if (options["sarif-output"] !== undefined && !options["sarif-only"]) throw new Error("--sarif-output requires --sarif-only");
+    if (format !== undefined) {
+      const contents = finalize.buildFindingsExport(options["scan-dir"], format, schemaDir, sourceRoot);
+      if (options["export-output"] === undefined) return contents;
+      finalize.writeExportOutput(options["scan-dir"], options["export-output"], format, contents);
+    } else if (options["sarif-only"]) {
+      const sarif = finalize.buildSarifProjection(options["scan-dir"], schemaDir, sourceRoot);
+      if (options["sarif-output"] === undefined) return canonical.jsonBytes(sarif);
+      finalize.writeSarifOutput(options["scan-dir"], options["sarif-output"], sarif);
+    } else {
+      finalize.finalizeScan(options["scan-dir"], { schemaDir, sourceRoot, warn: () => {} });
+    }
+  });
+
+// CLI shim over validateContract, mirroring validate_scan_contract.py main().
+tools.validate_scan_contract = (args) =>
+  cli(() => {
+    const options = parseOptions(args);
+    const receipt = finalize.contractReceipt(finalize.validateContract(options["scan-dir"], SCHEMA_DIR));
+    return `${pythonJson.dumpsPython(receipt, { sortKeys: true })}\n`;
+  });
 
 export const functions = {
   "finalize_scan_contract._json_bytes": ({ payload }) => canonical.jsonBytes(payload),
