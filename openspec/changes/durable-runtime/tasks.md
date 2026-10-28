@@ -31,7 +31,7 @@
 
 ## 4. Scan orchestration
 
-- [ ] 4.1 `security.scan` Standard path, end to end on the faux provider.
+- [x] 4.1 `security.scan` Standard path, end to end on the faux provider. Done: `src/scan/standard.ts` (packet planning from threat-model surfaces, reducer accounting, the `final-report.md` outcome mapping, draft assembly), `src/scan/instructions.ts` (provisional role instructions and packets until 4.7), and `src/durable/scan-task.ts` (the orchestrator, plus idempotent `startScan` through `security.run`). Publish re-binds the target and refuses to seal one that changed. `tests/scan-task.test.mjs` runs a synthetic repository from preflight to a sealed scan that `validateContract` accepts. Each fan-out still starts all of its workers at once; 4.2 replaces that with lanes.
 - [ ] 4.2 Lanes and the queue document, phase failure policy (D6), and honest coverage.
 - [ ] 4.3 Diff scope.
 - [ ] 4.4 Deep rounds, reducer provenance accounting, and saturation.
