@@ -92,6 +92,15 @@ flowchart TD
 - **Run creation is idempotent.** The command that starts a run creates the orchestrator and stores its ID in the `security.run` session document in one commit, and every open reads that document first (spike 0.1: a crash before this commit otherwise leaves a run directory with no orchestrator).
 - Results never live in task-scoped documents, which retire with their task. Each role writes to a session-scoped document family keyed by the worker's conversation ID (`security.result/<conversationId>`), committed by its report tool together with the tool result. (A tool call's `api.taskId` is the tool task, not the worker; the worker records its conversation ID in its checkpoint, so the orchestrator finds the result from that.) Report tools take the role's checked-in schema (dereferenced, without workbench identity fields such as `scanId`) as their parameters, so pi-durable validates each payload before the tool runs, and the orchestrator re-validates admitted results with the same pi-ai validator. That validator applies standard JSON Schema `pattern` search semantics; the finalizer's Python-compatible validator uses `fullmatch`, which these schemas do not intend.
 
+Standard-path phases (`src/scan/standard.ts`):
+
+- `threatModel` reports the model as Markdown plus a list of attack surfaces (`id`, `label`, optional `description`, target-relative `paths`). Surfaces are the focus areas: there is no separate focus-area step.
+- `plan` is deterministic: one discovery packet per surface (inventory files equal to or below its paths; surfaces may overlap), then one packet per top-level directory of the files no surface claimed, so every inventoried file is reviewed. A surface that matches no file becomes `needs_follow_up` coverage.
+- `discover` results are normalized and combined by the ported candidate normalizer, which assigns candidate IDs.
+- `reduce` reports findings (each naming the `candidateIds` it represents, the first being its primary candidate) and rejected candidates with reasons. The orchestrator checks that every candidate is accounted for exactly once. Severity and confidence are not the reducer's: they come from the attack-path and validation records.
+- `validate` runs one worker per reduced finding and `attackPath` one per finding whose validation is `reportable`; each must report exactly one record, for the primary candidate.
+- `report` is deterministic and applies the outcome order in `references/final-report.md`. Coverage lists every packet, every unmatched surface, and every reduced finding or rejected candidate; it is `complete` only when no row needs follow-up.
+
 Alternative: direct model calls in tasks without a tool loop. Rejected: discovery and validation need to explore the repository.
 
 ### D4. Bounded fan-out with lanes
@@ -121,7 +130,7 @@ Provider error bodies are stored verbatim, though: a 401 that echoed the key put
 | threatModel | one worker; failure fails the run | failed |
 | discover | tolerated; recorded as coverage gaps | continues; coverage incomplete if any packet failed |
 | reduce | one worker; one retry by re-creating the task; then fail | failed |
-| validate / attackPath | tolerated per candidate; candidate stays `unvalidated` | continues; finding marked unvalidated |
+| validate / attackPath | tolerated per finding; it stays unresolved (`needs_follow_up` coverage and a `coverage.deferred` entry), never a finding | continues; coverage partial |
 | publish | deterministic; a throw faults the task | failed (parked after restart limit) |
 
 Only a run whose orchestrator completes with no coverage gaps may claim complete coverage (the existing honest-coverage rule).

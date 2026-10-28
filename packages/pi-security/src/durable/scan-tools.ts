@@ -17,7 +17,7 @@ import validationsSchema from "../../schemas/tools/candidate-validations.schema.
 import reducerSchema from "../../schemas/tools/deep-reducer.schema.json" with { type: "json" };
 import discoveryCandidatesSchema from "../../schemas/tools/discovery-candidates.schema.json" with { type: "json" };
 import scanDraftSchema from "../../schemas/tools/scan-draft.schema.json" with { type: "json" };
-import threatModelSchema from "../../schemas/tools/worker-threat-model.schema.json" with { type: "json" };
+import standardScanSchema from "../../schemas/tools/standard-scan.schema.json" with { type: "json" };
 import { bundleArtifactSchema, type SchemaDocument } from "../artifact-schema-loader.js";
 import { ContractError, type JsonObject } from "../contract/contract-error.js";
 import { ConfinedRoot, ConfinementError, type ConfinedEntry } from "../target/confined-root.js";
@@ -194,7 +194,7 @@ const SCHEMA_DOCUMENTS = [
   reducerSchema,
   discoveryCandidatesSchema,
   scanDraftSchema,
-  threatModelSchema
+  standardScanSchema
 ] as SchemaDocument[];
 
 /** A role's payload schema: the checked-in definition, fully dereferenced, without workbench identity fields. */
@@ -207,9 +207,9 @@ export function roleSchema(document: string, definition: string, omit: readonly 
 }
 
 export const ROLE_REPORTS = {
-  threat_model: { tool: "report_threat_model", schema: () => roleSchema("worker-threat-model.schema.json", "recordWorkerThreatModelInput") },
+  threat_model: { tool: "report_threat_model", schema: () => roleSchema("standard-scan.schema.json", "reportThreatModelInput") },
   discover: { tool: "report_candidates", schema: () => roleSchema("discovery-candidates.schema.json", "recordDiscoveryCandidatesInput") },
-  reduce: { tool: "report_reduction", schema: () => roleSchema("deep-reducer.schema.json", "reductionInput", ["scanId", "handoffClaimToken", "complete"]) },
+  reduce: { tool: "report_reduction", schema: () => roleSchema("standard-scan.schema.json", "reportReductionInput") },
   validate: { tool: "report_validations", schema: () => roleSchema("candidate-validations.schema.json", "input", ["scanId"]) },
   attack_path: { tool: "report_attack_paths", schema: () => roleSchema("candidate-attack-paths.schema.json", "input", ["scanId"]) }
 } as const;

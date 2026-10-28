@@ -53,6 +53,10 @@ test("role schemas drop workbench identity fields and keep the payload", () => {
   assert.deepEqual(Object.keys(reduction.properties).sort(), ["coverage", "findings", "scope", "threatModel"]);
   assert.deepEqual(reduction.required.sort(), ["coverage", "findings"]);
   assert.equal(JSON.stringify(reduction).includes("$ref"), false, "fully dereferenced");
+  const standard = d.ROLE_REPORTS.reduce.schema();
+  assert.deepEqual(standard.required, ["findings", "rejected"]);
+  assert.equal(standard.properties.findings.items.properties.ruleId.pattern, "^[a-z0-9][a-z0-9._/-]*$");
+  assert.deepEqual(d.ROLE_REPORTS.threat_model.schema().properties.surfaces.items.required, ["id", "label", "paths"]);
   for (const role of Object.keys(d.ROLE_REPORTS)) {
     const schema = d.ROLE_REPORTS[role].schema();
     assert.equal(schema.properties.scanId, undefined, role);
@@ -169,5 +173,9 @@ test("validateRoleResult applies standard JSON Schema semantics to admitted resu
   ];
   for (const payload of bad) assert.throws(() => d.validateRoleResult("discover", JSON.parse(JSON.stringify(payload))), undefined, JSON.stringify(payload));
   assert.throws(() => d.validateRoleResult("threat_model", { content: "", scanId: "x" }));
-  assert.deepEqual(d.validateRoleResult("threat_model", { content: "Model of the service." }), { content: "Model of the service." });
+  const model = { content: "Model of the service.", surfaces: [{ id: "http-api", label: "HTTP API", paths: ["src"] }] };
+  assert.deepEqual(d.validateRoleResult("threat_model", structuredClone(model)), model);
+  for (const surfaces of [[], [{ ...model.surfaces[0], id: "HTTP API" }], [{ ...model.surfaces[0], paths: ["../src"] }], [{ ...model.surfaces[0], paths: [] }]]) {
+    assert.throws(() => d.validateRoleResult("threat_model", { ...model, surfaces }), undefined, JSON.stringify(surfaces));
+  }
 });
